@@ -31,7 +31,7 @@
         </button>
         <button class="button ghost" id="openPrices" type="button">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M7 4v6M4 17h16M16 14v6" /></svg>
-          Прайс
+          Настройки
         </button>
         <button class="button primary" id="printEstimate" type="button">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V4h10v5M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M7 14h10v7H7z" /></svg>
@@ -198,14 +198,14 @@
             <button class="button secondary" id="applyGlassToAll" type="button">Применить стеклопакет ко всем</button>
             <div class="inner-impost-actions">
               <div>
-                <span>Импост внутри створки</span>
-                <small id="innerImpostHint">Сначала выберите открывающуюся створку</small>
+                <span>Импост внутри секции</span>
+                <small id="innerImpostHint">Добавьте импост в выбранную секцию</small>
               </div>
               <div class="inner-impost-buttons">
-                <button class="button secondary" id="addInnerVertical" type="button" title="Добавить вертикальный импост в выбранную створку">
+                <button class="button secondary" id="addInnerVertical" type="button" title="Добавить вертикальный импост в выбранную секцию">
                   <span class="mini-impost vertical" aria-hidden="true"></span> Вертикальный
                 </button>
-                <button class="button secondary" id="addInnerHorizontal" type="button" title="Добавить горизонтальный импост в выбранную створку">
+                <button class="button secondary" id="addInnerHorizontal" type="button" title="Добавить горизонтальный импост в выбранную секцию">
                   <span class="mini-impost horizontal" aria-hidden="true"></span> Горизонтальный
                 </button>
               </div>
@@ -256,6 +256,7 @@
           <dl class="summary-list">
             <div><dt>Материал</dt><dd id="summaryMaterial">ПВХ</dd></div>
             <div><dt>Система</dt><dd id="summaryProfile">—</dd></div>
+            <div><dt>Ширина профилей</dt><dd id="summaryTechnology">—</dd></div>
             <div><dt>Форма</dt><dd id="summaryShape">Прямоугольная</dd></div>
             <div><dt>Отделка</dt><dd id="summaryFinish">—</dd></div>
           </dl>
@@ -304,12 +305,18 @@
     <dialog id="pricesDialog" class="prices-dialog">
       <form method="dialog" id="pricesForm">
         <div class="dialog-header">
-          <div><span class="eyebrow">Настройки</span><h2>Прайс расчёта</h2></div>
+          <div><span class="eyebrow">Параметры расчёта</span><h2>Настройки</h2></div>
           <button class="icon-button" value="cancel" aria-label="Закрыть" type="submit">×</button>
         </div>
-        <p class="dialog-intro">Введите ваши закупочные или розничные тарифы. Изменения применяются к текущему расчёту.</p>
+        <div class="settings-tabs" role="tablist" aria-label="Разделы настроек">
+          <button class="active" type="button" role="tab" aria-selected="true" data-settings-tab="prices">Прайс</button>
+          <button type="button" role="tab" aria-selected="false" data-settings-tab="technology">Технологические</button>
+        </div>
 
-        <div class="price-settings-grid">
+        <section class="settings-pane" id="settingsPricesPane" role="tabpanel">
+          <p class="dialog-intro">Введите ваши закупочные или розничные тарифы. Изменения применяются к текущему расчёту.</p>
+
+          <div class="price-settings-grid">
           <section>
             <h3>Профиль, ₽/пог. м</h3>
             <label><span>ПВХ — рама</span><input name="pvcFrame" type="number" min="0" step="10" /></label>
@@ -352,12 +359,34 @@
             <label><span>Сборочный комплект алюминий</span><input name="aluminumAssembly" type="number" min="0" step="10" /></label>
             <label><span>Сборочный комплект дерево</span><input name="woodAssembly" type="number" min="0" step="10" /></label>
           </section>
-        </div>
+          </div>
 
-        <div class="dialog-actions">
-          <button class="button ghost" id="resetPrices" type="button">Вернуть демонстрационные</button>
-          <button class="button primary" id="savePrices" type="button">Применить цены</button>
-        </div>
+          <div class="dialog-actions">
+            <button class="button ghost" id="resetPrices" type="button">Вернуть демонстрационные</button>
+            <button class="button primary" id="savePrices" type="button">Применить цены</button>
+          </div>
+        </section>
+
+        <section class="settings-pane" id="settingsTechnologyPane" role="tabpanel" hidden>
+          <p class="dialog-intro">Укажите лицевую ширину профилей. Размеры используются в графическом редакторе и при расчёте площади стеклопакетов.</p>
+          <div class="technology-table-wrap">
+            <table class="technology-table">
+              <thead>
+                <tr><th>Система</th><th>Рама, мм</th><th>Створка, мм</th><th>Импост, мм</th></tr>
+              </thead>
+              <tbody>
+                <tr><th>Пластиковая</th><td><input name="pvcFrameWidth" type="number" min="20" max="250" step="1" /></td><td><input name="pvcSashWidth" type="number" min="20" max="250" step="1" /></td><td><input name="pvcImpostWidth" type="number" min="20" max="250" step="1" /></td></tr>
+                <tr><th>Алюминиевая</th><td><input name="aluminumFrameWidth" type="number" min="20" max="250" step="1" /></td><td><input name="aluminumSashWidth" type="number" min="20" max="250" step="1" /></td><td><input name="aluminumImpostWidth" type="number" min="20" max="250" step="1" /></td></tr>
+                <tr><th>Деревянная</th><td><input name="woodFrameWidth" type="number" min="20" max="250" step="1" /></td><td><input name="woodSashWidth" type="number" min="20" max="250" step="1" /></td><td><input name="woodImpostWidth" type="number" min="20" max="250" step="1" /></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="technology-note">Значения сохраняются на этом устройстве и применяются ко всем новым расчётам.</p>
+          <div class="dialog-actions">
+            <button class="button ghost" id="resetTechnology" type="button">Вернуть стандартные</button>
+            <button class="button primary" id="saveTechnology" type="button">Сохранить размеры</button>
+          </div>
+        </section>
       </form>
     </dialog>
 
