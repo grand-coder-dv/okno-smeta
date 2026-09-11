@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Графический редактор и калькулятор стоимости пластиковых, алюминиевых и деревянных окон"
+    />
+    <title>ОкноСмета — калькулятор окон</title>
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2315253d'/%3E%3Cpath d='M14 15h36v34H14z' fill='%23d9eff8' stroke='%23fff' stroke-width='5'/%3E%3Cpath d='M32 16v32M15 32h34' stroke='%23f28a2e' stroke-width='4'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand" aria-label="ОкноСмета">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        <span>
+          <strong>ОкноСмета</strong>
+          <small>Редактор и калькулятор</small>
+        </span>
+      </div>
+      <div class="header-actions">
+        <button class="button ghost" id="newCalculation" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+          Новый расчёт
+        </button>
+        <button class="button ghost" id="openPrices" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M7 4v6M4 17h16M16 14v6" /></svg>
+          Прайс
+        </button>
+        <button class="button primary" id="printEstimate" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V4h10v5M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M7 14h10v7H7z" /></svg>
+          Печать сметы
+        </button>
+      </div>
+    </header>
+
+    <main class="page-shell">
+      <section class="workspace" aria-label="Конфигуратор окна">
+        <aside class="panel controls-panel">
+          <div class="panel-title-row">
+            <div>
+              <span class="eyebrow">Конфигурация</span>
+              <h1>Параметры окна</h1>
+            </div>
+            <span class="step-badge">01</span>
+          </div>
+
+          <fieldset class="control-group">
+            <legend>Материал профиля</legend>
+            <div class="material-grid" id="materialOptions">
+              <label class="material-card active">
+                <input type="radio" name="material" value="pvc" checked />
+                <span class="material-swatch pvc"></span>
+                <span><b>Пластик</b><small>ПВХ</small></span>
+              </label>
+              <label class="material-card">
+                <input type="radio" name="material" value="aluminum" />
+                <span class="material-swatch aluminum"></span>
+                <span><b>Алюминий</b><small>тёплый</small></span>
+              </label>
+              <label class="material-card">
+                <input type="radio" name="material" value="wood" />
+                <span class="material-swatch wood"></span>
+                <span><b>Дерево</b><small>массив</small></span>
+              </label>
+            </div>
+          </fieldset>
+
+          <div class="form-grid two">
+            <label class="field">
+              <span>Профильная система</span>
+              <select id="profileSystem"></select>
+            </label>
+            <label class="field">
+              <span>Цвет / отделка</span>
+              <select id="finish"></select>
+            </label>
+          </div>
+
+          <fieldset class="control-group">
+            <legend>Форма</legend>
+            <div class="segmented three" id="shapeOptions">
+              <button class="active" data-value="rect" type="button" aria-pressed="true">
+                <span class="shape-icon rect"></span>Прямое
+              </button>
+              <button data-value="arch" type="button" aria-pressed="false">
+                <span class="shape-icon arch"></span>Арочное
+              </button>
+              <button data-value="circle" type="button" aria-pressed="false">
+                <span class="shape-icon circle"></span>Круглое
+              </button>
+            </div>
+          </fieldset>
+
+          <fieldset class="control-group">
+            <legend>Габариты</legend>
+            <div class="form-grid two">
+              <label class="field">
+                <span id="widthLabel">Ширина, мм</span>
+                <div class="input-with-unit">
+                  <input id="width" type="number" min="400" max="5000" step="10" value="1400" inputmode="numeric" />
+                  <em>мм</em>
+                </div>
+              </label>
+              <label class="field" id="heightField">
+                <span>Высота, мм</span>
+                <div class="input-with-unit">
+                  <input id="height" type="number" min="400" max="4000" step="10" value="1300" inputmode="numeric" />
+                  <em>мм</em>
+                </div>
+              </label>
+            </div>
+            <label class="field quantity-field">
+              <span>Количество одинаковых окон</span>
+              <div class="stepper">
+                <button type="button" data-step="-1" aria-label="Уменьшить количество">−</button>
+                <input id="quantity" type="number" min="1" max="99" step="1" value="1" />
+                <button type="button" data-step="1" aria-label="Увеличить количество">+</button>
+              </div>
+            </label>
+          </fieldset>
+
+          <fieldset class="control-group">
+            <legend>Разбивка</legend>
+            <div class="split-presets" id="splitPresets" aria-label="Шаблоны разбивки">
+              <button class="active" type="button" data-cols="2" data-rows="1" aria-label="Две вертикальные секции"><i class="preset two-v"></i></button>
+              <button type="button" data-cols="3" data-rows="1" aria-label="Три вертикальные секции"><i class="preset three-v"></i></button>
+              <button type="button" data-cols="1" data-rows="2" aria-label="Две горизонтальные секции"><i class="preset two-h"></i></button>
+              <button type="button" data-cols="2" data-rows="2" aria-label="Четыре секции"><i class="preset grid"></i></button>
+            </div>
+            <div class="form-grid two split-counters">
+              <label class="field compact"><span>По вертикали</span><input id="columns" type="number" min="1" max="4" value="2" /></label>
+              <label class="field compact"><span>По горизонтали</span><input id="rows" type="number" min="1" max="3" value="1" /></label>
+            </div>
+          </fieldset>
+
+          <label class="field">
+            <span>Стеклопакет по умолчанию</span>
+            <select id="defaultGlass">
+              <option value="single">Однокамерный, 24 мм</option>
+              <option value="double" selected>Двухкамерный, 40 мм</option>
+              <option value="energy">Энергосберегающий, 40 мм</option>
+              <option value="acoustic">Шумоизоляционный, 44 мм</option>
+            </select>
+          </label>
+        </aside>
+
+        <section class="panel editor-panel">
+          <div class="editor-heading">
+            <div>
+              <span class="eyebrow">Графический редактор</span>
+              <h2>Конструкция</h2>
+            </div>
+            <div class="editor-meta">
+              <span id="editorDimensions">1400 × 1300 мм</span>
+              <span id="editorArea">1,82 м²</span>
+            </div>
+          </div>
+
+          <div class="canvas-wrap" id="canvasWrap">
+            <svg id="windowCanvas" viewBox="0 0 640 500" role="img" aria-label="Схема окна"></svg>
+          </div>
+
+          <div class="canvas-note">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM12 10v6M12 7h.01" /></svg>
+            Перетаскивайте импосты мышью. Нажмите на импост для точного размера или на секцию для настройки створки.
+          </div>
+
+          <div class="pane-inspector" id="paneInspector">
+            <div class="selected-pane-label">
+              <span>Выбрана секция</span>
+              <strong id="selectedPaneName">№ 1</strong>
+            </div>
+            <label class="field">
+              <span>Тип открывания</span>
+              <select id="openingType">
+                <option value="fixed">Глухая</option>
+                <option value="turn">Поворотная</option>
+                <option value="tiltturn" selected>Поворотно-откидная</option>
+                <option value="tilt">Откидная</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Стеклопакет секции</span>
+              <select id="paneGlass">
+                <option value="single">Однокамерный, 24 мм</option>
+                <option value="double">Двухкамерный, 40 мм</option>
+                <option value="energy">Энергосберегающий, 40 мм</option>
+                <option value="acoustic">Шумоизоляционный, 44 мм</option>
+              </select>
+            </label>
+            <button class="button secondary" id="applyGlassToAll" type="button">Применить стеклопакет ко всем</button>
+            <div class="inner-impost-actions">
+              <div>
+                <span>Импост внутри створки</span>
+                <small id="innerImpostHint">Сначала выберите открывающуюся створку</small>
+              </div>
+              <div class="inner-impost-buttons">
+                <button class="button secondary" id="addInnerVertical" type="button" title="Добавить вертикальный импост в выбранную створку">
+                  <span class="mini-impost vertical" aria-hidden="true"></span> Вертикальный
+                </button>
+                <button class="button secondary" id="addInnerHorizontal" type="button" title="Добавить горизонтальный импост в выбранную створку">
+                  <span class="mini-impost horizontal" aria-hidden="true"></span> Горизонтальный
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="impost-inspector" id="impostInspector" hidden>
+            <div class="selected-impost-label">
+              <span id="selectedImpostScope">Импост рамы</span>
+              <strong id="selectedImpostName">Вертикальный</strong>
+            </div>
+            <label class="field impost-position-field">
+              <span id="impostPositionLabel">От левого края рамы, мм</span>
+              <div class="input-with-unit">
+                <input id="impostPosition" type="number" min="100" step="10" inputmode="numeric" />
+                <em>мм</em>
+              </div>
+            </label>
+            <div class="impost-actions">
+              <button class="button secondary" id="centerImpost" type="button">По центру</button>
+              <button class="button danger" id="removeImpost" type="button">Удалить импост</button>
+            </div>
+          </div>
+        </section>
+
+        <aside class="panel summary-panel">
+          <div class="panel-title-row">
+            <div>
+              <span class="eyebrow">Расчёт</span>
+              <h2>Стоимость</h2>
+            </div>
+            <span class="step-badge dark">02</span>
+          </div>
+
+          <div class="price-block">
+            <span>Итого за заказ</span>
+            <strong id="totalPrice">0 ₽</strong>
+            <small id="unitPrice">0 ₽ за одно окно</small>
+          </div>
+
+          <div class="summary-grid">
+            <div><span>Площадь</span><b id="summaryArea">—</b></div>
+            <div><span>Створок</span><b id="summarySashes">—</b></div>
+            <div><span>Секций</span><b id="summaryPanes">—</b></div>
+            <div><span>Количество</span><b id="summaryQuantity">—</b></div>
+          </div>
+
+          <dl class="summary-list">
+            <div><dt>Материал</dt><dd id="summaryMaterial">ПВХ</dd></div>
+            <div><dt>Система</dt><dd id="summaryProfile">—</dd></div>
+            <div><dt>Форма</dt><dd id="summaryShape">Прямоугольная</dd></div>
+            <div><dt>Отделка</dt><dd id="summaryFinish">—</dd></div>
+          </dl>
+
+          <div class="estimate-note">
+            <span aria-hidden="true">₽</span>
+            <p><b>Демонстрационный расчёт</b>Замените тарифы на ваши в разделе «Прайс».</p>
+          </div>
+
+          <button class="button primary wide" id="scrollToSpec" type="button">Открыть спецификацию</button>
+        </aside>
+      </section>
+
+      <section class="panel specification-panel" id="specification">
+        <div class="spec-header">
+          <div>
+            <span class="eyebrow">Состав изделия</span>
+            <h2>Подробная спецификация</h2>
+          </div>
+          <div class="spec-total">
+            <span>Итого</span>
+            <strong id="specTotal">0 ₽</strong>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>№</th>
+                <th>Наименование</th>
+                <th>Характеристика</th>
+                <th>Кол-во</th>
+                <th>Ед.</th>
+                <th>Цена</th>
+                <th>Сумма</th>
+              </tr>
+            </thead>
+            <tbody id="specificationRows"></tbody>
+          </table>
+        </div>
+        <p class="spec-footnote">Расчёт ориентировочный и не является публичной офертой. Размеры указаны по внешнему габариту рамы.</p>
+      </section>
+    </main>
+
+    <dialog id="pricesDialog" class="prices-dialog">
+      <form method="dialog" id="pricesForm">
+        <div class="dialog-header">
+          <div><span class="eyebrow">Настройки</span><h2>Прайс расчёта</h2></div>
+          <button class="icon-button" value="cancel" aria-label="Закрыть" type="submit">×</button>
+        </div>
+        <p class="dialog-intro">Введите ваши закупочные или розничные тарифы. Изменения применяются к текущему расчёту.</p>
+
+        <div class="price-settings-grid">
+          <section>
+            <h3>Профиль, ₽/пог. м</h3>
+            <label><span>ПВХ — рама</span><input name="pvcFrame" type="number" min="0" step="10" /></label>
+            <label><span>Алюминий — рама</span><input name="aluminumFrame" type="number" min="0" step="10" /></label>
+            <label><span>Дерево — рама</span><input name="woodFrame" type="number" min="0" step="10" /></label>
+            <label><span>Импост ПВХ</span><input name="pvcImpost" type="number" min="0" step="10" /></label>
+            <label><span>Импост алюминий</span><input name="aluminumImpost" type="number" min="0" step="10" /></label>
+            <label><span>Импост дерево</span><input name="woodImpost" type="number" min="0" step="10" /></label>
+          </section>
+          <section>
+            <h3>Стеклопакет, ₽/м²</h3>
+            <label><span>Однокамерный</span><input name="glassSingle" type="number" min="0" step="10" /></label>
+            <label><span>Двухкамерный</span><input name="glassDouble" type="number" min="0" step="10" /></label>
+            <label><span>Энергосберегающий</span><input name="glassEnergy" type="number" min="0" step="10" /></label>
+            <label><span>Шумоизоляционный</span><input name="glassAcoustic" type="number" min="0" step="10" /></label>
+          </section>
+          <section>
+            <h3>Фурнитура, ₽/компл.</h3>
+            <label><span>Поворотная</span><input name="hardwareTurn" type="number" min="0" step="10" /></label>
+            <label><span>Поворотно-откидная</span><input name="hardwareTiltturn" type="number" min="0" step="10" /></label>
+            <label><span>Откидная</span><input name="hardwareTilt" type="number" min="0" step="10" /></label>
+            <label><span>Ручка</span><input name="handle" type="number" min="0" step="10" /></label>
+          </section>
+          <section>
+            <h3>Коэффициенты, %</h3>
+            <label><span>Арочная форма</span><input name="archSurcharge" type="number" min="0" max="300" step="1" /></label>
+            <label><span>Круглая форма</span><input name="circleSurcharge" type="number" min="0" max="300" step="1" /></label>
+            <label><span>Наценка</span><input name="markup" type="number" min="0" max="500" step="1" /></label>
+          </section>
+          <section>
+            <h3>Комплектующие</h3>
+            <label><span>Армирование, ₽/м</span><input name="reinforcement" type="number" min="0" step="10" /></label>
+            <label><span>Уплотнитель ПВХ, ₽/м</span><input name="pvcSeal" type="number" min="0" step="10" /></label>
+            <label><span>Уплотнитель алюминий, ₽/м</span><input name="aluminumSeal" type="number" min="0" step="10" /></label>
+            <label><span>Уплотнитель дерево, ₽/м</span><input name="woodSeal" type="number" min="0" step="10" /></label>
+            <label><span>Штапик ПВХ, ₽/м</span><input name="pvcBead" type="number" min="0" step="10" /></label>
+            <label><span>Штапик алюминий, ₽/м</span><input name="aluminumBead" type="number" min="0" step="10" /></label>
+            <label><span>Штапик дерево, ₽/м</span><input name="woodBead" type="number" min="0" step="10" /></label>
+            <label><span>Сборочный комплект ПВХ</span><input name="pvcAssembly" type="number" min="0" step="10" /></label>
+            <label><span>Сборочный комплект алюминий</span><input name="aluminumAssembly" type="number" min="0" step="10" /></label>
+            <label><span>Сборочный комплект дерево</span><input name="woodAssembly" type="number" min="0" step="10" /></label>
+          </section>
+        </div>
+
+        <div class="dialog-actions">
+          <button class="button ghost" id="resetPrices" type="button">Вернуть демонстрационные</button>
+          <button class="button primary" id="savePrices" type="button">Применить цены</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="./app.js"></script>
+  </body>
+</html>
