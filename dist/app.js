@@ -84,9 +84,33 @@ const DEFAULT_RATES = Object.freeze({
   markup: 10,
 });
 
+const DEFAULT_TECHNOLOGY = Object.freeze({
+  pvc: { frame: 70, sash: 78, impost: 82 },
+  aluminum: { frame: 70, sash: 76, impost: 72 },
+  wood: { frame: 78, sash: 82, impost: 86 },
+});
+
 const cloneRates = () => JSON.parse(JSON.stringify(DEFAULT_RATES));
+const cloneTechnology = () => JSON.parse(JSON.stringify(DEFAULT_TECHNOLOGY));
+
+function readStoredTechnology() {
+  try {
+    const stored = JSON.parse(localStorage.getItem("oknoSmetaTechnology") || "null");
+    const next = cloneTechnology();
+    Object.keys(next).forEach((material) => {
+      ["frame", "sash", "impost"].forEach((part) => {
+        const value = Number(stored?.[material]?.[part]);
+        if (Number.isFinite(value)) next[material][part] = Math.min(Math.max(value, 20), 250);
+      });
+    });
+    return next;
+  } catch {
+    return cloneTechnology();
+  }
+}
 
 let rates = cloneRates();
+let technology = readStoredTechnology();
 let impostSequence = 10;
 let canvasLayout = null;
 let dragState = null;
@@ -141,6 +165,10 @@ function getProfile() {
 
 function getFinish() {
   return MATERIALS[state.material].finishes.find((item) => item.id === state.finish) || MATERIALS[state.material].finishes[0];
+}
+
+function getTechnology() {
+  return technology[state.material];
 }
 
 function createImpostId(scope, orientation) {
@@ -267,6 +295,26 @@ function updateMaterialSelects(reset = false) {
     .join("");
 }
 
+function paneGlazingArea(index, pane, shapeFactor = 1) {
+  const rect = getPanePhysicalRect(index);
+  const tech = getTechnology();
+  const col = index % state.cols;
+  const row = Math.floor(index / state.cols);
+  const sideProfile = (atEdge) => (atEdge ? tech.frame : tech.impost / 2);
+  const sashReduction = pane.opening === "fixed" ? 0 : tech.sash * 2;
+  const verticalImposts = pane.innerImposts.filter((item) => item.orientation === "vertical").length;
+  const horizontalImposts = pane.innerImposts.filter((item) => item.orientation === "horizontal").length;
+  const clearWidth = Math.max(
+    20,
+    rect.width - sideProfile(col === 0) - sideProfile(col === state.cols - 1) - sashReduction - verticalImposts * tech.impost,
+  );
+  const clearHeight = Math.max(
+    20,
+    rect.height - sideProfile(row === 0) - sideProfile(row === state.rows - 1) - sashReduction - horizontalImposts * tech.impost,
+  );
+  return (clearWidth * clearHeight * shapeFactor) / 1_000_000;
+}
+
 function geometry() {
   const widthM = state.width / 1000;
   const heightM = state.height / 1000;
@@ -296,11 +344,12 @@ function geometry() {
     perimeter = 2 * (widthM + heightM);
   }
 
-  const glazingArea = area * 0.72;
+  const shapeFactor = Math.min(1, area / Math.max(widthM * heightM, 0.001));
   const primaryImpost = state.vImposts.length * heightM * verticalFactor + state.hImposts.length * widthM * horizontalFactor;
   let nestedImpost = 0;
   let nestedCount = 0;
   let glassUnits = 0;
+  const paneGlazingAreas = [];
   state.panes.forEach((pane, index) => {
     const paneRect = getPanePhysicalRect(index);
     pane.innerImposts.forEach((item) => {
@@ -308,9 +357,11 @@ function geometry() {
       nestedImpost += item.orientation === "vertical" ? (paneRect.height / 1000) * verticalFactor : (paneRect.width / 1000) * horizontalFactor;
     });
     glassUnits += paneGlassUnits(pane);
+    paneGlazingAreas[index] = paneGlazingArea(index, pane, shapeFactor);
   });
+  const glazingArea = paneGlazingAreas.reduce((sum, value) => sum + value, 0);
   const impost = primaryImpost + nestedImpost;
-  return { area, perimeter, glazingArea, impost, primaryImpost, nestedImpost, nestedCount, glassUnits };
+  return { area, perimeter, glazingArea, paneGlazingAreas, impost, primaryImpost, nestedImpost, nestedCount, glassUnits };
 }
 
 function buildSpecification() {
@@ -318,6 +369,7 @@ function buildSpecification() {
   const material = MATERIALS[state.material];
   const profile = getProfile();
   const finish = getFinish();
+  const tech = getTechnology();
   const quantity = state.quantity;
   const lines = [];
 
@@ -332,7 +384,7 @@ function buildSpecification() {
   addLine({
     name: "Профиль рамы",
     note: "Внешний контур конструкции",
-    characteristic: `${profile.name}; ${finish.name}`,
+    characteristic: `${profile.name}; ${finish.name}; ширина ${tech.frame} мм`,
     qty: dimensions.perimeter * quantity,
     unit: "пог. м",
     rate: frameRate,
@@ -345,7 +397,7 @@ function buildSpecification() {
     addLine({
       name: "Импост",
       note: "Профиль разбивки светового проёма",
-      characteristic: `В раме: ${state.vImposts.length + state.hImposts.length}; в створках: ${dimensions.nestedCount}`,
+      characteristic: `Ширина ${tech.impost} мм; в раме: ${state.vImposts.length + state.hImposts.length}; в секциях: ${dimensions.nestedCount}`,
       qty: dimensions.impost * quantity,
       unit: "пог. м",
       rate: impostRate,
@@ -382,16 +434,10 @@ function buildSpecification() {
     rate: rates.bead[state.material],
   });
 
-  const totalPaneArea = state.panes.reduce((sum, _pane, index) => {
-    const paneRect = getPanePhysicalRect(index);
-    return sum + paneRect.width * paneRect.height;
-  }, 0);
   const glassGroups = state.panes.reduce((groups, pane, index) => {
-    const paneRect = getPanePhysicalRect(index);
-    const share = totalPaneArea ? (paneRect.width * paneRect.height) / totalPaneArea : 1 / state.panes.length;
     const group = groups[pane.glass] || { fields: 0, area: 0 };
     group.fields += paneGlassUnits(pane);
-    group.area += dimensions.glazingArea * share;
+    group.area += dimensions.paneGlazingAreas[index] || 0;
     groups[pane.glass] = group;
     return groups;
   }, {});
@@ -415,7 +461,7 @@ function buildSpecification() {
     addLine({
       name: `Фурнитура: ${OPENINGS[openingKey].name.toLowerCase()}`,
       note: "Комплект петель, запоров и ответных планок",
-      characteristic: "Комплект на створку",
+      characteristic: `Комплект на створку; ширина профиля ${tech.sash} мм`,
       qty: count * quantity,
       unit: "компл.",
       rate: rates.hardware[openingKey],
@@ -565,7 +611,11 @@ function renderCanvas() {
   height = Math.max(height, 150);
   const x = 326 - width / 2;
   const y = 229 - height / 2;
-  const frame = clamp(Math.min(width, height) * 0.072, 18, 29);
+  const tech = getTechnology();
+  const canvasScale = Math.min(width / state.width, height / state.height);
+  const frame = clamp(tech.frame * canvasScale, 12, 38);
+  const sashFace = clamp(tech.sash * canvasScale, 8, 34);
+  const impostFace = clamp(tech.impost * canvasScale, 7, 32);
   const material = MATERIALS[state.material];
   const paths = shapePaths(x, y, width, height, frame);
   const box = paths.innerBox;
@@ -587,6 +637,9 @@ function renderCanvas() {
     paneRects[index] = { x: px, y: py, width: paneWidth, height: paneHeight, physicalWidth: physical.width, physicalHeight: physical.height };
     const glass = GLASS[pane.glass];
     const selected = index === state.selectedPane;
+    const paneKind = pane.opening === "fixed" ? "глухой секции" : "створке";
+    const paneSashFace = Math.min(sashFace, paneWidth * 0.22, paneHeight * 0.22);
+    const paneImpostFace = Math.min(impostFace, paneWidth * 0.2, paneHeight * 0.2);
     let innerImpostsMarkup = "";
 
     pane.innerImposts.forEach((item) => {
@@ -597,17 +650,17 @@ function renderCanvas() {
       const physicalPosition = item.position * (isVertical ? physical.width : physical.height);
       if (isVertical) {
         innerImpostsMarkup += `
-          <line class="impost-visible inner-impost-visible${active ? " selected" : ""}" x1="${lineX}" y1="${py}" x2="${lineX}" y2="${py + paneHeight}" stroke="${material.frame}" stroke-width="${Math.max(6, frame * 0.34)}" />
+          <line class="impost-visible inner-impost-visible${active ? " selected" : ""}" x1="${lineX}" y1="${py}" x2="${lineX}" y2="${py + paneHeight}" stroke="${material.frame}" stroke-width="${paneImpostFace}" />
           <line x1="${lineX}" y1="${py}" x2="${lineX}" y2="${py + paneHeight}" stroke="${material.edge}" stroke-width="1.2" opacity=".55" pointer-events="none" />
           <rect class="impost-grip${active ? " selected" : ""}" x="${lineX - 7}" y="${py + paneHeight / 2 - 14}" width="14" height="28" rx="7" />
-          <line class="impost-hit" data-scope="pane" data-pane="${index}" data-orientation="vertical" data-id="${item.id}" x1="${lineX}" y1="${py}" x2="${lineX}" y2="${py + paneHeight}" tabindex="0" role="slider" aria-label="Вертикальный импост в створке ${index + 1}" aria-valuenow="${Math.round(physicalPosition)}" />
+          <line class="impost-hit" data-scope="pane" data-pane="${index}" data-orientation="vertical" data-id="${item.id}" x1="${lineX}" y1="${py}" x2="${lineX}" y2="${py + paneHeight}" tabindex="0" role="slider" aria-label="Вертикальный импост в ${paneKind} ${index + 1}" aria-valuenow="${Math.round(physicalPosition)}" />
           ${active ? impostValueTag(lineX, py + 18, physicalPosition, true) : ""}`;
       } else {
         innerImpostsMarkup += `
-          <line class="impost-visible inner-impost-visible${active ? " selected" : ""}" x1="${px}" y1="${lineY}" x2="${px + paneWidth}" y2="${lineY}" stroke="${material.frame}" stroke-width="${Math.max(6, frame * 0.34)}" />
+          <line class="impost-visible inner-impost-visible${active ? " selected" : ""}" x1="${px}" y1="${lineY}" x2="${px + paneWidth}" y2="${lineY}" stroke="${material.frame}" stroke-width="${paneImpostFace}" />
           <line x1="${px}" y1="${lineY}" x2="${px + paneWidth}" y2="${lineY}" stroke="${material.edge}" stroke-width="1.2" opacity=".55" pointer-events="none" />
           <rect class="impost-grip${active ? " selected" : ""}" x="${px + paneWidth / 2 - 14}" y="${lineY - 7}" width="28" height="14" rx="7" />
-          <line class="impost-hit horizontal" data-scope="pane" data-pane="${index}" data-orientation="horizontal" data-id="${item.id}" x1="${px}" y1="${lineY}" x2="${px + paneWidth}" y2="${lineY}" tabindex="0" role="slider" aria-label="Горизонтальный импост в створке ${index + 1}" aria-valuenow="${Math.round(physicalPosition)}" />
+          <line class="impost-hit horizontal" data-scope="pane" data-pane="${index}" data-orientation="horizontal" data-id="${item.id}" x1="${px}" y1="${lineY}" x2="${px + paneWidth}" y2="${lineY}" tabindex="0" role="slider" aria-label="Горизонтальный импост в ${paneKind} ${index + 1}" aria-valuenow="${Math.round(physicalPosition)}" />
           ${active ? impostValueTag(px + 42, lineY, physicalPosition, true) : ""}`;
       }
     });
@@ -616,6 +669,7 @@ function renderCanvas() {
       <g class="pane" data-index="${index}" clip-path="url(#innerClip)">
         <rect x="${px}" y="${py}" width="${paneWidth}" height="${paneHeight}" fill="${glass.color}" />
         <rect x="${px}" y="${py}" width="${paneWidth}" height="${paneHeight}" fill="url(#glassSheen)" opacity="0.55" />
+        ${pane.opening !== "fixed" ? `<rect x="${px + paneSashFace / 2}" y="${py + paneSashFace / 2}" width="${Math.max(paneWidth - paneSashFace, 2)}" height="${Math.max(paneHeight - paneSashFace, 2)}" fill="none" stroke="${material.frame}" stroke-width="${paneSashFace}" pointer-events="none" />` : ""}
         ${openingSymbol(pane.opening, px, py, paneWidth, paneHeight)}
         ${selected ? `<rect class="pane-selected" x="${px + 3}" y="${py + 3}" width="${Math.max(paneWidth - 6, 2)}" height="${Math.max(paneHeight - 6, 2)}" />` : ""}
         <circle cx="${px + paneWidth / 2}" cy="${py + paneHeight / 2}" r="14" fill="rgba(255,255,255,.82)" stroke="rgba(53,80,105,.22)" />
@@ -630,7 +684,7 @@ function renderCanvas() {
     const lineX = rootVerticalX[index];
     const active = isSelectedImpost("root", "vertical", item.id);
     rootImpostsMarkup += `
-      <line class="impost-visible${active ? " selected" : ""}" x1="${lineX}" y1="${box.y - 2}" x2="${lineX}" y2="${box.y + box.height + 2}" stroke="${material.frame}" stroke-width="${Math.max(8, frame * 0.48)}" />
+      <line class="impost-visible${active ? " selected" : ""}" x1="${lineX}" y1="${box.y - 2}" x2="${lineX}" y2="${box.y + box.height + 2}" stroke="${material.frame}" stroke-width="${impostFace}" />
       <line x1="${lineX}" y1="${box.y - 2}" x2="${lineX}" y2="${box.y + box.height + 2}" stroke="${material.edge}" stroke-width="1.4" opacity=".55" pointer-events="none" />
       <rect class="impost-grip${active ? " selected" : ""}" x="${lineX - 8}" y="${box.y + box.height / 2 - 18}" width="16" height="36" rx="8" />
       <line class="impost-hit" data-scope="root" data-orientation="vertical" data-id="${item.id}" x1="${lineX}" y1="${box.y - 2}" x2="${lineX}" y2="${box.y + box.height + 2}" tabindex="0" role="slider" aria-label="Вертикальный импост рамы" aria-valuemin="0" aria-valuemax="${state.width}" aria-valuenow="${Math.round(item.position)}" />
@@ -640,7 +694,7 @@ function renderCanvas() {
     const lineY = rootHorizontalY[index];
     const active = isSelectedImpost("root", "horizontal", item.id);
     rootImpostsMarkup += `
-      <line class="impost-visible${active ? " selected" : ""}" x1="${box.x - 2}" y1="${lineY}" x2="${box.x + box.width + 2}" y2="${lineY}" stroke="${material.frame}" stroke-width="${Math.max(8, frame * 0.48)}" />
+      <line class="impost-visible${active ? " selected" : ""}" x1="${box.x - 2}" y1="${lineY}" x2="${box.x + box.width + 2}" y2="${lineY}" stroke="${material.frame}" stroke-width="${impostFace}" />
       <line x1="${box.x - 2}" y1="${lineY}" x2="${box.x + box.width + 2}" y2="${lineY}" stroke="${material.edge}" stroke-width="1.4" opacity=".55" pointer-events="none" />
       <rect class="impost-grip${active ? " selected" : ""}" x="${box.x + box.width / 2 - 18}" y="${lineY - 8}" width="36" height="16" rx="8" />
       <line class="impost-hit horizontal" data-scope="root" data-orientation="horizontal" data-id="${item.id}" x1="${box.x - 2}" y1="${lineY}" x2="${box.x + box.width + 2}" y2="${lineY}" tabindex="0" role="slider" aria-label="Горизонтальный импост рамы" aria-valuemin="0" aria-valuemax="${state.height}" aria-valuenow="${Math.round(item.position)}" />
@@ -817,13 +871,9 @@ function largestGapPosition(items) {
 
 function addInnerImpost(orientation) {
   const pane = state.panes[state.selectedPane];
-  if (pane.opening === "fixed") {
-    showToast("Сначала выберите открывающуюся створку");
-    return;
-  }
   const siblings = pane.innerImposts.filter((item) => item.orientation === orientation);
   if (siblings.length >= 3) {
-    showToast("В одной створке допускается до трёх импостов одного направления");
+    showToast("В одной секции допускается до трёх импостов одного направления");
     return;
   }
   const item = {
@@ -834,7 +884,7 @@ function addInnerImpost(orientation) {
   pane.innerImposts.push(item);
   state.selectedImpost = { scope: "pane", paneIndex: state.selectedPane, orientation, id: item.id };
   renderAll();
-  showToast("Импост добавлен в выбранную створку");
+  showToast(`Импост добавлен в ${pane.opening === "fixed" ? "глухую секцию" : "створку"}`);
 }
 
 function renderInspector() {
@@ -864,11 +914,12 @@ function renderInspector() {
       min = limits.min * size;
       max = limits.max * size;
     }
-    $("#selectedImpostScope").textContent = isRoot ? "Импост рамы" : `Импост в створке № ${record.selected.paneIndex + 1}`;
+    const nestedScope = record.pane?.opening === "fixed" ? "глухой секции" : "створке";
+    $("#selectedImpostScope").textContent = isRoot ? "Импост рамы" : `Импост в ${nestedScope} № ${record.selected.paneIndex + 1}`;
     $("#selectedImpostName").textContent = vertical ? "Вертикальный" : "Горизонтальный";
     $("#impostPositionLabel").textContent = vertical
-      ? `От левого края ${isRoot ? "рамы" : "створки"}, мм`
-      : `От верхнего края ${isRoot ? "рамы" : "створки"}, мм`;
+      ? `От левого края ${isRoot ? "рамы" : record.pane?.opening === "fixed" ? "глухой секции" : "створки"}, мм`
+      : `От верхнего края ${isRoot ? "рамы" : record.pane?.opening === "fixed" ? "глухой секции" : "створки"}, мм`;
     positionInput.min = Math.ceil(min);
     positionInput.max = Math.floor(max);
     positionInput.value = Math.round(position);
@@ -880,15 +931,11 @@ function renderInspector() {
   $("#selectedPaneName").textContent = `№ ${state.selectedPane + 1}`;
   $("#openingType").value = pane.opening;
   $("#paneGlass").value = pane.glass;
-  const canAdd = pane.opening !== "fixed";
-  $("#addInnerVertical").disabled = !canAdd;
-  $("#addInnerHorizontal").disabled = !canAdd;
   const innerCount = pane.innerImposts.length;
-  $("#innerImpostHint").textContent = canAdd
-    ? innerCount
-      ? `В створке установлено: ${innerCount}`
-      : "Добавьте вертикальный или горизонтальный импост"
-    : "Сначала выберите открывающуюся створку";
+  const paneKind = pane.opening === "fixed" ? "глухой секции" : "створке";
+  $("#innerImpostHint").textContent = innerCount
+    ? `В ${paneKind} установлено: ${innerCount}`
+    : `Добавьте импост в ${paneKind}`;
 }
 
 function renderSummary(calculation) {
@@ -901,6 +948,8 @@ function renderSummary(calculation) {
   $("#summaryQuantity").textContent = `${state.quantity} шт.`;
   $("#summaryMaterial").textContent = calculation.material.label;
   $("#summaryProfile").textContent = calculation.profile.name;
+  const tech = getTechnology();
+  $("#summaryTechnology").textContent = `рама ${tech.frame} · створка ${tech.sash} · импост ${tech.impost} мм`;
   $("#summaryShape").textContent = SHAPES[state.shape];
   $("#summaryFinish").textContent = calculation.finish.name;
   $("#specTotal").textContent = formatMoney(calculation.total);
@@ -1154,6 +1203,8 @@ function bindEvents() {
 
   $("#openPrices").addEventListener("click", () => {
     populatePriceForm();
+    populateTechnologyForm();
+    setSettingsTab("prices");
     $("#pricesDialog").showModal();
   });
   $("#pricesDialog").addEventListener("click", (event) => {
@@ -1170,6 +1221,22 @@ function bindEvents() {
     populatePriceForm();
     renderAll();
     showToast("Демонстрационные тарифы восстановлены");
+  });
+  $$("[data-settings-tab]").forEach((button) => {
+    button.addEventListener("click", () => setSettingsTab(button.dataset.settingsTab));
+  });
+  $("#saveTechnology").addEventListener("click", () => {
+    readTechnologyForm();
+    $("#pricesDialog").close();
+    renderAll();
+    showToast("Технологические размеры сохранены");
+  });
+  $("#resetTechnology").addEventListener("click", () => {
+    technology = cloneTechnology();
+    localStorage.removeItem("oknoSmetaTechnology");
+    populateTechnologyForm();
+    renderAll();
+    showToast("Стандартные размеры профилей восстановлены");
   });
 
   bindCanvasDragging();
@@ -1216,6 +1283,18 @@ const PRICE_BINDINGS = {
   markup: ["markup"],
 };
 
+const TECHNOLOGY_BINDINGS = {
+  pvcFrameWidth: ["pvc", "frame"],
+  pvcSashWidth: ["pvc", "sash"],
+  pvcImpostWidth: ["pvc", "impost"],
+  aluminumFrameWidth: ["aluminum", "frame"],
+  aluminumSashWidth: ["aluminum", "sash"],
+  aluminumImpostWidth: ["aluminum", "impost"],
+  woodFrameWidth: ["wood", "frame"],
+  woodSashWidth: ["wood", "sash"],
+  woodImpostWidth: ["wood", "impost"],
+};
+
 function getRate(path) {
   return path.reduce((value, key) => value[key], rates);
 }
@@ -1236,6 +1315,31 @@ function readPriceForm() {
     const input = $("#pricesForm").elements[name];
     setRate(path, Math.max(0, Number(input.value) || 0));
   });
+}
+
+function setSettingsTab(tab) {
+  const technologyTab = tab === "technology";
+  $("#settingsPricesPane").hidden = technologyTab;
+  $("#settingsTechnologyPane").hidden = !technologyTab;
+  $$("[data-settings-tab]").forEach((button) => {
+    const active = button.dataset.settingsTab === tab;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+}
+
+function populateTechnologyForm() {
+  Object.entries(TECHNOLOGY_BINDINGS).forEach(([name, [material, part]]) => {
+    $("#pricesForm").elements[name].value = technology[material][part];
+  });
+}
+
+function readTechnologyForm() {
+  Object.entries(TECHNOLOGY_BINDINGS).forEach(([name, [material, part]]) => {
+    const input = $("#pricesForm").elements[name];
+    technology[material][part] = clamp(input.value, 20, 250);
+  });
+  localStorage.setItem("oknoSmetaTechnology", JSON.stringify(technology));
 }
 
 function exposeAgentTools() {
