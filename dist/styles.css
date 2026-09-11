@@ -1172,6 +1172,37 @@ tbody tr:hover {
   line-height: 1.5;
 }
 
+.settings-tabs {
+  margin-top: 18px;
+  padding: 4px;
+  display: inline-flex;
+  gap: 4px;
+  background: #eef2f6;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+}
+
+.settings-tabs button {
+  min-height: 38px;
+  padding: 0 18px;
+  color: #59667a;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 780;
+}
+
+.settings-tabs button.active {
+  color: var(--navy);
+  background: white;
+  box-shadow: 0 3px 10px rgba(20, 34, 57, 0.1);
+}
+
+.settings-pane {
+  margin-top: 4px;
+}
+
 .price-settings-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1208,6 +1239,52 @@ tbody tr:hover {
   padding: 0 7px;
   text-align: right;
   font-size: 0.76rem;
+}
+
+.technology-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.technology-table {
+  min-width: 620px;
+}
+
+.technology-table th,
+.technology-table td {
+  padding: 13px 15px;
+  text-align: center;
+}
+
+.technology-table thead th:first-child,
+.technology-table tbody th {
+  width: 175px;
+  text-align: left;
+}
+
+.technology-table tbody th {
+  color: #46546a;
+  background: #f8fafb;
+  font-size: 0.78rem;
+  font-weight: 760;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.technology-table input {
+  width: 96px;
+  min-height: 36px;
+  padding: 0 8px;
+  text-align: right;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+}
+
+.technology-note {
+  margin: 11px 0 0;
+  color: var(--muted);
+  font-size: 0.72rem;
 }
 
 .dialog-actions {
@@ -1444,6 +1521,19 @@ tbody tr:hover {
   .price-settings-grid {
     max-height: 55vh;
     overflow-y: auto;
+  }
+
+  .settings-tabs {
+    width: 100%;
+  }
+
+  .settings-tabs button {
+    flex: 1;
+    padding: 0 9px;
+  }
+
+  .technology-table-wrap {
+    max-height: 48vh;
   }
 
   .dialog-actions {
