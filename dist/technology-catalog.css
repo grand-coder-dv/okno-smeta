@@ -1,0 +1,57 @@
+/* Common layout for the technology catalog. Load after styles.css. */
+#settingsTechnologyPane :is(.catalog-profile-list, .catalog-color-list) {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+#settingsTechnologyPane :is(.catalog-profile-card, .catalog-color-row, #glassCatalogEditor .glass-catalog-card) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 145px), 1fr));
+  align-items: end;
+  gap: 10px 12px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid #dce3eb;
+  border-radius: 12px;
+  background: #f3f5f8;
+}
+#settingsTechnologyPane .catalog-profile-card[data-profile-id] .catalog-name-field {
+  grid-column: 1 / -1;
+}
+#settingsTechnologyPane :is(.catalog-field, .catalog-color-picker) {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+}
+#settingsTechnologyPane .catalog-field > span {
+  overflow-wrap: anywhere;
+}
+#settingsTechnologyPane .catalog-field > input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 36px;
+  margin: 0;
+}
+#settingsTechnologyPane :is(.catalog-section, .catalog-section-header) { min-width: 0; }
+#settingsTechnologyPane .catalog-section-header { flex-wrap: wrap; gap: 8px; }
+#settingsTechnologyPane .catalog-remove-button { justify-self: start; }
+#settingsTechnologyPane .glass-profile-options {
+  grid-column: 1 / -1;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid #dce3eb;
+  border-radius: 8px;
+  background: #fff;
+}
+#settingsTechnologyPane .glass-profile-options label { min-width: 0; max-width: 100%; }
+#settingsTechnologyPane .glass-profile-options label span { overflow-wrap: anywhere; }
