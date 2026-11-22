@@ -27,7 +27,7 @@
       <div class="header-actions">
         <button class="button ghost" id="newCalculation" type="button">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
-          Новый расчёт
+          Новое изделие
         </button>
         <button class="button ghost" id="openPrices" type="button">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M7 4v6M4 17h16M16 14v6" /></svg>
@@ -41,6 +41,19 @@
     </header>
 
     <main class="page-shell">
+      <section class="project-toolbar" aria-label="Управление проектом">
+        <div class="project-current">
+          <span>Текущий проект</span>
+          <strong id="currentProjectName">Новый проект</strong>
+          <small id="projectSaveStatus">Не сохранён</small>
+        </div>
+        <div class="project-actions">
+          <button class="button ghost" id="newProject" type="button">Новый проект</button>
+          <button class="button secondary" id="myProjects" type="button">Мои проекты</button>
+          <button class="button primary" id="saveProject" type="button">Сохранить проект</button>
+        </div>
+      </section>
+
       <section class="workspace" aria-label="Конфигуратор окна">
         <aside class="panel controls-panel">
           <div class="panel-title-row">
@@ -241,9 +254,16 @@
           </div>
 
           <div class="price-block">
-            <span>Итого за заказ</span>
+            <span>Итого за изделие</span>
             <strong id="totalPrice">0 ₽</strong>
             <small id="unitPrice">0 ₽ за одно окно</small>
+          </div>
+
+          <div class="saved-price-comparison" id="savedPriceComparison" hidden>
+            <span>Цена сохранённой позиции</span>
+            <b id="savedItemPrice">—</b>
+            <span>По текущему прайсу</span>
+            <b id="currentItemPrice">—</b>
           </div>
 
           <div class="summary-grid">
@@ -263,11 +283,32 @@
 
           <div class="estimate-note">
             <span aria-hidden="true">₽</span>
-            <p><b>Демонстрационный расчёт</b>Замените тарифы на ваши в разделе «Прайс».</p>
+            <p><b id="currentEstimateStatus">Демонстрационный расчёт</b><span id="currentEstimateHint">Замените тарифы на ваши в разделе «Прайс».</span></p>
           </div>
 
           <button class="button primary wide" id="scrollToSpec" type="button">Открыть спецификацию</button>
+          <p class="configuration-error" id="configurationError" role="alert" hidden></p>
+          <button class="button order-save-button wide" id="saveOrderItem" type="button">Сохранить изделие и добавить следующее</button>
         </aside>
+      </section>
+
+      <section class="panel order-panel" id="orderPanel">
+        <div class="order-header">
+          <div>
+            <span class="eyebrow">Текущий заказ</span>
+            <h2>Изделия в заказе</h2>
+          </div>
+          <span class="order-position-count" id="orderPositionCount">0 позиций</span>
+        </div>
+        <div class="order-empty" id="orderEmpty">
+          Сохраните первое изделие — оно появится здесь, а конфигуратор откроется для следующего окна.
+        </div>
+        <div class="order-items" id="orderItems"></div>
+        <div class="order-totals">
+          <div><span>Позиций</span><b id="orderTotalPositions">0</b></div>
+          <div><span>Всего окон</span><b id="orderTotalQuantity">0</b></div>
+          <div class="order-grand-total"><span id="orderTotalLabel">Сумма заказа</span><b id="orderTotalPrice">0 ₽</b></div>
+        </div>
       </section>
 
       <section class="panel specification-panel" id="specification">
@@ -300,7 +341,40 @@
         </div>
         <p class="spec-footnote">Расчёт ориентировочный и не является публичной офертой. Размеры указаны по внешнему габариту рамы.</p>
       </section>
+
+      <section class="print-order" id="printOrder" aria-label="Печатная смета заказа"></section>
     </main>
+
+    <dialog id="projectNameDialog" class="project-dialog project-name-dialog">
+      <form id="projectNameForm">
+        <div class="dialog-header">
+          <div><span class="eyebrow">Сохранение заказа</span><h2>Название проекта</h2></div>
+          <button class="icon-button" id="closeProjectNameDialog" aria-label="Закрыть" type="button">×</button>
+        </div>
+        <p class="dialog-intro">Укажите понятное название, чтобы позже быстро найти этот заказ.</p>
+        <label class="field">
+          <span>Название проекта</span>
+          <input id="projectNameInput" maxlength="80" autocomplete="off" placeholder="Например, Проект А" required />
+        </label>
+        <p class="project-dialog-error" id="projectNameError" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button class="button ghost" id="cancelProjectName" type="button">Отмена</button>
+          <button class="button primary" type="submit">Сохранить проект</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="projectsDialog" class="project-dialog projects-dialog">
+      <div class="projects-dialog-content">
+        <div class="dialog-header">
+          <div><span class="eyebrow">Сохранённые заказы</span><h2>Мои проекты</h2></div>
+          <button class="icon-button" id="closeProjectsDialog" aria-label="Закрыть" type="button">×</button>
+        </div>
+        <p class="dialog-intro">Проекты хранятся только в этом браузере на текущем устройстве.</p>
+        <div class="projects-empty" id="projectsEmpty">Сохранённых проектов пока нет.</div>
+        <div class="projects-list" id="projectsList"></div>
+      </div>
+    </dialog>
 
     <dialog id="pricesDialog" class="prices-dialog">
       <form method="dialog" id="pricesForm">
@@ -368,23 +442,17 @@
         </section>
 
         <section class="settings-pane" id="settingsTechnologyPane" role="tabpanel" hidden>
-          <p class="dialog-intro">Укажите лицевую ширину профилей. Размеры используются в графическом редакторе и при расчёте площади стеклопакетов.</p>
-          <div class="technology-table-wrap">
-            <table class="technology-table">
-              <thead>
-                <tr><th>Система</th><th>Рама, мм</th><th>Створка, мм</th><th>Импост, мм</th></tr>
-              </thead>
-              <tbody>
-                <tr><th>Пластиковая</th><td><input name="pvcFrameWidth" type="number" min="20" max="250" step="1" /></td><td><input name="pvcSashWidth" type="number" min="20" max="250" step="1" /></td><td><input name="pvcImpostWidth" type="number" min="20" max="250" step="1" /></td></tr>
-                <tr><th>Алюминиевая</th><td><input name="aluminumFrameWidth" type="number" min="20" max="250" step="1" /></td><td><input name="aluminumSashWidth" type="number" min="20" max="250" step="1" /></td><td><input name="aluminumImpostWidth" type="number" min="20" max="250" step="1" /></td></tr>
-                <tr><th>Деревянная</th><td><input name="woodFrameWidth" type="number" min="20" max="250" step="1" /></td><td><input name="woodSashWidth" type="number" min="20" max="250" step="1" /></td><td><input name="woodImpostWidth" type="number" min="20" max="250" step="1" /></td></tr>
-              </tbody>
-            </table>
+          <p class="dialog-intro">Создавайте и изменяйте профильные системы, их технологические размеры и доступные цвета. Каталог используется в основных списках конфигуратора.</p>
+          <div class="catalog-material-tabs" role="tablist" aria-label="Материал профильной системы">
+            <button class="active" type="button" data-catalog-material="pvc" aria-selected="true">Пластик</button>
+            <button type="button" data-catalog-material="aluminum" aria-selected="false">Алюминий</button>
+            <button type="button" data-catalog-material="wood" aria-selected="false">Дерево</button>
           </div>
-          <p class="technology-note">Значения сохраняются на этом устройстве и применяются ко всем новым расчётам.</p>
+          <div id="technologyCatalogEditor" class="technology-catalog-editor"></div>
+          <p class="technology-note">Нельзя удалить последнюю систему или последний цвет материала. Изменения сохраняются на этом устройстве.</p>
           <div class="dialog-actions">
             <button class="button ghost" id="resetTechnology" type="button">Вернуть стандартные</button>
-            <button class="button primary" id="saveTechnology" type="button">Сохранить размеры</button>
+            <button class="button primary" id="saveTechnology" type="button">Сохранить каталог</button>
           </div>
         </section>
       </form>

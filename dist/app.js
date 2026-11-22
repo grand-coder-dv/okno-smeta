@@ -1,18 +1,18 @@
-const MATERIALS = {
+const DEFAULT_MATERIALS = {
   pvc: {
     label: "ПВХ",
     frame: "#eef1f4",
     edge: "#aeb8c4",
     profiles: [
-      { id: "pvc60", name: "ПВХ 60 мм · 3 камеры", factor: 0.9, seals: 2 },
-      { id: "pvc70", name: "ПВХ 70 мм · 5 камер", factor: 1, seals: 2 },
-      { id: "pvc82", name: "ПВХ 82 мм · 7 камер", factor: 1.18, seals: 3 },
+      { id: "pvc60", name: "ПВХ 60 мм · 3 камеры", factor: 0.9, seals: 2, frameWidth: 60, sashWidth: 68, impostWidth: 72 },
+      { id: "pvc70", name: "ПВХ 70 мм · 5 камер", factor: 1, seals: 2, frameWidth: 70, sashWidth: 78, impostWidth: 82 },
+      { id: "pvc82", name: "ПВХ 82 мм · 7 камер", factor: 1.18, seals: 3, frameWidth: 82, sashWidth: 90, impostWidth: 94 },
     ],
     finishes: [
-      { id: "white", name: "Белый", factor: 1 },
-      { id: "anthracite", name: "Антрацит", factor: 1.13 },
-      { id: "golden-oak", name: "Золотой дуб", factor: 1.16 },
-      { id: "walnut", name: "Орех", factor: 1.16 },
+      { id: "white", name: "Белый", factor: 1, color: "#eef1f4" },
+      { id: "anthracite", name: "Антрацит", factor: 1.13, color: "#4b5159" },
+      { id: "golden-oak", name: "Золотой дуб", factor: 1.16, color: "#a66f3e" },
+      { id: "walnut", name: "Орех", factor: 1.16, color: "#70462f" },
     ],
   },
   aluminum: {
@@ -20,15 +20,15 @@ const MATERIALS = {
     frame: "#4c5868",
     edge: "#202b39",
     profiles: [
-      { id: "alu45", name: "Алюминий 45 мм · холодный", factor: 0.86, seals: 1 },
-      { id: "alu70", name: "Алюминий 70 мм · тёплый", factor: 1, seals: 2 },
-      { id: "alu90", name: "Алюминий 90 мм · тёплый+", factor: 1.24, seals: 3 },
+      { id: "alu45", name: "Алюминий 45 мм · холодный", factor: 0.86, seals: 1, frameWidth: 45, sashWidth: 52, impostWidth: 50 },
+      { id: "alu70", name: "Алюминий 70 мм · тёплый", factor: 1, seals: 2, frameWidth: 70, sashWidth: 76, impostWidth: 72 },
+      { id: "alu90", name: "Алюминий 90 мм · тёплый+", factor: 1.24, seals: 3, frameWidth: 90, sashWidth: 98, impostWidth: 92 },
     ],
     finishes: [
-      { id: "ral-white", name: "RAL 9016 белый", factor: 1 },
-      { id: "ral-anthracite", name: "RAL 7016 антрацит", factor: 1.08 },
-      { id: "ral-black", name: "RAL 9005 чёрный", factor: 1.08 },
-      { id: "anodized", name: "Анодированный", factor: 1.12 },
+      { id: "ral-white", name: "RAL 9016 белый", factor: 1, color: "#f1f1ed" },
+      { id: "ral-anthracite", name: "RAL 7016 антрацит", factor: 1.08, color: "#3b4146" },
+      { id: "ral-black", name: "RAL 9005 чёрный", factor: 1.08, color: "#17191c" },
+      { id: "anodized", name: "Анодированный", factor: 1.12, color: "#8f989f" },
     ],
   },
   wood: {
@@ -36,18 +36,48 @@ const MATERIALS = {
     frame: "#9d6742",
     edge: "#633d25",
     profiles: [
-      { id: "pine78", name: "Сосна · 78 мм", factor: 0.9, seals: 2 },
-      { id: "oak78", name: "Дуб · 78 мм", factor: 1.25, seals: 2 },
-      { id: "woodalu92", name: "Дерево–алюминий · 92 мм", factor: 1.42, seals: 3 },
+      { id: "pine78", name: "Сосна · 78 мм", factor: 0.9, seals: 2, frameWidth: 78, sashWidth: 82, impostWidth: 86 },
+      { id: "oak78", name: "Дуб · 78 мм", factor: 1.25, seals: 2, frameWidth: 78, sashWidth: 82, impostWidth: 86 },
+      { id: "woodalu92", name: "Дерево–алюминий · 92 мм", factor: 1.42, seals: 3, frameWidth: 92, sashWidth: 98, impostWidth: 100 },
     ],
     finishes: [
-      { id: "natural", name: "Натуральный лак", factor: 1 },
-      { id: "walnut", name: "Орех", factor: 1.08 },
-      { id: "wenge", name: "Венге", factor: 1.1 },
-      { id: "painted", name: "Укрывная окраска", factor: 1.12 },
+      { id: "natural", name: "Натуральный лак", factor: 1, color: "#b77a4f" },
+      { id: "walnut", name: "Орех", factor: 1.08, color: "#74492e" },
+      { id: "wenge", name: "Венге", factor: 1.1, color: "#3d2b24" },
+      { id: "painted", name: "Укрывная окраска", factor: 1.12, color: "#e5e2dc" },
     ],
   },
 };
+
+const cloneMaterials = (source = DEFAULT_MATERIALS) => JSON.parse(JSON.stringify(source));
+
+function readStoredMaterials() {
+  try {
+    const stored = JSON.parse(localStorage.getItem("oknoSmetaProfileCatalog") || "null");
+    const next = cloneMaterials();
+    Object.keys(next).forEach((materialKey) => {
+      const storedMaterial = stored?.[materialKey];
+      if (!storedMaterial) return;
+      if (Array.isArray(storedMaterial.profiles) && storedMaterial.profiles.length) {
+        next[materialKey].profiles = storedMaterial.profiles.map((profile) => {
+          const fallback = next[materialKey].profiles.find((item) => item.id === profile.id) || next[materialKey].profiles[0];
+          return { ...fallback, ...profile };
+        });
+      }
+      if (Array.isArray(storedMaterial.finishes) && storedMaterial.finishes.length) {
+        next[materialKey].finishes = storedMaterial.finishes.map((finish) => {
+          const fallback = next[materialKey].finishes.find((item) => item.id === finish.id) || next[materialKey].finishes[0];
+          return { ...fallback, ...finish };
+        });
+      }
+    });
+    return next;
+  } catch {
+    return cloneMaterials();
+  }
+}
+
+let MATERIALS = readStoredMaterials();
 
 const GLASS = {
   single: { name: "Однокамерный", detail: "24 мм", color: "#cce9f3" },
@@ -92,6 +122,61 @@ const DEFAULT_TECHNOLOGY = Object.freeze({
 
 const cloneRates = () => JSON.parse(JSON.stringify(DEFAULT_RATES));
 const cloneTechnology = () => JSON.parse(JSON.stringify(DEFAULT_TECHNOLOGY));
+const cloneData = (value) => JSON.parse(JSON.stringify(value));
+const RATES_STORAGE_KEY = "oknoSmetaRates";
+const PROJECTS_STORAGE_KEY = "oknoSmetaProjectsV1";
+
+function readStoredRates() {
+  const next = cloneRates();
+  try {
+    const stored = JSON.parse(localStorage.getItem(RATES_STORAGE_KEY) || "null");
+    if (!stored || typeof stored !== "object") return next;
+    Object.keys(next).forEach((group) => {
+      if (typeof next[group] === "object") {
+        Object.keys(next[group]).forEach((key) => {
+          const value = stored?.[group]?.[key];
+          if (typeof value === "number" && Number.isFinite(value) && value >= 0) next[group][key] = value;
+        });
+      } else {
+        const value = stored[group];
+        if (typeof value === "number" && Number.isFinite(value) && value >= 0) next[group] = value;
+      }
+    });
+    return next;
+  } catch {
+    return next;
+  }
+}
+
+function persistRates() {
+  try {
+    localStorage.setItem(RATES_STORAGE_KEY, JSON.stringify(rates));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function readStoredProjects() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(PROJECTS_STORAGE_KEY) || "[]");
+    if (!Array.isArray(stored)) return [];
+    return stored.filter(
+      (project) => project && typeof project.id === "string" && typeof project.name === "string" && Array.isArray(project.items),
+    );
+  } catch {
+    return [];
+  }
+}
+
+function persistProjects(nextProjects) {
+  try {
+    localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(nextProjects));
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function readStoredTechnology() {
   try {
@@ -109,62 +194,47 @@ function readStoredTechnology() {
   }
 }
 
-const RATES_STORAGE_KEY = "oknoSmetaRates";
-
-function readStoredRates() {
-  const defaults = cloneRates();
-  try {
-    const saved = JSON.parse(localStorage.getItem(RATES_STORAGE_KEY) || "null");
-    const merge = (base, source) => {
-      for (const [key, fallback] of Object.entries(base)) {
-        const value = source?.[key];
-        if (typeof fallback === "object") merge(fallback, value);
-        else if (typeof value === "number" && Number.isFinite(value) && value >= 0) base[key] = value;
-      }
-    };
-    merge(defaults, saved);
-  } catch {
-    return cloneRates();
-  }
-  return defaults;
-}
-
-function persistRates(reset = false) {
-  try {
-    if (reset) localStorage.removeItem(RATES_STORAGE_KEY);
-    else localStorage.setItem(RATES_STORAGE_KEY, JSON.stringify(rates));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 let rates = readStoredRates();
 let technology = readStoredTechnology();
+let catalogDraft = null;
+let catalogMaterial = "pvc";
+let catalogSequence = 0;
 let impostSequence = 10;
 let canvasLayout = null;
 let dragState = null;
-let state = {
-  material: "pvc",
-  profile: "pvc70",
-  finish: "white",
-  shape: "rect",
-  width: 1400,
-  height: 1300,
-  quantity: 1,
-  cols: 2,
-  rows: 1,
-  vImposts: [{ id: "root-v-1", position: 700 }],
-  hImposts: [],
-  defaultGlass: "double",
-  selectedPane: 0,
-  selectedField: null,
-  selectedImpost: null,
-  panes: [
-    { opening: "tiltturn", glass: "double", innerImposts: [] },
-    { opening: "fixed", glass: "double", innerImposts: [] },
-  ],
-};
+
+function createDefaultState() {
+  return {
+    material: "pvc",
+    profile: "pvc70",
+    finish: "white",
+    shape: "rect",
+    width: 1400,
+    height: 1300,
+    quantity: 1,
+    cols: 2,
+    rows: 1,
+    vImposts: [{ id: createImpostId("root", "vertical"), position: 700 }],
+    hImposts: [],
+    defaultGlass: "double",
+    selectedPane: 0,
+    selectedImpost: null,
+    panes: [
+      { opening: "tiltturn", glass: "double", innerImposts: [] },
+      { opening: "fixed", glass: "double", innerImposts: [] },
+    ],
+  };
+}
+
+let state = createDefaultState();
+let orderItems = [];
+let editingOrderItemId = null;
+let orderItemSequence = 0;
+let projects = readStoredProjects();
+let activeProjectId = null;
+let activeProjectName = "";
+let projectDirty = false;
+let currentStateBaseline = "";
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -190,6 +260,29 @@ function formatNumber(value, digits = 2) {
   }).format(value);
 }
 
+function pluralizeRu(count, one, few, many) {
+  const value = Math.abs(Number(count)) % 100;
+  const last = value % 10;
+  if (value > 10 && value < 20) return many;
+  if (last === 1) return one;
+  if (last >= 2 && last <= 4) return few;
+  return many;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function createCatalogId(prefix) {
+  catalogSequence += 1;
+  return `${prefix}-${Date.now().toString(36)}-${catalogSequence}`;
+}
+
 function getProfile() {
   return MATERIALS[state.material].profiles.find((item) => item.id === state.profile) || MATERIALS[state.material].profiles[0];
 }
@@ -199,7 +292,461 @@ function getFinish() {
 }
 
 function getTechnology() {
-  return technology[state.material];
+  const profile = getProfile();
+  const fallback = technology[state.material];
+  return {
+    frame: clamp(profile.frameWidth ?? fallback.frame, 20, 250),
+    sash: clamp(profile.sashWidth ?? fallback.sash, 20, 250),
+    impost: clamp(profile.impostWidth ?? fallback.impost, 20, 250),
+  };
+}
+
+function createOrderItemId() {
+  orderItemSequence += 1;
+  return `order-item-${Date.now().toString(36)}-${orderItemSequence}`;
+}
+
+function snapshotCurrentState() {
+  return cloneData({ ...state, selectedImpost: null });
+}
+
+function comparableCurrentState(source = state) {
+  const comparable = cloneData(source);
+  delete comparable.selectedPane;
+  delete comparable.selectedImpost;
+  return JSON.stringify(comparable);
+}
+
+function markCurrentStateBaseline() {
+  currentStateBaseline = comparableCurrentState();
+}
+
+function currentProductIsDirty() {
+  return Boolean(currentStateBaseline && comparableCurrentState() !== currentStateBaseline);
+}
+
+function isPreliminaryShape(shape = state.shape) {
+  return shape === "arch" || shape === "circle";
+}
+
+function setConfigurationError(message = "") {
+  const node = $("#configurationError");
+  node.textContent = message;
+  node.hidden = !message;
+}
+
+function validateCurrentProduct() {
+  if (!Number.isFinite(state.width) || state.width < 400 || state.width > 5000) return "Ширина изделия должна быть от 400 до 5000 мм.";
+  if (!Number.isFinite(state.height) || state.height < 400 || state.height > 4000) return "Высота изделия должна быть от 400 до 4000 мм.";
+  if (!Number.isInteger(state.quantity) || state.quantity < 1 || state.quantity > 99) return "Количество должно быть целым числом от 1 до 99.";
+  const material = MATERIALS[state.material];
+  if (!material) return "Выбран неизвестный материал профиля.";
+  if (!material.profiles.some((item) => item.id === state.profile)) return "Выбранная профильная система больше недоступна.";
+  if (!material.finishes.some((item) => item.id === state.finish)) return "Выбранный цвет или отделка больше недоступны.";
+  if (!Array.isArray(state.panes) || state.panes.length !== state.cols * state.rows) return "Количество секций не соответствует выбранной разбивке.";
+
+  const tech = getTechnology();
+  for (let index = 0; index < state.panes.length; index += 1) {
+    const pane = state.panes[index];
+    const rect = getPanePhysicalRect(index);
+    const col = index % state.cols;
+    const row = Math.floor(index / state.cols);
+    const verticalProfiles = (col === 0 ? tech.frame : tech.impost / 2) + (col === state.cols - 1 ? tech.frame : tech.impost / 2);
+    const horizontalProfiles = (row === 0 ? tech.frame : tech.impost / 2) + (row === state.rows - 1 ? tech.frame : tech.impost / 2);
+    const sashReduction = pane.opening === "fixed" ? 0 : tech.sash * 2;
+    const nestedVertical = pane.innerImposts.filter((item) => item.orientation === "vertical").length * tech.impost;
+    const nestedHorizontal = pane.innerImposts.filter((item) => item.orientation === "horizontal").length * tech.impost;
+    const minWidth = Math.ceil(verticalProfiles + sashReduction + nestedVertical + 120);
+    const minHeight = Math.ceil(horizontalProfiles + sashReduction + nestedHorizontal + 120);
+    if (rect.width < minWidth) {
+      return `Секция № ${index + 1} слишком узкая: ${Math.round(rect.width)} мм. Для выбранной конструкции требуется не менее ${minWidth} мм.`;
+    }
+    if (rect.height < minHeight) {
+      return `Секция № ${index + 1} слишком низкая: ${Math.round(rect.height)} мм. Для выбранной конструкции требуется не менее ${minHeight} мм.`;
+    }
+  }
+  return "";
+}
+
+function restoreProductState(configuration) {
+  state = cloneData(configuration);
+  state.selectedImpost = null;
+  state.selectedPane = clamp(state.selectedPane ?? 0, 0, Math.max((state.panes?.length || 1) - 1, 0));
+  updateMaterialSelects();
+  ensurePanes();
+  syncFormFromState();
+  markCurrentStateBaseline();
+  setConfigurationError();
+  renderAll();
+}
+
+function resetCurrentProduct() {
+  editingOrderItemId = null;
+  state = createDefaultState();
+  syncFormFromState();
+  markCurrentStateBaseline();
+  setConfigurationError();
+  renderAll();
+  renderOrder();
+  renderProjectToolbar();
+}
+
+function renderOrder() {
+  const container = $("#orderItems");
+  $("#orderEmpty").hidden = orderItems.length > 0;
+  container.innerHTML = orderItems
+    .map((item, index) => {
+      const material = MATERIALS[item.configuration.material];
+      const shape = SHAPES[item.configuration.shape] || item.configuration.shape;
+      const dimensions = item.configuration.shape === "circle"
+        ? `Ø ${numberFormatter.format(item.configuration.width)} мм`
+        : `${numberFormatter.format(item.configuration.width)} × ${numberFormatter.format(item.configuration.height)} мм`;
+      return `
+        <article class="order-item${item.id === editingOrderItemId ? " editing" : ""}" data-order-item-id="${escapeHtml(item.id)}">
+          <div class="order-item-title">
+            <div>
+              <strong>${escapeHtml(item.name || `Изделие ${index + 1}`)}</strong>
+              ${item.preliminary ? '<span class="preliminary-badge">Предварительно</span>' : ""}
+              ${item.id === editingOrderItemId ? '<span class="editing-badge">Редактируется</span>' : ""}
+            </div>
+            <small>${escapeHtml(material?.label || item.configuration.material)} · ${escapeHtml(shape)} · ${dimensions}<br>${item.quantity} шт. × ${formatMoney(item.unitPrice)}</small>
+          </div>
+          <div class="order-item-price">
+            <span>Сумма позиции</span>
+            <b>${formatMoney(item.total)}</b>
+          </div>
+          <div class="order-item-actions">
+            <button class="button secondary" type="button" data-order-action="edit">Редактировать</button>
+            <button class="button danger" type="button" data-order-action="delete">Удалить</button>
+          </div>
+        </article>`;
+    })
+    .join("");
+
+  const totalQuantity = orderItems.reduce((sum, item) => sum + item.quantity, 0);
+  const totalPrice = orderItems.reduce((sum, item) => sum + item.total, 0);
+  const preliminary = orderItems.some((item) => item.preliminary);
+  $("#orderPositionCount").textContent = `${orderItems.length} ${pluralizeRu(orderItems.length, "позиция", "позиции", "позиций")}`;
+  $("#orderTotalPositions").textContent = orderItems.length;
+  $("#orderTotalQuantity").textContent = totalQuantity;
+  $("#orderTotalPrice").textContent = formatMoney(totalPrice);
+  $("#orderTotalLabel").textContent = preliminary ? "Предварительная сумма заказа" : "Сумма заказа";
+  $("#saveOrderItem").textContent = editingOrderItemId ? "Сохранить изменения и добавить следующее" : "Сохранить изделие и добавить следующее";
+}
+
+function renderPrintOrder() {
+  const printOrder = $("#printOrder");
+  const hasOrder = orderItems.length > 0;
+  document.body.classList.toggle("printing-order", hasOrder);
+  if (!hasOrder) {
+    printOrder.innerHTML = "";
+    return;
+  }
+
+  const totalQuantity = orderItems.reduce((sum, item) => sum + item.quantity, 0);
+  const totalPrice = orderItems.reduce((sum, item) => sum + item.total, 0);
+  const preliminary = orderItems.some((item) => item.preliminary);
+  const printedAt = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "long", year: "numeric" }).format(new Date());
+  const positionsMarkup = orderItems
+    .map((item, itemIndex) => {
+      const configuration = item.configuration;
+      const material = MATERIALS[configuration.material];
+      const profile = material?.profiles.find((candidate) => candidate.id === configuration.profile);
+      const finish = material?.finishes.find((candidate) => candidate.id === configuration.finish);
+      const presentation = item.presentation || {};
+      const dimensions = configuration.shape === "circle"
+        ? `Ø ${numberFormatter.format(configuration.width)} мм`
+        : `${numberFormatter.format(configuration.width)} × ${numberFormatter.format(configuration.height)} мм`;
+      const specificationRows = (item.specification || [])
+        .map(
+          (line, lineIndex) => `
+            <tr>
+              <td>${lineIndex + 1}</td>
+              <td><b>${escapeHtml(line.name)}</b>${line.note ? `<small>${escapeHtml(line.note)}</small>` : ""}</td>
+              <td>${escapeHtml(line.characteristic)}</td>
+              <td>${line.unit === "шт." || line.unit === "компл." ? Math.round(line.qty) : formatNumber(line.qty)}</td>
+              <td>${escapeHtml(line.unit)}</td>
+              <td>${formatMoney(line.rate)}</td>
+              <td><b>${formatMoney(line.total)}</b></td>
+            </tr>`,
+        )
+        .join("");
+
+      return `
+        <article class="print-order-item">
+          <div class="print-order-item-header">
+            <div>
+              <span>Позиция ${itemIndex + 1}</span>
+              <h2>${escapeHtml(item.name || `Изделие ${itemIndex + 1}`)}</h2>
+              <p>${escapeHtml(presentation.material || material?.label || configuration.material)} · ${escapeHtml(presentation.shape || SHAPES[configuration.shape] || configuration.shape)} · ${dimensions}</p>
+              <p>${escapeHtml(presentation.profile || profile?.name || configuration.profile)} · ${escapeHtml(presentation.finish || finish?.name || configuration.finish)}</p>
+            </div>
+            <div class="print-order-item-total">
+              ${item.preliminary ? "<span>Предварительный расчёт</span>" : "<span>Сумма позиции</span>"}
+              <strong>${formatMoney(item.total)}</strong>
+              <small>${item.quantity} шт. × ${formatMoney(item.unitPrice)}</small>
+            </div>
+          </div>
+          ${specificationRows ? `
+            <table class="print-order-table">
+              <thead><tr><th>№</th><th>Наименование</th><th>Характеристика</th><th>Кол-во</th><th>Ед.</th><th>Цена</th><th>Сумма</th></tr></thead>
+              <tbody>${specificationRows}</tbody>
+            </table>` : '<p class="print-order-no-spec">Подробная спецификация для этой позиции не сохранена.</p>'}
+        </article>`;
+    })
+    .join("");
+
+  printOrder.innerHTML = `
+    <header class="print-order-header">
+      <div><span>ОкноСмета</span><h1>Смета заказа</h1><p>Сформировано: ${escapeHtml(printedAt)}</p></div>
+      <div class="print-order-summary">
+        <span>${orderItems.length} поз. · ${totalQuantity} ${pluralizeRu(totalQuantity, "окно", "окна", "окон")}</span>
+        <strong>${formatMoney(totalPrice)}</strong>
+        ${preliminary ? "<small>Предварительная сумма заказа</small>" : ""}
+      </div>
+    </header>
+    ${positionsMarkup}
+    <footer class="print-order-footer">
+      <span>${preliminary ? "Предварительная сумма заказа" : "Итого по заказу"}</span>
+      <strong>${formatMoney(totalPrice)}</strong>
+      <p>Расчёт не является публичной офертой. Размеры указаны по внешнему габариту рамы.</p>
+    </footer>`;
+}
+
+function createProjectId() {
+  return `project-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function projectTotals(project) {
+  return {
+    positions: project.items.length,
+    quantity: project.items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0),
+    total: project.items.reduce((sum, item) => sum + (Number(item.total) || 0), 0),
+  };
+}
+
+function renderProjectToolbar() {
+  const currentDirty = currentProductIsDirty();
+  $("#currentProjectName").textContent = activeProjectName || "Новый проект";
+  const status = $("#projectSaveStatus");
+  if (activeProjectId && !projectDirty && !currentDirty) {
+    status.textContent = "Сохранён";
+    status.classList.add("saved");
+  } else if (currentDirty) {
+    status.textContent = editingOrderItemId ? "Изменения изделия не сохранены" : "Изделие не добавлено";
+    status.classList.remove("saved");
+  } else if (projectDirty) {
+    status.textContent = "Есть изменения";
+    status.classList.remove("saved");
+  } else {
+    status.textContent = "Не сохранён";
+    status.classList.remove("saved");
+  }
+  $("#saveProject").textContent = activeProjectId ? "Сохранить изменения" : "Сохранить проект";
+}
+
+function renderProjectsList() {
+  const list = $("#projectsList");
+  const sorted = [...projects].sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+  $("#projectsEmpty").hidden = sorted.length > 0;
+  list.innerHTML = sorted
+    .map((project) => {
+      const totals = projectTotals(project);
+      const updated = new Date(project.updatedAt || project.createdAt || Date.now());
+      const updatedText = Number.isNaN(updated.getTime())
+        ? "Дата не указана"
+        : new Intl.DateTimeFormat("ru-RU", { dateStyle: "medium", timeStyle: "short" }).format(updated);
+      return `
+        <article class="project-card${project.id === activeProjectId ? " active" : ""}" data-project-id="${escapeHtml(project.id)}">
+          <div class="project-card-info">
+            <div class="project-card-title"><strong>${escapeHtml(project.name)}</strong>${project.id === activeProjectId ? "<span>Открыт</span>" : ""}</div>
+            <div class="project-card-meta">Изменён: ${escapeHtml(updatedText)}<br>${totals.positions} ${pluralizeRu(totals.positions, "позиция", "позиции", "позиций")} · ${totals.quantity} ${pluralizeRu(totals.quantity, "окно", "окна", "окон")} · ${formatMoney(totals.total)}</div>
+          </div>
+          <div class="project-card-actions">
+            <button class="button secondary" type="button" data-project-action="open">Открыть</button>
+            <button class="button danger" type="button" data-project-action="delete">Удалить</button>
+          </div>
+        </article>`;
+    })
+    .join("");
+}
+
+function hasUnsavedProjectWork() {
+  return projectDirty || currentProductIsDirty();
+}
+
+function confirmDiscardUnsavedWork(actionText) {
+  if (!hasUnsavedProjectWork()) return true;
+  return window.confirm(`Есть несохранённые изменения. ${actionText} без их сохранения?`);
+}
+
+function confirmProjectSaveWithoutCurrentProduct() {
+  if (!currentProductIsDirty()) return true;
+  const message = editingOrderItemId
+    ? "Изменения открытого изделия ещё не сохранены в заказе. Сохранить проект без этих изменений?"
+    : "Текущее изделие ещё не добавлено в заказ. Сохранить проект без него?";
+  return window.confirm(message);
+}
+
+function saveProjectRecord(name) {
+  const cleanName = String(name || "").trim();
+  if (!cleanName) return false;
+  const now = new Date().toISOString();
+  const existing = activeProjectId ? projects.find((project) => project.id === activeProjectId) : null;
+  const project = {
+    id: existing?.id || createProjectId(),
+    name: cleanName,
+    createdAt: existing?.createdAt || now,
+    updatedAt: now,
+    items: cloneData(orderItems),
+    orderItemSequence,
+  };
+  const nextProjects = existing
+    ? projects.map((candidate) => (candidate.id === existing.id ? project : candidate))
+    : [...projects, project];
+  if (!persistProjects(nextProjects)) {
+    showToast("Не удалось сохранить проект в браузере");
+    return false;
+  }
+  projects = nextProjects;
+  activeProjectId = project.id;
+  activeProjectName = project.name;
+  projectDirty = false;
+  renderProjectToolbar();
+  renderProjectsList();
+  showToast(`Проект «${project.name}» сохранён`);
+  return true;
+}
+
+function requestProjectSave() {
+  if (!orderItems.length) {
+    showToast("Добавьте в заказ хотя бы одно изделие");
+    return;
+  }
+  if (!confirmProjectSaveWithoutCurrentProduct()) return;
+  if (activeProjectId) {
+    saveProjectRecord(activeProjectName);
+    return;
+  }
+  $("#projectNameInput").value = "";
+  $("#projectNameError").hidden = true;
+  $("#projectNameDialog").showModal();
+  $("#projectNameInput").focus();
+}
+
+function openProject(projectId) {
+  const project = projects.find((candidate) => candidate.id === projectId);
+  if (!project) return;
+  if (!confirmDiscardUnsavedWork(`Открыть проект «${project.name}»`)) return;
+  orderItems = cloneData(project.items);
+  orderItemSequence = Math.max(
+    Number(project.orderItemSequence) || 0,
+    ...orderItems.map((item) => Number(String(item.name || "").match(/\d+/)?.[0]) || 0),
+    orderItems.length,
+  );
+  activeProjectId = project.id;
+  activeProjectName = project.name;
+  projectDirty = false;
+  resetCurrentProduct();
+  renderProjectsList();
+  $("#projectsDialog").close();
+  showToast(`Проект «${project.name}» открыт`);
+}
+
+function deleteProject(projectId) {
+  const project = projects.find((candidate) => candidate.id === projectId);
+  if (!project || !window.confirm(`Удалить проект «${project.name}»? Восстановить его будет невозможно.`)) return;
+  const nextProjects = projects.filter((candidate) => candidate.id !== projectId);
+  if (!persistProjects(nextProjects)) {
+    showToast("Не удалось удалить проект из браузера");
+    return;
+  }
+  projects = nextProjects;
+  if (activeProjectId === projectId) {
+    activeProjectId = null;
+    activeProjectName = "";
+    projectDirty = orderItems.length > 0;
+  }
+  renderProjectToolbar();
+  renderProjectsList();
+  showToast(`Проект «${project.name}» удалён`);
+}
+
+function startNewProject() {
+  if (!confirmDiscardUnsavedWork("Создать новый проект")) return;
+  activeProjectId = null;
+  activeProjectName = "";
+  projectDirty = false;
+  orderItems = [];
+  orderItemSequence = 0;
+  resetCurrentProduct();
+  renderProjectsList();
+  showToast("Создан новый проект");
+}
+
+function saveCurrentOrderItem() {
+  ensurePanes();
+  const validationError = validateCurrentProduct();
+  if (validationError) {
+    setConfigurationError(validationError);
+    showToast(validationError);
+    return;
+  }
+
+  setConfigurationError();
+  const calculation = buildSpecification();
+  const savedUnitPrice = Math.round(calculation.unitPrice);
+  const currentItem = editingOrderItemId ? orderItems.find((item) => item.id === editingOrderItemId) : null;
+  const nextItem = {
+    id: currentItem?.id || createOrderItemId(),
+    name: currentItem?.name || `Изделие ${orderItemSequence}`,
+    configuration: snapshotCurrentState(),
+    quantity: state.quantity,
+    unitPrice: savedUnitPrice,
+    total: savedUnitPrice * state.quantity,
+    preliminary: isPreliminaryShape(),
+    presentation: {
+      material: calculation.material.label,
+      profile: calculation.profile.name,
+      finish: calculation.finish.name,
+      shape: SHAPES[state.shape],
+    },
+    specification: cloneData(calculation.lines),
+    updatedAt: new Date().toISOString(),
+  };
+
+  if (currentItem) {
+    const index = orderItems.findIndex((item) => item.id === currentItem.id);
+    orderItems[index] = nextItem;
+    showToast(`${nextItem.name} обновлено`);
+  } else {
+    orderItems.push(nextItem);
+    showToast(`${nextItem.name} добавлено в заказ`);
+  }
+  projectDirty = true;
+  resetCurrentProduct();
+}
+
+function editOrderItem(itemId) {
+  const item = orderItems.find((candidate) => candidate.id === itemId);
+  if (!item) return;
+  editingOrderItemId = item.id;
+  restoreProductState(item.configuration);
+  renderOrder();
+  $("#saveOrderItem").scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function deleteOrderItem(itemId) {
+  const item = orderItems.find((candidate) => candidate.id === itemId);
+  if (!item || !window.confirm(`Удалить «${item.name}» из заказа?`)) return;
+  orderItems = orderItems.filter((candidate) => candidate.id !== itemId);
+  projectDirty = true;
+  if (editingOrderItemId === itemId) resetCurrentProduct();
+  else {
+    renderOrder();
+    renderProjectToolbar();
+  }
+  showToast(`${item.name} удалено`);
 }
 
 function createImpostId(scope, orientation) {
@@ -326,46 +873,24 @@ function updateMaterialSelects(reset = false) {
     .join("");
 }
 
-function getPaneFields(pane) {
-  const bounds = orientation => [
-    { id: "start", position: 0 },
-    ...pane.innerImposts.filter(item => item.orientation === orientation)
-      .sort((a, b) => a.position - b.position),
-    { id: "end", position: 1 },
-  ];
-  const xs = bounds("vertical"), ys = bounds("horizontal");
-  const fields = [];
-  for (let row = 0; row < ys.length - 1; row++) {
-    for (let col = 0; col < xs.length - 1; col++) {
-      const [left, right] = xs.slice(col, col + 2);
-      const [top, bottom] = ys.slice(row, row + 2);
-      const key = [left.id, right.id, top.id, bottom.id].join(":");
-      fields.push({ key, x: left.position, y: top.position,
-        width: right.position - left.position, height: bottom.position - top.position,
-        edges: [left.id === "start", right.id === "end", top.id === "start", bottom.id === "end"],
-        glass: pane.fieldGlass?.[key] ?? pane.glass });
-    }
-  }
-  return fields;
-}
-
-function paneGlazing(index, pane, shapeFactor = 1) {
+function paneGlazingArea(index, pane, shapeFactor = 1) {
   const rect = getPanePhysicalRect(index);
   const tech = getTechnology();
-  const col = index % state.cols, row = Math.floor(index / state.cols);
-  const outer = [col === 0, col === state.cols - 1, row === 0, row === state.rows - 1];
-  const sash = pane.opening === "fixed" ? 0 : tech.sash;
-  const issues = [];
-  const fields = getPaneFields(pane).map((field, i) => {
-    const cuts = field.edges.map((edge, side) =>
-      edge ? (outer[side] ? tech.frame : tech.impost / 2) + sash : tech.impost / 2);
-    const width = rect.width * field.width - cuts[0] - cuts[1];
-    const height = rect.height * field.height - cuts[2] - cuts[3];
-    const valid = width >= 20 && height >= 20;
-    if (!valid) issues.push(`поле ${i + 1}: недостаточно места под стекло`);
-    return { ...field, area: valid ? width * height * shapeFactor / 1_000_000 : 0 };
-  });
-  return { fields, issues, area: fields.reduce((sum, field) => sum + field.area, 0) };
+  const col = index % state.cols;
+  const row = Math.floor(index / state.cols);
+  const sideProfile = (atEdge) => (atEdge ? tech.frame : tech.impost / 2);
+  const sashReduction = pane.opening === "fixed" ? 0 : tech.sash * 2;
+  const verticalImposts = pane.innerImposts.filter((item) => item.orientation === "vertical").length;
+  const horizontalImposts = pane.innerImposts.filter((item) => item.orientation === "horizontal").length;
+  const clearWidth = Math.max(
+    20,
+    rect.width - sideProfile(col === 0) - sideProfile(col === state.cols - 1) - sashReduction - verticalImposts * tech.impost,
+  );
+  const clearHeight = Math.max(
+    20,
+    rect.height - sideProfile(row === 0) - sideProfile(row === state.rows - 1) - sashReduction - horizontalImposts * tech.impost,
+  );
+  return (clearWidth * clearHeight * shapeFactor) / 1_000_000;
 }
 
 function geometry() {
@@ -403,8 +928,6 @@ function geometry() {
   let nestedCount = 0;
   let glassUnits = 0;
   const paneGlazingAreas = [];
-  const paneGlazingFields = [];
-  const issues = [];
   state.panes.forEach((pane, index) => {
     const paneRect = getPanePhysicalRect(index);
     pane.innerImposts.forEach((item) => {
@@ -412,14 +935,11 @@ function geometry() {
       nestedImpost += item.orientation === "vertical" ? (paneRect.height / 1000) * verticalFactor : (paneRect.width / 1000) * horizontalFactor;
     });
     glassUnits += paneGlassUnits(pane);
-    const glazing = paneGlazing(index, pane, shapeFactor);
-    paneGlazingAreas[index] = glazing.area;
-    paneGlazingFields[index] = glazing.fields;
-    if (glazing.issues.length) issues.push(`Секция ${index + 1}: ${glazing.issues.join(", ")}`);
+    paneGlazingAreas[index] = paneGlazingArea(index, pane, shapeFactor);
   });
   const glazingArea = paneGlazingAreas.reduce((sum, value) => sum + value, 0);
   const impost = primaryImpost + nestedImpost;
-  return { issues, approximate: state.shape !== "rect", area, perimeter, glazingArea, paneGlazingAreas, paneGlazingFields, impost, primaryImpost, nestedImpost, nestedCount, glassUnits };
+  return { area, perimeter, glazingArea, paneGlazingAreas, impost, primaryImpost, nestedImpost, nestedCount, glassUnits };
 }
 
 function buildSpecification() {
@@ -492,13 +1012,13 @@ function buildSpecification() {
     rate: rates.bead[state.material],
   });
 
-  const glassGroups = {};
-  for (const field of dimensions.paneGlazingFields.flat()) {
-    const group = glassGroups[field.glass] ??= { fields: 0, area: 0 };
-    group.fields += 1;
-    group.area += field.area;
-  }
-
+  const glassGroups = state.panes.reduce((groups, pane, index) => {
+    const group = groups[pane.glass] || { fields: 0, area: 0 };
+    group.fields += paneGlassUnits(pane);
+    group.area += dimensions.paneGlazingAreas[index] || 0;
+    groups[pane.glass] = group;
+    return groups;
+  }, {});
   Object.entries(glassGroups).forEach(([glassKey, group]) => {
     const glass = GLASS[glassKey];
     addLine({
@@ -675,6 +1195,7 @@ function renderCanvas() {
   const sashFace = clamp(tech.sash * canvasScale, 8, 34);
   const impostFace = clamp(tech.impost * canvasScale, 7, 32);
   const material = MATERIALS[state.material];
+  const profileColor = getFinish().color || material.frame;
   const paths = shapePaths(x, y, width, height, frame);
   const box = paths.innerBox;
   const rootVerticalX = state.vImposts.map((item) => x + (item.position / state.width) * width);
@@ -693,6 +1214,7 @@ function renderCanvas() {
     const paneHeight = yBounds[row + 1] - py;
     const physical = getPanePhysicalRect(index);
     paneRects[index] = { x: px, y: py, width: paneWidth, height: paneHeight, physicalWidth: physical.width, physicalHeight: physical.height };
+    const glass = GLASS[pane.glass];
     const selected = index === state.selectedPane;
     const paneKind = pane.opening === "fixed" ? "глухой секции" : "створке";
     const paneSashFace = Math.min(sashFace, paneWidth * 0.22, paneHeight * 0.22);
@@ -707,14 +1229,14 @@ function renderCanvas() {
       const physicalPosition = item.position * (isVertical ? physical.width : physical.height);
       if (isVertical) {
         innerImpostsMarkup += `
-          <line class="impost-visible inner-impost-visible${active ? " selected" : ""}" x1="${lineX}" y1="${py}" x2="${lineX}" y2="${py + paneHeight}" stroke="${material.frame}" stroke-width="${paneImpostFace}" />
+          <line class="impost-visible inner-impost-visible${active ? " selected" : ""}" x1="${lineX}" y1="${py}" x2="${lineX}" y2="${py + paneHeight}" stroke="${profileColor}" stroke-width="${paneImpostFace}" />
           <line x1="${lineX}" y1="${py}" x2="${lineX}" y2="${py + paneHeight}" stroke="${material.edge}" stroke-width="1.2" opacity=".55" pointer-events="none" />
           <rect class="impost-grip${active ? " selected" : ""}" x="${lineX - 7}" y="${py + paneHeight / 2 - 14}" width="14" height="28" rx="7" />
           <line class="impost-hit" data-scope="pane" data-pane="${index}" data-orientation="vertical" data-id="${item.id}" x1="${lineX}" y1="${py}" x2="${lineX}" y2="${py + paneHeight}" tabindex="0" role="slider" aria-label="Вертикальный импост в ${paneKind} ${index + 1}" aria-valuenow="${Math.round(physicalPosition)}" />
           ${active ? impostValueTag(lineX, py + 18, physicalPosition, true) : ""}`;
       } else {
         innerImpostsMarkup += `
-          <line class="impost-visible inner-impost-visible${active ? " selected" : ""}" x1="${px}" y1="${lineY}" x2="${px + paneWidth}" y2="${lineY}" stroke="${material.frame}" stroke-width="${paneImpostFace}" />
+          <line class="impost-visible inner-impost-visible${active ? " selected" : ""}" x1="${px}" y1="${lineY}" x2="${px + paneWidth}" y2="${lineY}" stroke="${profileColor}" stroke-width="${paneImpostFace}" />
           <line x1="${px}" y1="${lineY}" x2="${px + paneWidth}" y2="${lineY}" stroke="${material.edge}" stroke-width="1.2" opacity=".55" pointer-events="none" />
           <rect class="impost-grip${active ? " selected" : ""}" x="${px + paneWidth / 2 - 14}" y="${lineY - 7}" width="28" height="14" rx="7" />
           <line class="impost-hit horizontal" data-scope="pane" data-pane="${index}" data-orientation="horizontal" data-id="${item.id}" x1="${px}" y1="${lineY}" x2="${px + paneWidth}" y2="${lineY}" tabindex="0" role="slider" aria-label="Горизонтальный импост в ${paneKind} ${index + 1}" aria-valuenow="${Math.round(physicalPosition)}" />
@@ -722,33 +1244,16 @@ function renderCanvas() {
       }
     });
 
-    const fields = getPaneFields(pane);
-    const activeField = fields.find(field => field.key === state.selectedField) ?? fields[0];
-    const marks = fields.map((field, fieldIndex) => {
-      const fx = px + field.x * paneWidth, fy = py + field.y * paneHeight;
-      const fw = field.width * paneWidth, fh = field.height * paneHeight;
-      const box = `x="${fx}" y="${fy}" width="${fw}" height="${fh}"`;
-      return {
-        fill: `<rect ${box} fill="${GLASS[field.glass].color}" />`,
-        hit: `<rect class="pane-hit" ${box} data-pane="${index}" data-field="${field.key}"
-          fill="transparent" tabindex="0" role="button"
-          aria-label="Секция ${index + 1}, поле ${fieldIndex + 1}" />`,
-        mark: selected && !state.selectedImpost && field === activeField
-          ? `<rect class="pane-selected" x="${fx + 3}" y="${fy + 3}"
-            width="${Math.max(0, fw - 6)}" height="${Math.max(0, fh - 6)}" />` : "",
-      };
-    });
-
     panesMarkup += `
       <g class="pane" data-index="${index}" clip-path="url(#innerClip)">
-        ${marks.map(item => item.fill).join("")}
+        <rect x="${px}" y="${py}" width="${paneWidth}" height="${paneHeight}" fill="${glass.color}" />
         <rect x="${px}" y="${py}" width="${paneWidth}" height="${paneHeight}" fill="url(#glassSheen)" opacity="0.55" />
-        ${pane.opening !== "fixed" ? `<rect x="${px + paneSashFace / 2}" y="${py + paneSashFace / 2}" width="${Math.max(paneWidth - paneSashFace, 2)}" height="${Math.max(paneHeight - paneSashFace, 2)}" fill="none" stroke="${material.frame}" stroke-width="${paneSashFace}" pointer-events="none" />` : ""}
+        ${pane.opening !== "fixed" ? `<rect x="${px + paneSashFace / 2}" y="${py + paneSashFace / 2}" width="${Math.max(paneWidth - paneSashFace, 2)}" height="${Math.max(paneHeight - paneSashFace, 2)}" fill="none" stroke="${profileColor}" stroke-width="${paneSashFace}" pointer-events="none" />` : ""}
         ${openingSymbol(pane.opening, px, py, paneWidth, paneHeight)}
-        ${marks.map(item => item.mark).join("")}
+        ${selected ? `<rect class="pane-selected" x="${px + 3}" y="${py + 3}" width="${Math.max(paneWidth - 6, 2)}" height="${Math.max(paneHeight - 6, 2)}" />` : ""}
         <circle cx="${px + paneWidth / 2}" cy="${py + paneHeight / 2}" r="14" fill="rgba(255,255,255,.82)" stroke="rgba(53,80,105,.22)" />
         <text class="pane-number" x="${px + paneWidth / 2}" y="${py + paneHeight / 2 + 4}">${index + 1}</text>
-        ${marks.map(item => item.hit).join("")}
+        <rect class="pane-hit" data-pane="${index}" x="${px}" y="${py}" width="${paneWidth}" height="${paneHeight}" fill="transparent" tabindex="0" role="button" aria-label="Настроить секцию ${index + 1}" />
         ${innerImpostsMarkup}
       </g>`;
   });
@@ -758,7 +1263,7 @@ function renderCanvas() {
     const lineX = rootVerticalX[index];
     const active = isSelectedImpost("root", "vertical", item.id);
     rootImpostsMarkup += `
-      <line class="impost-visible${active ? " selected" : ""}" x1="${lineX}" y1="${box.y - 2}" x2="${lineX}" y2="${box.y + box.height + 2}" stroke="${material.frame}" stroke-width="${impostFace}" />
+      <line class="impost-visible${active ? " selected" : ""}" x1="${lineX}" y1="${box.y - 2}" x2="${lineX}" y2="${box.y + box.height + 2}" stroke="${profileColor}" stroke-width="${impostFace}" />
       <line x1="${lineX}" y1="${box.y - 2}" x2="${lineX}" y2="${box.y + box.height + 2}" stroke="${material.edge}" stroke-width="1.4" opacity=".55" pointer-events="none" />
       <rect class="impost-grip${active ? " selected" : ""}" x="${lineX - 8}" y="${box.y + box.height / 2 - 18}" width="16" height="36" rx="8" />
       <line class="impost-hit" data-scope="root" data-orientation="vertical" data-id="${item.id}" x1="${lineX}" y1="${box.y - 2}" x2="${lineX}" y2="${box.y + box.height + 2}" tabindex="0" role="slider" aria-label="Вертикальный импост рамы" aria-valuemin="0" aria-valuemax="${state.width}" aria-valuenow="${Math.round(item.position)}" />
@@ -768,7 +1273,7 @@ function renderCanvas() {
     const lineY = rootHorizontalY[index];
     const active = isSelectedImpost("root", "horizontal", item.id);
     rootImpostsMarkup += `
-      <line class="impost-visible${active ? " selected" : ""}" x1="${box.x - 2}" y1="${lineY}" x2="${box.x + box.width + 2}" y2="${lineY}" stroke="${material.frame}" stroke-width="${impostFace}" />
+      <line class="impost-visible${active ? " selected" : ""}" x1="${box.x - 2}" y1="${lineY}" x2="${box.x + box.width + 2}" y2="${lineY}" stroke="${profileColor}" stroke-width="${impostFace}" />
       <line x1="${box.x - 2}" y1="${lineY}" x2="${box.x + box.width + 2}" y2="${lineY}" stroke="${material.edge}" stroke-width="1.4" opacity=".55" pointer-events="none" />
       <rect class="impost-grip${active ? " selected" : ""}" x="${box.x + box.width / 2 - 18}" y="${lineY - 8}" width="36" height="16" rx="8" />
       <line class="impost-hit horizontal" data-scope="root" data-orientation="horizontal" data-id="${item.id}" x1="${box.x - 2}" y1="${lineY}" x2="${box.x + box.width + 2}" y2="${lineY}" tabindex="0" role="slider" aria-label="Горизонтальный импост рамы" aria-valuemin="0" aria-valuemax="${state.height}" aria-valuenow="${Math.round(item.position)}" />
@@ -793,7 +1298,7 @@ function renderCanvas() {
         <path d="M 8 1 L 1 4 L 8 7" fill="none" stroke="#8996a8" stroke-width="1.2" />
       </marker>
     </defs>
-    <g filter="url(#windowShadow)" fill="${material.frame}" stroke="${material.edge}" stroke-width="2.2">${paths.outer}</g>
+    <g filter="url(#windowShadow)" fill="${profileColor}" stroke="${material.edge}" stroke-width="2.2">${paths.outer}</g>
     <g fill="#bfe3ef" stroke="${material.edge}" stroke-width="1.6">${paths.inner}</g>
     <g clip-path="url(#innerClip)">${panesMarkup}${rootImpostsMarkup}</g>
     <g class="dimensions">
@@ -814,7 +1319,6 @@ function renderCanvas() {
   $$("#windowCanvas .pane-hit").forEach((node) => {
     const choose = () => {
       state.selectedPane = Number(node.dataset.pane);
-      state.selectedField = node.dataset.field;
       state.selectedImpost = null;
       renderAll();
     };
@@ -1005,11 +1509,7 @@ function renderInspector() {
   $("#impostInspector").hidden = true;
   $("#selectedPaneName").textContent = `№ ${state.selectedPane + 1}`;
   $("#openingType").value = pane.opening;
-  const fields = getPaneFields(pane);
-  const field = fields.find(item => item.key === state.selectedField) ?? fields[0];
-  state.selectedField = field.key;
-  $("#paneGlass").value = field.glass;
-  if (fields.length > 1) $("#selectedPaneName").textContent += ` · поле ${fields.indexOf(field) + 1}`;
+  $("#paneGlass").value = pane.glass;
   const innerCount = pane.innerImposts.length;
   const paneKind = pane.opening === "fixed" ? "глухой секции" : "створке";
   $("#innerImpostHint").textContent = innerCount
@@ -1019,8 +1519,8 @@ function renderInspector() {
 
 function renderSummary(calculation) {
   const totalArea = calculation.area * state.quantity;
-  $("#totalPrice").textContent = calculation.issues.length ? "—" : formatMoney(calculation.total);
-  $("#unitPrice").textContent = calculation.issues.length ? "Исправьте размеры секций" : `${calculation.approximate ? "Предварительно: " : ""}${formatMoney(calculation.unitPrice)} за одно окно`;
+  $("#totalPrice").textContent = formatMoney(calculation.total);
+  $("#unitPrice").textContent = `${formatMoney(calculation.unitPrice)} за одно окно`;
   $("#summaryArea").textContent = `${formatNumber(totalArea)} м²`;
   $("#summarySashes").textContent = `${calculation.sashCount * state.quantity}`;
   $("#summaryPanes").textContent = `${calculation.glassUnits * state.quantity}`;
@@ -1031,19 +1531,28 @@ function renderSummary(calculation) {
   $("#summaryTechnology").textContent = `рама ${tech.frame} · створка ${tech.sash} · импост ${tech.impost} мм`;
   $("#summaryShape").textContent = SHAPES[state.shape];
   $("#summaryFinish").textContent = calculation.finish.name;
-  $("#specTotal").textContent = calculation.issues.length ? "—" : formatMoney(calculation.total);
+  $("#specTotal").textContent = formatMoney(calculation.total);
   $("#editorDimensions").textContent = `${numberFormatter.format(state.width)} × ${numberFormatter.format(state.height)} мм`;
   $("#editorArea").textContent = `${formatNumber(calculation.area)} м²`;
+
+  const preliminary = isPreliminaryShape();
+  $("#currentEstimateStatus").textContent = preliminary ? "Предварительный расчёт" : "Демонстрационный расчёт";
+  $("#currentEstimateHint").textContent = preliminary
+    ? "Арочные и круглые изделия требуют проверки технологии и окончательной цены."
+    : "Замените тарифы на ваши в разделе «Прайс».";
+
+  const savedItem = editingOrderItemId ? orderItems.find((item) => item.id === editingOrderItemId) : null;
+  const currentRoundedTotal = Math.round(calculation.unitPrice) * state.quantity;
+  const priceChanged = savedItem && savedItem.total !== currentRoundedTotal;
+  $("#savedPriceComparison").hidden = !priceChanged;
+  if (priceChanged) {
+    $("#savedItemPrice").textContent = formatMoney(savedItem.total);
+    $("#currentItemPrice").textContent = formatMoney(currentRoundedTotal);
+  }
 }
 
 function renderSpecification(calculation) {
-  const target = $("#specificationRows");
-  const notice = (text) => `<tr><td colspan="7">${text}</td></tr>`;
-  if (calculation.issues.length) {
-    target.innerHTML = calculation.issues.map(notice).join("");
-    return;
-  }
-  target.innerHTML = (calculation.approximate ? notice("Предварительная смета: геометрия арки или круга рассчитана приближённо.") : "") + calculation.lines
+  $("#specificationRows").innerHTML = calculation.lines
     .map(
       (line, index) => `
         <tr>
@@ -1089,28 +1598,22 @@ function renderAll() {
   renderSummary(calculation);
   renderSpecification(calculation);
   updateActiveControls();
-}
-
-function resetPaneSettings() {
-  state.panes = [];
-  state.selectedPane = 0;
-  state.selectedField = null;
-  state.selectedImpost = null;
-}
-
-function confirmGridChange() {
-  if (window.confirm("При изменении разбивки настройки всех секций будут сброшены. Продолжить?")) return true;
-  $("#columns").value = state.cols;
-  $("#rows").value = state.rows;
-  return false;
+  renderProjectToolbar();
 }
 
 function setSplit(cols, rows) {
   const nextCols = clamp(cols, 1, 4);
   const nextRows = clamp(rows, 1, 3);
   if (nextCols === state.cols && nextRows === state.rows) return;
-  if (!confirmGridChange()) return;
-  resetPaneSettings();
+  const hasSectionSettings = state.panes.some(
+    (pane) => pane.opening !== "fixed" || pane.glass !== state.defaultGlass || pane.innerImposts.length > 0,
+  );
+  if (hasSectionSettings && !window.confirm("Изменение сетки сбросит створки, стеклопакеты и вложенные импосты секций. Продолжить?")) {
+    $("#columns").value = state.cols;
+    $("#rows").value = state.rows;
+    updateActiveControls();
+    return;
+  }
   state.vImposts = makeEvenImposts(nextCols - 1, state.width, "vertical");
   state.hImposts = makeEvenImposts(nextRows - 1, state.height, "horizontal");
   state.cols = nextCols;
@@ -1196,7 +1699,7 @@ function bindEvents() {
 
   $("#defaultGlass").addEventListener("change", (event) => {
     state.defaultGlass = event.target.value;
-    state.panes = state.panes.map((pane) => ({ ...pane, glass: state.defaultGlass, fieldGlass: {} }));
+    state.panes = state.panes.map((pane) => ({ ...pane, glass: state.defaultGlass }));
     renderAll();
   });
 
@@ -1205,22 +1708,13 @@ function bindEvents() {
     renderAll();
   });
   $("#paneGlass").addEventListener("change", (event) => {
-    const pane = state.panes[state.selectedPane];
-    const fields = getPaneFields(pane);
-    const field = fields.find(item => item.key === state.selectedField) ?? fields[0];
-    if (fields.length === 1) {
-      pane.glass = event.target.value;
-      pane.fieldGlass = {};
-    } else {
-      pane.fieldGlass ??= {};
-      pane.fieldGlass[field.key] = event.target.value;
-    }
+    state.panes[state.selectedPane].glass = event.target.value;
     renderAll();
   });
   $("#applyGlassToAll").addEventListener("click", () => {
-    const glass = $("#paneGlass").value;
+    const glass = state.panes[state.selectedPane].glass;
     state.defaultGlass = glass;
-    state.panes = state.panes.map((pane) => ({ ...pane, glass, fieldGlass: {} }));
+    state.panes = state.panes.map((pane) => ({ ...pane, glass }));
     $("#defaultGlass").value = glass;
     renderAll();
     showToast("Стеклопакет применён ко всем секциям");
@@ -1249,8 +1743,6 @@ function bindEvents() {
     const record = getSelectedImpostRecord();
     if (!record) return;
     if (record.selected.scope === "root") {
-      if (!confirmGridChange()) return;
-      resetPaneSettings();
       const collection = record.collection;
       const index = collection.findIndex((item) => item.id === record.item.id);
       const size = record.selected.orientation === "vertical" ? state.width : state.height;
@@ -1270,8 +1762,6 @@ function bindEvents() {
     const record = getSelectedImpostRecord();
     if (!record) return;
     if (record.selected.scope === "root") {
-      if (!confirmGridChange()) return;
-      resetPaneSettings();
       const collection = record.selected.orientation === "vertical" ? state.vImposts : state.hImposts;
       const index = collection.findIndex((item) => item.id === record.item.id);
       collection.splice(index, 1);
@@ -1288,36 +1778,56 @@ function bindEvents() {
 
   $("#scrollToSpec").addEventListener("click", () => $("#specification").scrollIntoView({ behavior: "smooth", block: "start" }));
   $("#printEstimate").addEventListener("click", () => {
-    const { issues } = buildSpecification();
-    if (issues.length) return showToast(issues[0]);
+    renderPrintOrder();
     window.print();
+  });
+  $("#saveOrderItem").addEventListener("click", saveCurrentOrderItem);
+  $("#orderItems").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-order-action]");
+    const item = event.target.closest("[data-order-item-id]");
+    if (!button || !item) return;
+    if (button.dataset.orderAction === "edit") editOrderItem(item.dataset.orderItemId);
+    if (button.dataset.orderAction === "delete") deleteOrderItem(item.dataset.orderItemId);
+  });
+  $("#newProject").addEventListener("click", startNewProject);
+  $("#saveProject").addEventListener("click", requestProjectSave);
+  $("#myProjects").addEventListener("click", () => {
+    renderProjectsList();
+    $("#projectsDialog").showModal();
+  });
+  $("#projectNameForm").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const name = $("#projectNameInput").value.trim();
+    if (!name) {
+      $("#projectNameError").textContent = "Введите название проекта";
+      $("#projectNameError").hidden = false;
+      return;
+    }
+    if (saveProjectRecord(name)) $("#projectNameDialog").close();
+  });
+  ["#cancelProjectName", "#closeProjectNameDialog"].forEach((selector) => {
+    $(selector).addEventListener("click", () => $("#projectNameDialog").close());
+  });
+  $("#closeProjectsDialog").addEventListener("click", () => $("#projectsDialog").close());
+  $("#projectsList").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-project-action]");
+    const card = event.target.closest("[data-project-id]");
+    if (!button || !card) return;
+    if (button.dataset.projectAction === "open") openProject(card.dataset.projectId);
+    if (button.dataset.projectAction === "delete") deleteProject(card.dataset.projectId);
+  });
+  ["#projectNameDialog", "#projectsDialog"].forEach((selector) => {
+    $(selector).addEventListener("click", (event) => {
+      if (event.target === $(selector)) $(selector).close();
+    });
   });
 
   $("#newCalculation").addEventListener("click", () => {
-    if (!window.confirm("Начать новый расчёт? Текущая конфигурация будет сброшена.")) return;
-    state = {
-      material: "pvc",
-      profile: "pvc70",
-      finish: "white",
-      shape: "rect",
-      width: 1400,
-      height: 1300,
-      quantity: 1,
-      cols: 2,
-      rows: 1,
-      vImposts: [{ id: createImpostId("root", "vertical"), position: 700 }],
-      hImposts: [],
-      defaultGlass: "double",
-      selectedPane: 0,
-      selectedField: null,
-      selectedImpost: null,
-      panes: [
-        { opening: "tiltturn", glass: "double", innerImposts: [] },
-        { opening: "fixed", glass: "double", innerImposts: [] },
-      ],
-    };
-    syncFormFromState();
-    renderAll();
+    const message = editingOrderItemId
+      ? "Отменить редактирование позиции? Несохранённые изменения текущего изделия будут потеряны."
+      : "Начать настройку нового изделия? Текущая конфигурация будет сброшена, список заказа сохранится.";
+    if (!window.confirm(message)) return;
+    resetCurrentProduct();
     showToast("Создан новый расчёт");
   });
 
@@ -1332,36 +1842,58 @@ function bindEvents() {
   });
   $("#savePrices").addEventListener("click", () => {
     readPriceForm();
-    const saved = persistRates();
+    if (!persistRates()) {
+      showToast("Не удалось сохранить прайс в браузере");
+      return;
+    }
     $("#pricesDialog").close();
     renderAll();
-    showToast(saved ? "Новые тарифы сохранены" : "Тарифы применены, но браузер не сохранил их");
+    showToast("Новые тарифы сохранены и применены");
   });
   $("#resetPrices").addEventListener("click", () => {
     rates = cloneRates();
-    const saved = persistRates(true);
+    try {
+      localStorage.removeItem(RATES_STORAGE_KEY);
+    } catch {
+      showToast("Не удалось очистить сохранённый прайс");
+      return;
+    }
     populatePriceForm();
     renderAll();
-    showToast(saved ? "Демонстрационные тарифы восстановлены" : "Прайс сброшен только на этой странице");
+    showToast("Демонстрационные тарифы восстановлены");
   });
   $$("[data-settings-tab]").forEach((button) => {
     button.addEventListener("click", () => setSettingsTab(button.dataset.settingsTab));
   });
+  $$("[data-catalog-material]").forEach((button) => {
+    button.addEventListener("click", () => {
+      readCatalogDraftFromEditor();
+      catalogMaterial = button.dataset.catalogMaterial;
+      renderTechnologyCatalog();
+    });
+  });
+  $("#technologyCatalogEditor").addEventListener("click", handleCatalogAction);
   $("#saveTechnology").addEventListener("click", () => {
     readTechnologyForm();
     $("#pricesDialog").close();
     renderAll();
-    showToast("Технологические размеры сохранены");
+    showToast("Каталог профильных систем сохранён");
   });
   $("#resetTechnology").addEventListener("click", () => {
-    technology = cloneTechnology();
-    localStorage.removeItem("oknoSmetaTechnology");
-    populateTechnologyForm();
-    renderAll();
-    showToast("Стандартные размеры профилей восстановлены");
+    catalogDraft = cloneMaterials();
+    catalogMaterial = state.material;
+    renderTechnologyCatalog();
+    showToast("Стандартный каталог подготовлен — нажмите «Сохранить каталог»");
   });
 
   bindCanvasDragging();
+  window.addEventListener("beforeprint", renderPrintOrder);
+  window.addEventListener("afterprint", () => document.body.classList.remove("printing-order"));
+  window.addEventListener("beforeunload", (event) => {
+    if (!hasUnsavedProjectWork()) return;
+    event.preventDefault();
+    event.returnValue = "";
+  });
 }
 
 function syncFormFromState() {
@@ -1405,18 +1937,6 @@ const PRICE_BINDINGS = {
   markup: ["markup"],
 };
 
-const TECHNOLOGY_BINDINGS = {
-  pvcFrameWidth: ["pvc", "frame"],
-  pvcSashWidth: ["pvc", "sash"],
-  pvcImpostWidth: ["pvc", "impost"],
-  aluminumFrameWidth: ["aluminum", "frame"],
-  aluminumSashWidth: ["aluminum", "sash"],
-  aluminumImpostWidth: ["aluminum", "impost"],
-  woodFrameWidth: ["wood", "frame"],
-  woodSashWidth: ["wood", "sash"],
-  woodImpostWidth: ["wood", "impost"],
-};
-
 function getRate(path) {
   return path.reduce((value, key) => value[key], rates);
 }
@@ -1450,18 +1970,157 @@ function setSettingsTab(tab) {
   });
 }
 
-function populateTechnologyForm() {
-  Object.entries(TECHNOLOGY_BINDINGS).forEach(([name, [material, part]]) => {
-    $("#pricesForm").elements[name].value = technology[material][part];
+function updateCatalogMaterialTabs() {
+  $$('[data-catalog-material]').forEach((button) => {
+    const active = button.dataset.catalogMaterial === catalogMaterial;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
   });
 }
 
-function readTechnologyForm() {
-  Object.entries(TECHNOLOGY_BINDINGS).forEach(([name, [material, part]]) => {
-    const input = $("#pricesForm").elements[name];
-    technology[material][part] = clamp(input.value, 20, 250);
+function renderTechnologyCatalog() {
+  if (!catalogDraft) catalogDraft = cloneMaterials(MATERIALS);
+  const material = catalogDraft[catalogMaterial];
+  const profileRows = material.profiles
+    .map(
+      (profile) => `
+        <article class="catalog-profile-card" data-profile-id="${escapeHtml(profile.id)}">
+          <label class="catalog-field catalog-name-field">
+            <span>Название системы</span>
+            <input data-profile-field="name" value="${escapeHtml(profile.name)}" maxlength="80" required />
+          </label>
+          <label class="catalog-field">
+            <span>Рама, мм</span>
+            <input type="number" data-profile-field="frameWidth" value="${clamp(profile.frameWidth, 20, 250)}" min="20" max="250" />
+          </label>
+          <label class="catalog-field">
+            <span>Створка, мм</span>
+            <input type="number" data-profile-field="sashWidth" value="${clamp(profile.sashWidth, 20, 250)}" min="20" max="250" />
+          </label>
+          <label class="catalog-field">
+            <span>Импост, мм</span>
+            <input type="number" data-profile-field="impostWidth" value="${clamp(profile.impostWidth, 20, 250)}" min="20" max="250" />
+          </label>
+          <label class="catalog-field">
+            <span>Коэффициент цены</span>
+            <input type="number" data-profile-field="factor" value="${Number(profile.factor) || 1}" min="0.1" max="5" step="0.01" />
+          </label>
+          <label class="catalog-field">
+            <span>Контуры уплотнения</span>
+            <input type="number" data-profile-field="seals" value="${clamp(profile.seals, 1, 5)}" min="1" max="5" />
+          </label>
+          <button class="catalog-remove-button" type="button" data-catalog-action="remove-profile" aria-label="Удалить профильную систему">Удалить</button>
+        </article>`,
+    )
+    .join("");
+
+  const finishRows = material.finishes
+    .map(
+      (finish) => `
+        <article class="catalog-color-row" data-finish-id="${escapeHtml(finish.id)}">
+          <label class="catalog-color-picker" title="Выбрать цвет">
+            <input type="color" data-finish-field="color" value="${escapeHtml(finish.color || material.frame)}" />
+          </label>
+          <label class="catalog-field catalog-color-name">
+            <span>Название цвета</span>
+            <input data-finish-field="name" value="${escapeHtml(finish.name)}" maxlength="60" required />
+          </label>
+          <label class="catalog-field catalog-color-factor">
+            <span>Коэффициент цены</span>
+            <input type="number" data-finish-field="factor" value="${Number(finish.factor) || 1}" min="0.1" max="5" step="0.01" />
+          </label>
+          <button class="catalog-remove-button" type="button" data-catalog-action="remove-finish" aria-label="Удалить цвет">Удалить</button>
+        </article>`,
+    )
+    .join("");
+
+  $("#technologyCatalogEditor").innerHTML = `
+    <section class="catalog-section">
+      <div class="catalog-section-header">
+        <div><h3>Профильные системы</h3><span>${material.profiles.length} шт.</span></div>
+        <button class="button ghost catalog-add-button" type="button" data-catalog-action="add-profile">+ Добавить систему</button>
+      </div>
+      <div class="catalog-profile-list">${profileRows}</div>
+    </section>
+    <section class="catalog-section">
+      <div class="catalog-section-header">
+        <div><h3>Цвета профиля</h3><span>${material.finishes.length} шт.</span></div>
+        <button class="button ghost catalog-add-button" type="button" data-catalog-action="add-finish">+ Добавить цвет</button>
+      </div>
+      <div class="catalog-color-list">${finishRows}</div>
+    </section>`;
+  updateCatalogMaterialTabs();
+}
+
+function readCatalogDraftFromEditor() {
+  if (!catalogDraft) return;
+  const material = catalogDraft[catalogMaterial];
+  $$("#technologyCatalogEditor [data-profile-id]").forEach((row) => {
+    const profile = material.profiles.find((item) => item.id === row.dataset.profileId);
+    if (!profile) return;
+    profile.name = row.querySelector('[data-profile-field="name"]').value.trim() || "Новая профильная система";
+    profile.frameWidth = clamp(row.querySelector('[data-profile-field="frameWidth"]').value, 20, 250);
+    profile.sashWidth = clamp(row.querySelector('[data-profile-field="sashWidth"]').value, 20, 250);
+    profile.impostWidth = clamp(row.querySelector('[data-profile-field="impostWidth"]').value, 20, 250);
+    profile.factor = clamp(row.querySelector('[data-profile-field="factor"]').value, 0.1, 5);
+    profile.seals = Math.round(clamp(row.querySelector('[data-profile-field="seals"]').value, 1, 5));
   });
-  localStorage.setItem("oknoSmetaTechnology", JSON.stringify(technology));
+  $$("#technologyCatalogEditor [data-finish-id]").forEach((row) => {
+    const finish = material.finishes.find((item) => item.id === row.dataset.finishId);
+    if (!finish) return;
+    finish.name = row.querySelector('[data-finish-field="name"]').value.trim() || "Новый цвет";
+    finish.color = row.querySelector('[data-finish-field="color"]').value;
+    finish.factor = clamp(row.querySelector('[data-finish-field="factor"]').value, 0.1, 5);
+  });
+}
+
+function handleCatalogAction(event) {
+  const button = event.target.closest("[data-catalog-action]");
+  if (!button) return;
+  readCatalogDraftFromEditor();
+  const material = catalogDraft[catalogMaterial];
+  if (button.dataset.catalogAction === "add-profile") {
+    const defaults = DEFAULT_MATERIALS[catalogMaterial].profiles[0];
+    material.profiles.push({
+      id: createCatalogId(`${catalogMaterial}-profile`),
+      name: "Новая профильная система",
+      factor: 1,
+      seals: defaults.seals,
+      frameWidth: defaults.frameWidth,
+      sashWidth: defaults.sashWidth,
+      impostWidth: defaults.impostWidth,
+    });
+  } else if (button.dataset.catalogAction === "remove-profile") {
+    if (material.profiles.length === 1) {
+      showToast("Нельзя удалить последнюю профильную систему");
+      return;
+    }
+    const row = button.closest("[data-profile-id]");
+    material.profiles = material.profiles.filter((item) => item.id !== row.dataset.profileId);
+  } else if (button.dataset.catalogAction === "add-finish") {
+    material.finishes.push({ id: createCatalogId(`${catalogMaterial}-color`), name: "Новый цвет", factor: 1, color: material.frame });
+  } else if (button.dataset.catalogAction === "remove-finish") {
+    if (material.finishes.length === 1) {
+      showToast("Нельзя удалить последний цвет");
+      return;
+    }
+    const row = button.closest("[data-finish-id]");
+    material.finishes = material.finishes.filter((item) => item.id !== row.dataset.finishId);
+  }
+  renderTechnologyCatalog();
+}
+
+function populateTechnologyForm() {
+  catalogDraft = cloneMaterials(MATERIALS);
+  catalogMaterial = state.material;
+  renderTechnologyCatalog();
+}
+
+function readTechnologyForm() {
+  readCatalogDraftFromEditor();
+  MATERIALS = cloneMaterials(catalogDraft);
+  localStorage.setItem("oknoSmetaProfileCatalog", JSON.stringify(MATERIALS));
+  updateMaterialSelects();
 }
 
 function exposeAgentTools() {
@@ -1512,10 +2171,6 @@ function exposeAgentTools() {
           annotations: { readOnlyHint: false, untrustedContentHint: false },
           execute: async (rawInput) => {
             const input = validateConfiguration(rawInput);
-        if ((input.columns !== undefined && input.columns !== state.cols) ||
-            (input.rows !== undefined && input.rows !== state.rows)) {
-          throw new Error("Измените разбивку в интерфейсе и подтвердите сброс настроек секций.");
-        }
             if (input.material) {
               state.material = input.material;
               updateMaterialSelects(true);
@@ -1524,6 +2179,8 @@ function exposeAgentTools() {
             if (input.width) state.width = input.width;
             if (input.height) state.height = input.height;
             if (state.shape === "circle") state.height = state.width;
+            if (input.columns) state.vImposts = makeEvenImposts(input.columns - 1, state.width, "vertical");
+            if (input.rows) state.hImposts = makeEvenImposts(input.rows - 1, state.height, "horizontal");
             if (input.quantity) state.quantity = input.quantity;
             state.selectedImpost = null;
             ensurePanes();
@@ -1548,10 +2205,8 @@ function exposeAgentTools() {
           execute: async (input) => {
             if (!input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).length) throw new Error("Инструмент не принимает параметры");
             const calculation = buildSpecification();
-            if (calculation.issues.length) return { total: null, approximate: calculation.approximate, issues: calculation.issues };
             return {
               total: Math.round(calculation.total),
-              approximate: calculation.approximate,
               unitPrice: Math.round(calculation.unitPrice),
               quantity: state.quantity,
               specification: calculation.lines.map((line) => ({
@@ -1574,6 +2229,9 @@ function exposeAgentTools() {
 
 updateMaterialSelects();
 syncFormFromState();
+markCurrentStateBaseline();
 bindEvents();
 renderAll();
+renderOrder();
+renderProjectsList();
 exposeAgentTools();
