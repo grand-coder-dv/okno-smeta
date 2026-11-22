@@ -1249,22 +1249,23 @@ function openingSymbol(type, x, y, width, height, side) {
   return paths;
 }
 
-function impostValueTag(x, y, value, item, paneIndex = null) {
-  const inner = paneIndex !== null;
-  const axis = item.orientation === "vertical" ? "от левого края" : "от верхнего края";
-  const origin = inner ? "секции" : "рамы";
+function axisDimension(vertical, start, end, edge, track, value, item, paneIndex) {
+  const line = (a, b, c, d, arrows = false) => `<line class="dimension-line"
+    x1="${vertical ? b : a}" y1="${vertical ? a : b}"
+    x2="${vertical ? d : c}" y2="${vertical ? c : d}"
+    ${arrows ? 'marker-start="url(#dimArrow)" marker-end="url(#dimArrow)"' : 'opacity=".45"'}/>`;
+  const mid = (start + end) / 2;
   const text = `${Math.round(value)} мм`;
-  const width = Math.max(58, text.length * 7 + 14);
-  return `<g class="impost-value-tag${inner ? " inner" : ""}"
-    data-impost-dimension data-scope="${inner ? "pane" : "root"}"
-    data-id="${escapeHtml(item.id)}" data-orientation="${item.orientation}"
-    ${inner ? `data-pane="${paneIndex}"` : ""}
-    tabindex="0" role="button" style="cursor:pointer"
-    aria-label="Изменить ${text} ${axis} ${origin}">
-    <title>Изменить ${text} ${axis} ${origin}</title>
-    <rect x="${x - width / 2}" y="${y - 12}" width="${width}" height="24" rx="7" />
-    <text x="${x}" y="${y + 4}">${text}</text>
-  </g>`;
+  const inner = paneIndex != null;
+  return `<g>${line(start, edge, start, track)}${line(end, edge, end, track)}
+    ${line(start, track, end, track, true)}
+    <g transform="translate(${vertical ? track : mid} ${vertical ? mid : track}) ${vertical ? 'rotate(-90)' : ''}"
+       data-impost-dimension data-scope="${inner ? 'pane' : 'root'}" data-id="${escapeHtml(item.id)}"
+       data-orientation="${item.orientation}" ${inner ? `data-pane="${paneIndex}"` : ''}
+       tabindex="0" role="button" style="cursor:pointer" aria-label="Изменить осевой размер ${text}">
+      <rect x="-43" y="-12" width="86" height="24" rx="6" fill="#eef2f6"/>
+      <text class="dimension-text" x="0" y="5" pointer-events="none">${text}</text>
+    </g></g>`;
 }
 
 function isSelectedImpost(scope, orientation, id, paneIndex = null) {
@@ -1302,6 +1303,18 @@ function renderCanvas() {
   const yBounds = [box.y, ...rootHorizontalY, box.y + box.height];
   const paneRects = [];
   const axisDimensions = [];
+  const tracks = [[], []];
+  const addAxis = (vertical, start, end, value, item, index = null) => {
+    const rows = tracks[Number(vertical)];
+    const mid = (start + end) / 2;
+    const range = [Math.min(start, mid - 46), Math.max(end, mid + 46)];
+    let level = rows.findIndex(row => row.every(([a,b]) => b < range[0] || a > range[1]));
+    if (level < 0) { level = rows.length; rows.push([]); }
+    rows[level].push(range);
+    const edge = vertical ? x + width + 5 : y - 5;
+    const track = edge + (vertical ? 1 : -1) * (25 + level * 29);
+    axisDimensions.push(axisDimension(vertical, start, end, edge, track, value, item, index));
+  };
 
   let panesMarkup = "", localImpostsMarkup = "";
   sectionLayout(xBounds, yBounds).forEach(({pane,rect}, index) => {
@@ -1323,7 +1336,7 @@ function renderCanvas() {
       const lineY = py + item.position * paneHeight;
       const physicalPosition = item.position * (isVertical ? physical.width : physical.height);
       if (isVertical) {
-        axisDimensions.push(impostValueTag(lineX, py + 18, physicalPosition, item, index));
+        addAxis(false, px, lineX, physicalPosition, item, index);
         innerImpostsMarkup += `
           <line class="impost-visible inner-impost-visible${active ? " selected" : ""}" x1="${lineX}" y1="${py}" x2="${lineX}" y2="${py + paneHeight}" stroke="${profileColor}" stroke-width="${paneImpostFace}" />
           <line x1="${lineX}" y1="${py}" x2="${lineX}" y2="${py + paneHeight}" stroke="${material.edge}" stroke-width="1.2" opacity=".55" pointer-events="none" />
@@ -1331,7 +1344,7 @@ function renderCanvas() {
           <line class="impost-hit" data-scope="pane" data-pane="${index}" data-orientation="vertical" data-id="${item.id}" x1="${lineX}" y1="${py}" x2="${lineX}" y2="${py + paneHeight}" tabindex="0" role="slider" aria-label="Вертикальный импост в ${paneKind} ${index + 1}" aria-valuenow="${Math.round(physicalPosition)}" />
           `;
       } else {
-        axisDimensions.push(impostValueTag(px + 42, lineY, physicalPosition, item, index));
+        addAxis(true, py, lineY, physicalPosition, item, index);
         innerImpostsMarkup += `
           <line class="impost-visible inner-impost-visible${active ? " selected" : ""}" x1="${px}" y1="${lineY}" x2="${px + paneWidth}" y2="${lineY}" stroke="${profileColor}" stroke-width="${paneImpostFace}" />
           <line x1="${px}" y1="${lineY}" x2="${px + paneWidth}" y2="${lineY}" stroke="${material.edge}" stroke-width="1.2" opacity=".55" pointer-events="none" />
@@ -1360,7 +1373,7 @@ function renderCanvas() {
   state.vImposts.forEach((item, index) => {
     const lineX = rootVerticalX[index];
     const active = isSelectedImpost("root", "vertical", item.id);
-    axisDimensions.push(impostValueTag(lineX, box.y + 18, item.position, item));
+    addAxis(false, x, lineX, item.position, item);
     rootImpostsMarkup += `
       <line class="impost-visible${active ? " selected" : ""}" x1="${lineX}" y1="${box.y - 2}" x2="${lineX}" y2="${box.y + box.height + 2}" stroke="${profileColor}" stroke-width="${impostFace}" />
       <line x1="${lineX}" y1="${box.y - 2}" x2="${lineX}" y2="${box.y + box.height + 2}" stroke="${material.edge}" stroke-width="1.4" opacity=".55" pointer-events="none" />
@@ -1371,7 +1384,7 @@ function renderCanvas() {
   state.hImposts.forEach((item, index) => {
     const lineY = rootHorizontalY[index];
     const active = isSelectedImpost("root", "horizontal", item.id);
-    axisDimensions.push(impostValueTag(box.x + 42, lineY, item.position, item));
+    addAxis(true, y, lineY, item.position, item);
     rootImpostsMarkup += `
       <line class="impost-visible${active ? " selected" : ""}" x1="${box.x - 2}" y1="${lineY}" x2="${box.x + box.width + 2}" y2="${lineY}" stroke="${profileColor}" stroke-width="${impostFace}" />
       <line x1="${box.x - 2}" y1="${lineY}" x2="${box.x + box.width + 2}" y2="${lineY}" stroke="${material.edge}" stroke-width="1.4" opacity=".55" pointer-events="none" />
@@ -1383,6 +1396,9 @@ function renderCanvas() {
   canvasLayout = { x, y, width, height, box, xBounds, yBounds, paneRects };
   const leftDimensionX = Math.max(24, x - 39);
   const bottomDimensionY = Math.min(476, y + height + 39);
+  const viewTop = Math.min(0, y - 30 - Math.max(0, tracks[0].length - 1) * 29 - 16);
+  const viewRight = Math.max(640, x + width + 30 + Math.max(0, tracks[1].length - 1) * 29 + 16);
+  svg.setAttribute("viewBox", `0 ${viewTop} ${viewRight} ${500 - viewTop}`);
   svg.innerHTML = `
     <defs>
       <filter id="windowShadow" x="-30%" y="-30%" width="160%" height="170%">
@@ -1401,17 +1417,18 @@ function renderCanvas() {
     <g filter="url(#windowShadow)" fill="${profileColor}" stroke="${material.edge}" stroke-width="2.2">${paths.outer}</g>
     <g fill="#bfe3ef" stroke="${material.edge}" stroke-width="1.6">${paths.inner}</g>
     <g clip-path="url(#innerClip)">${panesMarkup}${localImpostsMarkup}${rootImpostsMarkup}</g>
-    <g class="impost-axis-dimensions">${axisDimensions.join("")}</g>
-    <g class="dimensions">
+    <g class="dimensions">${axisDimensions.join("")}
       <line class="dimension-line" x1="${x}" y1="${y + height + 6}" x2="${x}" y2="${bottomDimensionY + 7}" opacity=".45" />
       <line class="dimension-line" x1="${x + width}" y1="${y + height + 6}" x2="${x + width}" y2="${bottomDimensionY + 7}" opacity=".45" />
       <line class="dimension-line" x1="${x + 4}" y1="${bottomDimensionY}" x2="${x + width - 4}" y2="${bottomDimensionY}" marker-start="url(#dimArrow)" marker-end="url(#dimArrow)" />
+      <g data-window-dimension="width" role="button" tabindex="0" style="cursor:pointer" aria-label="Изменить ${state.shape === 'circle' ? 'диаметр' : 'ширину'} окна">
       <rect x="${x + width / 2 - 48}" y="${bottomDimensionY - 13}" width="96" height="24" rx="6" fill="#eef2f6" />
-      <text class="dimension-text" x="${x + width / 2}" y="${bottomDimensionY + 5}">${state.shape === "circle" ? "Ø " : ""}${numberFormatter.format(state.width)} мм</text>
+      <text class="dimension-text" x="${x + width / 2}" y="${bottomDimensionY + 5}">${state.shape === "circle" ? "Ø " : ""}${numberFormatter.format(state.width)} мм</text></g>
       <line class="dimension-line" x1="${x - 6}" y1="${y}" x2="${leftDimensionX - 7}" y2="${y}" opacity=".45" />
       <line class="dimension-line" x1="${x - 6}" y1="${y + height}" x2="${leftDimensionX - 7}" y2="${y + height}" opacity=".45" />
       <line class="dimension-line" x1="${leftDimensionX}" y1="${y + 4}" x2="${leftDimensionX}" y2="${y + height - 4}" marker-start="url(#dimArrow)" marker-end="url(#dimArrow)" />
-      <g transform="translate(${leftDimensionX - 1} ${y + height / 2}) rotate(-90)">
+      <g transform="translate(${leftDimensionX - 1} ${y + height / 2}) rotate(-90)"
+         data-window-dimension="${state.shape === 'circle' ? 'width' : 'height'}" role="button" tabindex="0" style="cursor:pointer" aria-label="Изменить ${state.shape === 'circle' ? 'диаметр' : 'высоту'} окна">
         <rect x="-48" y="-13" width="96" height="24" rx="6" fill="#eef2f6" />
         <text class="dimension-text" x="0" y="5">${numberFormatter.format(state.height)} мм</text>
       </g>
@@ -1500,32 +1517,29 @@ function moveSelectedImpostToPoint(point) {
 
 function getCanvasPoint(event) {
   const svg = $("#windowCanvas");
-  const rect = svg.getBoundingClientRect();
-  return {
-    x: ((event.clientX - rect.left) / rect.width) * 640,
-    y: ((event.clientY - rect.top) / rect.height) * 500,
-  };
+  const matrix = svg.getScreenCTM();
+  if (!matrix) return { x: 0, y: 0 };
+  return new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix.inverse());
 }
 
 function bindCanvasDragging() {
   const svg = $("#windowCanvas");
-  const editAxisDimension = (badge) => {
-    selectImpostFromNode(badge);
-    renderAll();
-    const input = $("#impostPosition");
-    input.focus({ preventScroll: true });
-    try { input.select(); } catch { /* Some browsers do not select number inputs. */ }
-  };
-  svg.addEventListener("click", event => {
-    const badge = event.target.closest?.("[data-impost-dimension]");
-    if (badge) editAxisDimension(badge);
-  });
-  svg.addEventListener("keydown", event => {
-    if (event.key !== "Enter" && event.key !== " ") return;
-    const badge = event.target.closest?.("[data-impost-dimension]");
+  function editDimension(event) {
+    const badge = event.target.closest?.("[data-impost-dimension], [data-window-dimension]");
     if (!badge) return;
     event.preventDefault();
-    editAxisDimension(badge);
+    const field = badge.dataset.windowDimension;
+    if (!field) {
+      selectImpostFromNode(badge);
+      renderAll();
+    }
+    const input = $(field ? `#${field}` : "#impostPosition");
+    input.focus();
+    try { input.select(); } catch {}
+  }
+  svg.addEventListener("click", editDimension);
+  svg.addEventListener("keydown", event => {
+    if (event.key === "Enter" || event.key === " ") editDimension(event);
   });
   svg.addEventListener("click", event => {
     if (event.target !== svg || (state.selectedPane === null && !state.selectedImpost)) return;
@@ -1801,7 +1815,11 @@ function bindEvents() {
     });
   });
 
-  $("#width").addEventListener("input", (event) => {
+  $("#width").addEventListener("keydown", event => {
+    if (event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); }
+  });
+  $("#width").addEventListener("change", (event) => {
+    if (event.target.value === "") { event.target.value = state.width; return; }
     state.width = clamp(event.target.value, 400, 5000);
     if (state.shape === "circle") {
       state.height = state.width;
@@ -1811,7 +1829,11 @@ function bindEvents() {
   });
   $("#width").addEventListener("change", (event) => (event.target.value = state.width));
 
-  $("#height").addEventListener("input", (event) => {
+  $("#height").addEventListener("keydown", event => {
+    if (event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); }
+  });
+  $("#height").addEventListener("change", (event) => {
+    if (event.target.value === "") { event.target.value = state.height; return; }
     state.height = clamp(event.target.value, 400, 4000);
     renderAll();
   });
