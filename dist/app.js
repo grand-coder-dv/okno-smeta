@@ -109,7 +109,37 @@ function readStoredTechnology() {
   }
 }
 
-let rates = cloneRates();
+const RATES_STORAGE_KEY = "oknoSmetaRates";
+
+function readStoredRates() {
+  const defaults = cloneRates();
+  try {
+    const saved = JSON.parse(localStorage.getItem(RATES_STORAGE_KEY) || "null");
+    const merge = (base, source) => {
+      for (const [key, fallback] of Object.entries(base)) {
+        const value = source?.[key];
+        if (typeof fallback === "object") merge(fallback, value);
+        else if (typeof value === "number" && Number.isFinite(value) && value >= 0) base[key] = value;
+      }
+    };
+    merge(defaults, saved);
+  } catch {
+    return cloneRates();
+  }
+  return defaults;
+}
+
+function persistRates(reset = false) {
+  try {
+    if (reset) localStorage.removeItem(RATES_STORAGE_KEY);
+    else localStorage.setItem(RATES_STORAGE_KEY, JSON.stringify(rates));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+let rates = readStoredRates();
 let technology = readStoredTechnology();
 let impostSequence = 10;
 let canvasLayout = null;
@@ -295,7 +325,7 @@ function updateMaterialSelects(reset = false) {
     .join("");
 }
 
-function paneGlazingArea(index, pane, shapeFactor = 1) {
+function paneGlazing(index, pane, shapeFactor = 1) {
   const rect = getPanePhysicalRect(index);
   const tech = getTechnology();
   const col = index % state.cols;
@@ -304,15 +334,12 @@ function paneGlazingArea(index, pane, shapeFactor = 1) {
   const sashReduction = pane.opening === "fixed" ? 0 : tech.sash * 2;
   const verticalImposts = pane.innerImposts.filter((item) => item.orientation === "vertical").length;
   const horizontalImposts = pane.innerImposts.filter((item) => item.orientation === "horizontal").length;
-  const clearWidth = Math.max(
-    20,
-    rect.width - sideProfile(col === 0) - sideProfile(col === state.cols - 1) - sashReduction - verticalImposts * tech.impost,
-  );
-  const clearHeight = Math.max(
-    20,
-    rect.height - sideProfile(row === 0) - sideProfile(row === state.rows - 1) - sashReduction - horizontalImposts * tech.impost,
-  );
-  return (clearWidth * clearHeight * shapeFactor) / 1_000_000;
+  const clearWidth = rect.width - sideProfile(col === 0) - sideProfile(col === state.cols - 1) - sashReduction - verticalImposts * tech.impost;
+  const clearHeight = rect.height - sideProfile(row === 0) - sideProfile(row === state.rows - 1) - sashReduction - horizontalImposts * tech.impost;
+  const issues = [];
+  if (clearWidth < 20) issues.push("недостаточная ширина под стекло");
+  if (clearHeight < 20) issues.push("недостаточная высота под стекло");
+  return { area: issues.length ? 0 : clearWidth * clearHeight * shapeFactor / 1_000_000, issues };
 }
 
 function geometry() {
@@ -350,6 +377,7 @@ function geometry() {
   let nestedCount = 0;
   let glassUnits = 0;
   const paneGlazingAreas = [];
+  const issues = [];
   state.panes.forEach((pane, index) => {
     const paneRect = getPanePhysicalRect(index);
     pane.innerImposts.forEach((item) => {
@@ -357,11 +385,13 @@ function geometry() {
       nestedImpost += item.orientation === "vertical" ? (paneRect.height / 1000) * verticalFactor : (paneRect.width / 1000) * horizontalFactor;
     });
     glassUnits += paneGlassUnits(pane);
-    paneGlazingAreas[index] = paneGlazingArea(index, pane, shapeFactor);
+    const glazing = paneGlazing(index, pane, shapeFactor);
+    paneGlazingAreas[index] = glazing.area;
+    if (glazing.issues.length) issues.push(`Секция ${index + 1}: ${glazing.issues.join(", ")}`);
   });
   const glazingArea = paneGlazingAreas.reduce((sum, value) => sum + value, 0);
   const impost = primaryImpost + nestedImpost;
-  return { area, perimeter, glazingArea, paneGlazingAreas, impost, primaryImpost, nestedImpost, nestedCount, glassUnits };
+  return { issues, approximate: state.shape !== "rect", area, perimeter, glazingArea, paneGlazingAreas, impost, primaryImpost, nestedImpost, nestedCount, glassUnits };
 }
 
 function buildSpecification() {
@@ -940,8 +970,8 @@ function renderInspector() {
 
 function renderSummary(calculation) {
   const totalArea = calculation.area * state.quantity;
-  $("#totalPrice").textContent = formatMoney(calculation.total);
-  $("#unitPrice").textContent = `${formatMoney(calculation.unitPrice)} за одно окно`;
+  $("#totalPrice").textContent = calculation.issues.length ? "—" : formatMoney(calculation.total);
+  $("#unitPrice").textContent = calculation.issues.length ? "Исправьте размеры секций" : `${calculation.approximate ? "Предварительно: " : ""}${formatMoney(calculation.unitPrice)} за одно окно`;
   $("#summaryArea").textContent = `${formatNumber(totalArea)} м²`;
   $("#summarySashes").textContent = `${calculation.sashCount * state.quantity}`;
   $("#summaryPanes").textContent = `${calculation.glassUnits * state.quantity}`;
@@ -952,13 +982,19 @@ function renderSummary(calculation) {
   $("#summaryTechnology").textContent = `рама ${tech.frame} · створка ${tech.sash} · импост ${tech.impost} мм`;
   $("#summaryShape").textContent = SHAPES[state.shape];
   $("#summaryFinish").textContent = calculation.finish.name;
-  $("#specTotal").textContent = formatMoney(calculation.total);
+  $("#specTotal").textContent = calculation.issues.length ? "—" : formatMoney(calculation.total);
   $("#editorDimensions").textContent = `${numberFormatter.format(state.width)} × ${numberFormatter.format(state.height)} мм`;
   $("#editorArea").textContent = `${formatNumber(calculation.area)} м²`;
 }
 
 function renderSpecification(calculation) {
-  $("#specificationRows").innerHTML = calculation.lines
+  const target = $("#specificationRows");
+  const notice = (text) => `<tr><td colspan="7">${text}</td></tr>`;
+  if (calculation.issues.length) {
+    target.innerHTML = calculation.issues.map(notice).join("");
+    return;
+  }
+  target.innerHTML = (calculation.approximate ? notice("Предварительная смета: геометрия арки или круга рассчитана приближённо.") : "") + calculation.lines
     .map(
       (line, index) => `
         <tr>
@@ -1006,9 +1042,25 @@ function renderAll() {
   updateActiveControls();
 }
 
+function resetPaneSettings() {
+  state.panes = [];
+  state.selectedPane = 0;
+  state.selectedImpost = null;
+}
+
+function confirmGridChange() {
+  if (window.confirm("При изменении разбивки настройки всех секций будут сброшены. Продолжить?")) return true;
+  $("#columns").value = state.cols;
+  $("#rows").value = state.rows;
+  return false;
+}
+
 function setSplit(cols, rows) {
   const nextCols = clamp(cols, 1, 4);
   const nextRows = clamp(rows, 1, 3);
+  if (nextCols === state.cols && nextRows === state.rows) return;
+  if (!confirmGridChange()) return;
+  resetPaneSettings();
   state.vImposts = makeEvenImposts(nextCols - 1, state.width, "vertical");
   state.hImposts = makeEvenImposts(nextRows - 1, state.height, "horizontal");
   state.cols = nextCols;
@@ -1138,6 +1190,8 @@ function bindEvents() {
     const record = getSelectedImpostRecord();
     if (!record) return;
     if (record.selected.scope === "root") {
+      if (!confirmGridChange()) return;
+      resetPaneSettings();
       const collection = record.collection;
       const index = collection.findIndex((item) => item.id === record.item.id);
       const size = record.selected.orientation === "vertical" ? state.width : state.height;
@@ -1157,6 +1211,8 @@ function bindEvents() {
     const record = getSelectedImpostRecord();
     if (!record) return;
     if (record.selected.scope === "root") {
+      if (!confirmGridChange()) return;
+      resetPaneSettings();
       const collection = record.selected.orientation === "vertical" ? state.vImposts : state.hImposts;
       const index = collection.findIndex((item) => item.id === record.item.id);
       collection.splice(index, 1);
@@ -1172,7 +1228,11 @@ function bindEvents() {
   });
 
   $("#scrollToSpec").addEventListener("click", () => $("#specification").scrollIntoView({ behavior: "smooth", block: "start" }));
-  $("#printEstimate").addEventListener("click", () => window.print());
+  $("#printEstimate").addEventListener("click", () => {
+    const { issues } = buildSpecification();
+    if (issues.length) return showToast(issues[0]);
+    window.print();
+  });
 
   $("#newCalculation").addEventListener("click", () => {
     if (!window.confirm("Начать новый расчёт? Текущая конфигурация будет сброшена.")) return;
@@ -1212,15 +1272,17 @@ function bindEvents() {
   });
   $("#savePrices").addEventListener("click", () => {
     readPriceForm();
+    const saved = persistRates();
     $("#pricesDialog").close();
     renderAll();
-    showToast("Новые тарифы применены");
+    showToast(saved ? "Новые тарифы сохранены" : "Тарифы применены, но браузер не сохранил их");
   });
   $("#resetPrices").addEventListener("click", () => {
     rates = cloneRates();
+    const saved = persistRates(true);
     populatePriceForm();
     renderAll();
-    showToast("Демонстрационные тарифы восстановлены");
+    showToast(saved ? "Демонстрационные тарифы восстановлены" : "Прайс сброшен только на этой странице");
   });
   $$("[data-settings-tab]").forEach((button) => {
     button.addEventListener("click", () => setSettingsTab(button.dataset.settingsTab));
@@ -1390,6 +1452,10 @@ function exposeAgentTools() {
           annotations: { readOnlyHint: false, untrustedContentHint: false },
           execute: async (rawInput) => {
             const input = validateConfiguration(rawInput);
+        if ((input.columns !== undefined && input.columns !== state.cols) ||
+            (input.rows !== undefined && input.rows !== state.rows)) {
+          throw new Error("Измените разбивку в интерфейсе и подтвердите сброс настроек секций.");
+        }
             if (input.material) {
               state.material = input.material;
               updateMaterialSelects(true);
@@ -1398,8 +1464,6 @@ function exposeAgentTools() {
             if (input.width) state.width = input.width;
             if (input.height) state.height = input.height;
             if (state.shape === "circle") state.height = state.width;
-            if (input.columns) state.vImposts = makeEvenImposts(input.columns - 1, state.width, "vertical");
-            if (input.rows) state.hImposts = makeEvenImposts(input.rows - 1, state.height, "horizontal");
             if (input.quantity) state.quantity = input.quantity;
             state.selectedImpost = null;
             ensurePanes();
@@ -1424,8 +1488,10 @@ function exposeAgentTools() {
           execute: async (input) => {
             if (!input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).length) throw new Error("Инструмент не принимает параметры");
             const calculation = buildSpecification();
+            if (calculation.issues.length) return { total: null, approximate: calculation.approximate, issues: calculation.issues };
             return {
               total: Math.round(calculation.total),
+              approximate: calculation.approximate,
               unitPrice: Math.round(calculation.unitPrice),
               quantity: state.quantity,
               specification: calculation.lines.map((line) => ({
