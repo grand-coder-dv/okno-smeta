@@ -97,6 +97,7 @@ const SHAPES = {
   rect: "Прямоугольная",
   arch: "Арочная",
   circle: "Круглая",
+  skew: "Косая",
 };
 
 const DEFAULT_RATES = Object.freeze({
@@ -276,6 +277,7 @@ function createDefaultState() {
     profile: "pvc70",
     finish: "white",
     shape: "rect",
+    shapeModeVersion: 1,
     width: 1300,
     height: 1300,
     quantity: 1,
@@ -403,7 +405,22 @@ function currentProductIsDirty() {
 }
 
 function isPreliminaryShape(shape = state.shape) {
-  return shape === "arch" || shape === "circle" || customProfileArcs();
+  return shape === "circle" || customProfileArcs();
+}
+function inferredShapeMode(config) {
+  if(config.shapeModeVersion || config.shape!=="rect")return config.shape;
+  if(config.framePolygon?.length>=3)return "skew";
+  const hasArc=arcs=>Object.values(arcs||{}).some(Boolean);
+  const anySash=panes=>(panes||[]).some(p=>hasArc(p.sashArcs)||anySash(p.children));
+  return hasArc(config.frameArcs)||anySash(config.panes)?"arch":"rect";
+}
+function setWindowShapeMode(mode) {
+  if(!Object.hasOwn(SHAPES,mode)||mode===state.shape)return;
+  state.shape=mode;
+  state.shapeModeVersion=1;
+  activeProfileEdge=null;
+  sharedAxis=null;
+  if(mode==="circle")state.height=state.width;
 }
 
 function setConfigurationError(message = "") {
@@ -433,6 +450,9 @@ function validateCurrentProduct() {
 
 function restoreProductState(configuration) {
   state = cloneData(configuration);
+  state.shape = inferredShapeMode(state);
+  state.shapeModeVersion = 1;
+  activeProfileEdge = null;
   multiSections.clear();
   sharedAxis = null;
   state.selectedImpost = null;
@@ -994,17 +1014,6 @@ function geometry() {
     perimeter = Math.PI * widthM;
     verticalFactor = 0.78;
     horizontalFactor = 0.78;
-  } else if (state.shape === "arch") {
-    const rise = Math.min(widthM / 2, heightM * 0.42);
-    const a = widthM / 2;
-    const b = rise;
-    const lowerHeight = heightM - rise;
-    area = widthM * lowerHeight + (Math.PI * a * b) / 2;
-    const h = ((a - b) ** 2) / ((a + b) ** 2);
-    const ellipse = Math.PI * (a + b) * (1 + (3 * h) / (10 + Math.sqrt(4 - 3 * h)));
-    perimeter = widthM + 2 * lowerHeight + ellipse / 2;
-    verticalFactor = 0.88;
-    horizontalFactor = 0.94;
   } else {
     area = widthM * heightM;
     perimeter = 2 * (widthM + heightM);
@@ -1173,7 +1182,7 @@ function buildSpecification() {
   }
 
   let unitSubtotal = lines.reduce((sum, line) => sum + line.total, 0) / quantity;
-  const shapeRate = state.shape === "arch" ? rates.archSurcharge : state.shape === "circle" ? rates.circleSurcharge : 0;
+  const shapeRate = state.shape === "arch" && customProfileArcs() ? rates.archSurcharge : state.shape === "circle" ? rates.circleSurcharge : 0;
   if (shapeRate > 0) {
     const shapeUnitTotal = unitSubtotal * (shapeRate / 100);
     addLine({
@@ -1211,17 +1220,6 @@ function shapePaths(x, y, width, height, frame) {
     };
   }
 
-  if (state.shape === "arch") {
-    const rise = Math.min(width / 2, height * 0.42);
-    const outer = `M ${x} ${y + height} L ${x} ${y + rise} A ${width / 2} ${rise} 0 0 1 ${x + width} ${y + rise} L ${x + width} ${y + height} Z`;
-    const ix = x + frame;
-    const iy = y + frame;
-    const iw = width - frame * 2;
-    const ih = height - frame * 2;
-    const innerRise = Math.max(rise - frame * 0.72, 8);
-    const inner = `M ${ix} ${iy + ih} L ${ix} ${iy + innerRise} A ${iw / 2} ${innerRise} 0 0 1 ${ix + iw} ${iy + innerRise} L ${ix + iw} ${iy + ih} Z`;
-    return { outer: `<path d="${outer}" />`, inner: `<path d="${inner}" />`, innerBox: { x: ix, y: iy, width: iw, height: ih } };
-  }
 
   return {
     outer: `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="4" />`,
@@ -1278,7 +1276,7 @@ function isSelectedImpost(scope, orientation, id, paneIndex = null) {
 }
 
 function polygonPoints() {
-  return state.shape === "rect" && state.framePolygon?.map(([x,y])=>[x*state.width,y*state.height]);
+  return state.shape === "skew" && state.framePolygon?.map(([x,y])=>[x*state.width,y*state.height]);
 }
 const cross2=(a,b,c)=>(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
 function polygonClip(subject, boundary, inset=0) {
@@ -1353,11 +1351,13 @@ function refreshProfileEdit() {
     else {const row=document.createElement("div");row.style.cssText="display:flex;margin:0 0 8px";row.append(button);$("#canvasWrap").before(row);}
   }
   if(host && button.parentElement!==host) host.append(button);
-  button.disabled=!activeProfileEdge||activeProfileEdge.owner!==state;
+  button.hidden=state.shape!=="arch" && state.shape!=="skew";
+  button.style.display=button.hidden?"none":"";
+  button.disabled=button.hidden || !activeProfileEdge || activeProfileEdge.owner!==state;
   button.style.color=button.disabled?"#68778a":"white";button.style.background=button.disabled?"#edf1f5":"#24384f";
 }
 function editPolygon(selection) {
-  if(state.frameArcs && Object.values(state.frameArcs).some(Boolean)) {showToast("Сначала верните дуги рамы в прямые стороны");return;}
+  if(state.shape!=="skew")return;
   const points=polygonPoints()||rectPoints([0,0,state.width,state.height]);
   const i=selection.side, vertex=selection.type==="vertex", lengthMode=selection.type==="length";
   if(!points[i])return;
@@ -1399,8 +1399,8 @@ function editPolygon(selection) {
 const PROFILE_SIDES = ["верхняя поперечина", "правая стойка", "нижняя поперечина", "левая стойка"];
 let activeProfileEdge = null;
 function customProfileArcs() {
-  return state.shape === "rect" && (polygonPoints() || Object.values(state.frameArcs || {}).some(Boolean) ||
-    sectionPanes().some(p => !p.split && p.opening !== "fixed" && Object.values(p.sashArcs || {}).some(Boolean)));
+  return Boolean(polygonPoints() || (state.shape === "arch" && (Object.values(state.frameArcs || {}).some(Boolean) ||
+    sectionPanes().some(p => !p.split && p.opening !== "fixed" && Object.values(p.sashArcs || {}).some(Boolean)))));
 }
 function arcBoundaryPoints(p,q,radius,sweep) {
   const dx=q[0]-p[0],dy=q[1]-p[1],chord=Math.hypot(dx,dy);
@@ -1442,11 +1442,12 @@ function arcRise(chord,radius) {
   return half*half/(R+Math.sqrt(Math.max(0,R*R-half*half)));
 }
 function windowOuterBounds(config = state) {
-  if(config.shape === "rect" && config.framePolygon?.length) {
+  const mode=inferredShapeMode(config);
+  if(mode === "skew" && config.framePolygon?.length) {
     return polyBounds(config.framePolygon.map(([x,y])=>[x*config.width,y*config.height]));
   }
   const rise=(side,span)=> {
-    const arc=config.shape === "rect" && config.frameArcs?.[side];
+    const arc=mode === "arch" && config.frameArcs?.[side];
     return arc && arc.direction !== "in" ? arcRise(span,arc.radius) : 0;
   };
   return [-rise(3,config.height),-rise(0,config.width),
@@ -1491,7 +1492,7 @@ function customFrameMeasures() {
   const poly=polygonPoints();
   if(poly) return {area:closedArea(poly)/1e6,
     perimeter:poly.reduce((sum,p,i)=>{const q=poly[(i+1)%poly.length];return sum+Math.hypot(q[0]-p[0],q[1]-p[1]);},0)/1000};
-  if(state.shape!=="rect" || !Object.values(state.frameArcs||{}).some(Boolean))return null;
+  if(state.shape!=="arch" || !Object.values(state.frameArcs||{}).some(Boolean))return null;
   let area=state.width*state.height, perimeter=2*(state.width+state.height);
   for(const [i,arc] of Object.entries(state.frameArcs||{})){
     if(!arc || !Number.isFinite(arc.radius))continue;
@@ -1503,7 +1504,7 @@ function customFrameMeasures() {
   return {area:Math.max(0,area)/1e6,perimeter:perimeter/1000};
 }
 function frameCurve(side, offset) {
-  const arc = state.shape === "rect" && state.frameArcs?.[side];
+  const arc = state.shape === "arch" && state.frameArcs?.[side];
   if (!arc || !Number.isFinite(arc.radius)) return null;
   const vertical = side % 2 === 1;
   const span = vertical ? state.height : state.width;
@@ -1571,7 +1572,7 @@ function fittedGlass(entry,geometry,f,tech,X=mm=>mm,Y=mm=>mm,sx=1,sy=1) {
     return {path:polyPath(points,X,Y),boundary:points,w:r-l,h:b-t};
   }
   const depths=sides.map((touch,i)=>touch&&contact[i]<1e-5?depth:null);
-  const sashArcs=sashBox && state.shape==="rect" ? entry.pane.sashArcs : null;
+  const sashArcs=sashBox && state.shape==="arch" ? entry.pane.sashArcs : null;
   const glassArcs=sashArcs && Object.fromEntries(Object.entries(sashArcs).filter(([i])=>contact[i]<1e-5));
   const outline=fittedOutline(fbox,depths,glassArcs,X,Y,sx,sy);
   const points=outline.extrema || outline.boundary || outline.pts;
@@ -1606,6 +1607,7 @@ function profileEdgeTargets(outer, inner, type, index = null) {
   return bands+seams+notes;
 }
 function editProfileSide(node) {
+  if(state.shape!=="arch")return;
   const {profileEdge:type,edgeIndex,edgeSide} = node.dataset;
   const index=type==="frame"?null:Number(edgeIndex), side=Number(edgeSide);
   const entry=index===null?null:sectionLayout()[index];
@@ -1628,11 +1630,9 @@ function editProfileSide(node) {
       <label>Радиус, мм <input name="radius" type="number" step="any"></label>
       <label>Высота дуги, мм <input name="rise" type="number" step="any"></label>
       <label>Направление <select name="direction"><option value="out">Наружу</option><option value="in">Внутрь</option></select></label>
-      <small data-arc-hint></small><div><button type="submit" value="cancel" formnovalidate>Отмена</button> <button type="submit" value="split" formnovalidate>Разбить сторону</button> <button type="submit" value="apply">Применить</button></div></form>`;
+      <small data-arc-hint></small><div><button type="submit" value="cancel" formnovalidate>Отмена</button>  <button type="submit" value="apply">Применить</button></div></form>`;
     document.body.append(dialog);
   }
-  const splitButton=dialog.querySelector('[value="split"]');
-  if(splitButton) splitButton.hidden=type!=="frame";
   const form=dialog.querySelector("form"), {shape,radius,rise,direction}=Object.fromEntries([...form.elements].filter(e=>e.name).map(e=>[e.name,e]));
   dialog.querySelector('[data-arc-title]').textContent=`${pane?'Створка':'Рама'}: ${PROFILE_SIDES[side]}`;
   const half=chord/2;
@@ -1655,9 +1655,6 @@ function editProfileSide(node) {
   direction.onchange=()=>radius.setCustomValidity("");
   radius.setCustomValidity("");
   form.onsubmit=event=>{
-    if(event.submitter?.value==="split"){
-      event.preventDefault();dialog.close();editPolygon({type:"polygon",side});return;
-    }
     if(event.submitter?.value!=="apply") return;
     const R=radius.valueAsNumber;
     if(shape.value==='arc'){
@@ -1707,7 +1704,7 @@ function renderCanvas() {
       const sel=activeProfileEdge?.owner===state&&activeProfileEdge.type==="polygon"&&activeProfileEdge.side===i;
       return `<path d="M ${X(p[0])} ${Y(p[1])} L ${X(q[0])} ${Y(q[1])}" stroke="${sel?'#ef8b25':'transparent'}" stroke-width="${sel?5:14}" pointer-events="stroke" data-profile-edge="polygon" data-edge-side="${i}" tabindex="0" role="button" aria-label="Сторона ${i+1}"/>`;
     }).join("");
-  } else if (state.shape === "rect") {
+  } else if (state.shape === "arch") {
     const outer=profileOutline([0,0,state.width,state.height],state.frameArcs,X,Y,sx,sy);
     const inset=getTechnology().frame;
     const inner=fittedOutline([inset,inset,state.width-inset,state.height-inset],[inset,inset,inset,inset],null,X,Y,sx,sy);
@@ -1716,9 +1713,13 @@ function renderCanvas() {
       paths.outer=`<path d="${outer.path}" />`;
       paths.inner=`<path d="${inner.path}" />`;
     }
+  } else if (state.shape === "skew") {
+    const outer=profileOutline([0,0,state.width,state.height],null,X,Y,sx,sy);
+    const inner=profileOutline([tech.frame,tech.frame,state.width-tech.frame,state.height-tech.frame],null,X,Y,sx,sy);
+    if(state.width>2*tech.frame && state.height>2*tech.frame)profileTargets=profileEdgeTargets(outer,inner,"polygon");
   }
   const box = paths.innerBox;
-  const vertices=state.shape==="rect" ? (poly||rectPoints([0,0,state.width,state.height])).map(([vx,vy],i)=>`<circle cx="${X(vx)}" cy="${Y(vy)}" r="6" fill="${activeProfileEdge?.owner===state&&activeProfileEdge.type==='vertex'&&activeProfileEdge.side===i?'#ef8b25':'#fff'}" stroke="#506176" data-profile-edge="vertex" data-edge-side="${i}" tabindex="0" role="button" aria-label="Угол ${i+1}" style="cursor:pointer"/>`).join("") : "";
+  const vertices=state.shape==="skew" ? (poly||rectPoints([0,0,state.width,state.height])).map(([vx,vy],i)=>`<circle cx="${X(vx)}" cy="${Y(vy)}" r="6" fill="${activeProfileEdge?.owner===state&&activeProfileEdge.type==='vertex'&&activeProfileEdge.side===i?'#ef8b25':'#fff'}" stroke="#506176" data-profile-edge="vertex" data-edge-side="${i}" tabindex="0" role="button" aria-label="Угол ${i+1}" style="cursor:pointer"/>`).join("") : "";
   const rootVerticalX = state.vImposts.map((item) => x + (item.position / state.width) * width);
   const rootHorizontalY = state.hImposts.map((item) => y + (item.position / state.height) * height);
   const xBounds = [box.x, ...rootVerticalX, box.x + box.width];
@@ -1779,7 +1780,7 @@ function renderCanvas() {
 
     if (pane.split) { localImpostsMarkup += innerImpostsMarkup; return; }
     const {opening,sashBox,fields} = glassGeometry(entry,tech);
-    const sashArcs=state.shape==="rect" ? pane.sashArcs : null;
+    const sashArcs=state.shape==="arch" ? pane.sashArcs : null;
     const outerDepth=tech.frame-SASH_LAP, innerDepth=outerDepth+tech.sash;
     const sashOutline=(bounds,depth)=>{
       if(!poly)return fit(bounds,depth,sashArcs);
@@ -1792,7 +1793,7 @@ function renderCanvas() {
       const id=`sashImpostClip-${index}`;
       localImpostsMarkup += `<clipPath id="${id}"><path d="${innerSash.path}"/></clipPath><g clip-path="url(#${id})">${innerImpostsMarkup}</g>`;
     } else localImpostsMarkup += innerImpostsMarkup;
-    if (sashBox && !poly && state.shape==="rect" && opening[2]>opening[0] && opening[3]>opening[1]) {
+    if (sashBox && state.shape==="arch" && opening[2]>opening[0] && opening[3]>opening[1]) {
       profileTargets+=profileEdgeTargets(outerSash,innerSash,"sash",index);
     }
     if (sashBox && opening[2]>opening[0] && opening[3]>opening[1]) {
@@ -1816,7 +1817,7 @@ function renderCanvas() {
       if (selected) glassMarkup += `<path class="pane-selected" d="${glassPath}" fill="none" />`;
       const font=Math.min(10,w/8,h/4);
       if (font>=4) glassMarkup += `<text x="${X(f.x)+w/2}" y="${Y(f.y)+h/2+Math.min(26,h/3)}"
-        text-anchor="middle" font-size="${font}" fill="#20384c" paint-order="stroke" stroke="#edf6fa" stroke-width="2">${state.shape === "rect" && !customProfileArcs() ? "" : "≈ "}${glassSizeLabel({...f,w:fitted.w,h:fitted.h})}</text>`;
+        text-anchor="middle" font-size="${font}" fill="#20384c" paint-order="stroke" stroke="#edf6fa" stroke-width="2">${state.shape !== "circle" && !customProfileArcs() ? "" : "≈ "}${glassSizeLabel({...f,w:fitted.w,h:fitted.h})}</text>`;
     }
     const paneOutline=hasFrameArc ? fit([physical.x,physical.y,physical.x+physical.width,physical.y+physical.height],0).path : null;
     const areaAttrs=paneOutline?`d="${paneOutline}"`:`x="${px}" y="${py}" width="${paneWidth}" height="${paneHeight}"`;
@@ -1837,10 +1838,10 @@ function renderCanvas() {
     const active = isSelectedImpost("root", "vertical", item.id);
     addDimension(false, x, lineX, 0, item.position, item);
     rootImpostsMarkup += `
-      <line class="impost-visible${active ? " selected" : ""}" x1="${lineX}" y1="${state.frameArcs?.[0] ? Y(frameCurve(0,0)?.(item.position) ?? 0) : box.y - 2}" x2="${lineX}" y2="${state.frameArcs?.[2] ? Y(frameCurve(2,0)?.(item.position) ?? state.height) : box.y + box.height + 2}" stroke="${profileColor}" stroke-width="${impostFace}" />
-      <line x1="${lineX}" y1="${state.frameArcs?.[0] ? Y(frameCurve(0,0)?.(item.position) ?? 0) : box.y - 2}" x2="${lineX}" y2="${state.frameArcs?.[2] ? Y(frameCurve(2,0)?.(item.position) ?? state.height) : box.y + box.height + 2}" stroke="${material.edge}" stroke-width="1.4" opacity=".55" pointer-events="none" />
+      <line class="impost-visible${active ? " selected" : ""}" x1="${lineX}" y1="${state.shape==="arch" && state.frameArcs?.[0] ? Y(frameCurve(0,0)?.(item.position) ?? 0) : box.y - 2}" x2="${lineX}" y2="${state.shape==="arch" && state.frameArcs?.[2] ? Y(frameCurve(2,0)?.(item.position) ?? state.height) : box.y + box.height + 2}" stroke="${profileColor}" stroke-width="${impostFace}" />
+      <line x1="${lineX}" y1="${state.shape==="arch" && state.frameArcs?.[0] ? Y(frameCurve(0,0)?.(item.position) ?? 0) : box.y - 2}" x2="${lineX}" y2="${state.shape==="arch" && state.frameArcs?.[2] ? Y(frameCurve(2,0)?.(item.position) ?? state.height) : box.y + box.height + 2}" stroke="${material.edge}" stroke-width="1.4" opacity=".55" pointer-events="none" />
       <rect class="impost-grip${active ? " selected" : ""}" x="${lineX - 8}" y="${box.y + box.height / 2 - 18}" width="16" height="36" rx="8" />
-      <line class="impost-hit" data-scope="root" data-orientation="vertical" data-id="${item.id}" x1="${lineX}" y1="${state.frameArcs?.[0] ? Y(frameCurve(0,0)?.(item.position) ?? 0) : box.y - 2}" x2="${lineX}" y2="${state.frameArcs?.[2] ? Y(frameCurve(2,0)?.(item.position) ?? state.height) : box.y + box.height + 2}" tabindex="0" role="slider" aria-label="Вертикальный импост рамы" aria-valuemin="0" aria-valuemax="${state.width}" aria-valuenow="${Math.round(item.position)}" />
+      <line class="impost-hit" data-scope="root" data-orientation="vertical" data-id="${item.id}" x1="${lineX}" y1="${state.shape==="arch" && state.frameArcs?.[0] ? Y(frameCurve(0,0)?.(item.position) ?? 0) : box.y - 2}" x2="${lineX}" y2="${state.shape==="arch" && state.frameArcs?.[2] ? Y(frameCurve(2,0)?.(item.position) ?? state.height) : box.y + box.height + 2}" tabindex="0" role="slider" aria-label="Вертикальный импост рамы" aria-valuemin="0" aria-valuemax="${state.width}" aria-valuenow="${Math.round(item.position)}" />
       `;
   });
   state.hImposts.forEach((item, index) => {
@@ -1848,10 +1849,10 @@ function renderCanvas() {
     const active = isSelectedImpost("root", "horizontal", item.id);
     addDimension(true, y, lineY, 0, item.position, item);
     rootImpostsMarkup += `
-      <line class="impost-visible${active ? " selected" : ""}" x1="${state.frameArcs?.[3] ? X(frameCurve(3,0)?.(item.position) ?? 0) : box.x - 2}" y1="${lineY}" x2="${state.frameArcs?.[1] ? X(frameCurve(1,0)?.(item.position) ?? state.width) : box.x + box.width + 2}" y2="${lineY}" stroke="${profileColor}" stroke-width="${impostFace}" />
-      <line x1="${state.frameArcs?.[3] ? X(frameCurve(3,0)?.(item.position) ?? 0) : box.x - 2}" y1="${lineY}" x2="${state.frameArcs?.[1] ? X(frameCurve(1,0)?.(item.position) ?? state.width) : box.x + box.width + 2}" y2="${lineY}" stroke="${material.edge}" stroke-width="1.4" opacity=".55" pointer-events="none" />
+      <line class="impost-visible${active ? " selected" : ""}" x1="${state.shape==="arch" && state.frameArcs?.[3] ? X(frameCurve(3,0)?.(item.position) ?? 0) : box.x - 2}" y1="${lineY}" x2="${state.shape==="arch" && state.frameArcs?.[1] ? X(frameCurve(1,0)?.(item.position) ?? state.width) : box.x + box.width + 2}" y2="${lineY}" stroke="${profileColor}" stroke-width="${impostFace}" />
+      <line x1="${state.shape==="arch" && state.frameArcs?.[3] ? X(frameCurve(3,0)?.(item.position) ?? 0) : box.x - 2}" y1="${lineY}" x2="${state.shape==="arch" && state.frameArcs?.[1] ? X(frameCurve(1,0)?.(item.position) ?? state.width) : box.x + box.width + 2}" y2="${lineY}" stroke="${material.edge}" stroke-width="1.4" opacity=".55" pointer-events="none" />
       <rect class="impost-grip${active ? " selected" : ""}" x="${box.x + box.width / 2 - 18}" y="${lineY - 8}" width="36" height="16" rx="8" />
-      <line class="impost-hit horizontal" data-scope="root" data-orientation="horizontal" data-id="${item.id}" x1="${state.frameArcs?.[3] ? X(frameCurve(3,0)?.(item.position) ?? 0) : box.x - 2}" y1="${lineY}" x2="${state.frameArcs?.[1] ? X(frameCurve(1,0)?.(item.position) ?? state.width) : box.x + box.width + 2}" y2="${lineY}" tabindex="0" role="slider" aria-label="Горизонтальный импост рамы" aria-valuemin="0" aria-valuemax="${state.height}" aria-valuenow="${Math.round(item.position)}" />
+      <line class="impost-hit horizontal" data-scope="root" data-orientation="horizontal" data-id="${item.id}" x1="${state.shape==="arch" && state.frameArcs?.[3] ? X(frameCurve(3,0)?.(item.position) ?? 0) : box.x - 2}" y1="${lineY}" x2="${state.shape==="arch" && state.frameArcs?.[1] ? X(frameCurve(1,0)?.(item.position) ?? state.width) : box.x + box.width + 2}" y2="${lineY}" tabindex="0" role="slider" aria-label="Горизонтальный импост рамы" aria-valuemin="0" aria-valuemax="${state.height}" aria-valuenow="${Math.round(item.position)}" />
       `;
   });
 
@@ -1859,7 +1860,7 @@ function renderCanvas() {
   const [gL,gT,gR,gB]=windowOuterBounds();
   const bx0=X(gL),by0=Y(gT),bx1=X(gR),by1=Y(gB);
   const actualWidth=gR-gL,actualHeight=gB-gT;
-  const archedFrame=!poly && state.shape==="rect" && Object.values(state.frameArcs||{}).some(Boolean);
+  const archedFrame=state.shape==="arch" && Object.values(state.frameArcs||{}).some(Boolean);
   const showShoulderWidth=archedFrame && Math.round(actualWidth)!==Math.round(state.width);
   const showShoulderHeight=archedFrame && Math.round(actualHeight)!==Math.round(state.height);
   const leftDimensionX=bx0-(showShoulderHeight?70:39);
@@ -2254,7 +2255,7 @@ function renderInspector() {
   const entry=sectionLayout()[state.selectedPane], tech=getTechnology();
   const geometry=glassGeometry(entry,tech);
   const labels=geometry.fields.map(f=>glassSizeLabel({...f,...fittedGlass(entry,geometry,f,tech)}));
-  note.textContent=`${state.shape === "rect" && !customProfileArcs() ? "Размер" : "Габарит по контуру, ориентировочно"}: ${[...new Set(labels)].join("; ")}`;
+  note.textContent=`${state.shape !== "circle" && !customProfileArcs() ? "Размер" : "Габарит по контуру, ориентировочно"}: ${[...new Set(labels)].join("; ")}`;
   const innerCount = pane.innerImposts.length;
   const paneKind = pane.opening === "fixed" ? "глухой секции" : "створке";
   $("#innerImpostHint").textContent = innerCount
@@ -2405,15 +2406,18 @@ function bindEvents() {
     renderAll();
   });
 
-  $$("#shapeOptions button").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.shape = button.dataset.value;
-      if (state.shape === "circle") {
-        state.height = state.width;
-        $("#height").value = state.height;
-      }
-      renderAll();
-    });
+  const shapeOptions=$("#shapeOptions");
+  if(!shapeOptions.querySelector('[data-value="skew"]')){
+    const skew=document.createElement("button");
+    skew.type="button";skew.dataset.value="skew";skew.setAttribute("aria-pressed","false");
+    skew.innerHTML='<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 8l16-4v16H4z"/></svg>Косое';
+    shapeOptions.append(skew);
+  }
+  shapeOptions.addEventListener("click",event=>{
+    const button=event.target.closest("button[data-value]");
+    if(!button || button.dataset.value===state.shape)return;
+    setWindowShapeMode(button.dataset.value);
+    renderAll();
   });
 
   for(const key of ["width","height"]){
@@ -3014,7 +3018,7 @@ function exposeAgentTools() {
             type: "object",
             properties: {
               material: { type: "string", enum: ["pvc", "aluminum", "wood"] },
-              shape: { type: "string", enum: ["rect", "arch", "circle"] },
+              shape: { type: "string", enum: ["rect", "arch", "circle", "skew"] },
               width: { type: "number", minimum: 400, maximum: 5000 },
               height: { type: "number", minimum: 400, maximum: 4000 },
               columns: { type: "integer", minimum: 1, maximum: 4 },
@@ -3030,7 +3034,7 @@ function exposeAgentTools() {
               state.material = input.material;
               updateMaterialSelects(true);
             }
-            if (input.shape) state.shape = input.shape;
+            if (input.shape) setWindowShapeMode(input.shape);
             if (input.width) state.width = input.width;
             if (input.height) state.height = input.height;
             if (state.shape === "circle") state.height = state.width;
