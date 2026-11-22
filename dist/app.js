@@ -1319,6 +1319,7 @@ function renderCanvas() {
   };
 
   let panesMarkup = "", localImpostsMarkup = "";
+  let paneSelectionMarkup = "";
   sectionLayout(xBounds, yBounds).forEach(({pane,rect}, index) => {
     const {x:px,y:py,width:paneWidth,height:paneHeight} = rect;
 
@@ -1358,13 +1359,18 @@ function renderCanvas() {
 
     localImpostsMarkup += innerImpostsMarkup;
     if (pane.split) return;
+    if (selected) {
+      paneSelectionMarkup += `<rect class="pane-selected"
+        x="${px + 3}" y="${py + 3}"
+        width="${Math.max(paneWidth - 6, 2)}" height="${Math.max(paneHeight - 6, 2)}"
+        fill="none" pointer-events="none" />`;
+    }
     panesMarkup += `
       <g class="pane" data-index="${index}" clip-path="url(#innerClip)">
         <rect x="${px}" y="${py}" width="${paneWidth}" height="${paneHeight}" fill="${glass.color}" />
         <rect x="${px}" y="${py}" width="${paneWidth}" height="${paneHeight}" fill="url(#glassSheen)" opacity="0.55" />
         ${pane.opening !== "fixed" ? `<rect x="${px + paneSashFace / 2}" y="${py + paneSashFace / 2}" width="${Math.max(paneWidth - paneSashFace, 2)}" height="${Math.max(paneHeight - paneSashFace, 2)}" fill="none" stroke="${profileColor}" stroke-width="${paneSashFace}" pointer-events="none" />` : ""}
         ${openingSymbol(pane.opening, px, py, paneWidth, paneHeight, pane.hingeSide)}
-        ${selected ? `<rect class="pane-selected" x="${px + 3}" y="${py + 3}" width="${Math.max(paneWidth - 6, 2)}" height="${Math.max(paneHeight - 6, 2)}" />` : ""}
         <circle cx="${px + paneWidth / 2}" cy="${py + paneHeight / 2}" r="14" fill="rgba(255,255,255,.82)" stroke="rgba(53,80,105,.22)" />
         <text class="pane-number" x="${px + paneWidth / 2}" y="${py + paneHeight / 2 + 4}">${sectionNumber(index)}</text>
         <rect class="pane-hit" data-pane="${index}" x="${px}" y="${py}" width="${paneWidth}" height="${paneHeight}" fill="transparent" tabindex="0" role="button" aria-label="Настроить секцию ${index + 1}" />
@@ -1440,7 +1446,7 @@ function renderCanvas() {
     </defs>
     <g filter="url(#windowShadow)" fill="${profileColor}" stroke="${material.edge}" stroke-width="2.2">${paths.outer}</g>
     <g fill="#bfe3ef" stroke="${material.edge}" stroke-width="1.6">${paths.inner}</g>
-    <g clip-path="url(#innerClip)">${panesMarkup}${localImpostsMarkup}${rootImpostsMarkup}</g>
+    <g clip-path="url(#innerClip)">${panesMarkup}${localImpostsMarkup}${rootImpostsMarkup}<g pointer-events="none">${paneSelectionMarkup}</g></g>
     <g class="dimensions">${axisMarkup}
       <line class="dimension-line" x1="${x}" y1="${y + height + 6}" x2="${x}" y2="${bottomDimensionY + 7}" opacity=".45" />
       <line class="dimension-line" x1="${x + width}" y1="${y + height + 6}" x2="${x + width}" y2="${bottomDimensionY + 7}" opacity=".45" />
