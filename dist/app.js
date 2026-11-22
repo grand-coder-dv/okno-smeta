@@ -1305,6 +1305,19 @@ function profileOutline(bounds, arcs, X, Y, sx, sy) {
   return {path:`M ${point(pts[0])} ${edges.map(e=>e.cmd).join(' ')} Z`, edges, pts,
     screen:pts.map(([x,y])=>[X(x),Y(y)])};
 }
+function arcRise(chord,radius) {
+  const half=chord/2;
+  const R=Math.max(half,radius);
+  return half*half/(R+Math.sqrt(Math.max(0,R*R-half*half)));
+}
+function windowOuterBounds() {
+  const rise=(side,span)=> {
+    const arc=state.shape === "rect" && state.frameArcs?.[side];
+    return arc && arc.direction !== "in" ? arcRise(span,arc.radius) : 0;
+  };
+  return [-rise(3,state.height),-rise(0,state.width),
+    state.width+rise(1,state.height),state.height+rise(2,state.width)];
+}
 function frameCurve(side, offset) {
   const arc = state.shape === "rect" && state.frameArcs?.[side];
   if (!arc || !Number.isFinite(arc.radius)) return null;
@@ -1331,6 +1344,7 @@ function fittedOutline(bounds, offsets, arcs, X, Y, sx, sy) {
   });
   const screen=pts.map(([x,y])=>[X(x),Y(y)]);
   const toScreen=([x,y])=>`${X(x)} ${Y(y)}`;
+  const extrema=[...pts];
   const edges=pts.map((p,i)=>{
     const q=pts[(i+1)%4], vertical=i%2===1, k=Number(vertical), curve=curves[i];
     if (!curve && arcs?.[i]) {
@@ -1340,18 +1354,36 @@ function fittedOutline(bounds, offsets, arcs, X, Y, sx, sy) {
       return {cmd:`A ${R*sx} ${R*sy} 0 0 ${sweep} ${toScreen(q)}`,reverse:`A ${R*sx} ${R*sy} 0 0 ${1-sweep} ${toScreen(p)}`,startAngle:angle-d,endAngle:angle+d};
     }
     const pieces=[p];
-    if(curve) for(let j=1;j<64;j++){
-      const u=p[k]+(q[k]-p[k])*j/64;
-      pieces.push(vertical?[curve(u),u]:[u,curve(u)]);
+    if(curve){
+      const positions=Array.from({length:63},(_,j)=>p[k]+(q[k]-p[k])*(j+1)/64);
+      const middle=(vertical?state.height:state.width)/2;
+      if(middle>Math.min(p[k],q[k]) && middle<Math.max(p[k],q[k])) positions.push(middle);
+      positions.sort((a,b)=>(p[k]<q[k]?1:-1)*(a-b));
+      for(const u of positions) pieces.push(vertical?[curve(u),u]:[u,curve(u)]);
     }
+    extrema.push(...pieces);
     pieces.push(q);
     const angle=(a,b)=>Math.atan2(b[1]-a[1],b[0]-a[0]);
     return {cmd:pieces.slice(1).map(pt=>`L ${toScreen(pt)}`).join(' '),reverse:pieces.slice(0,-1).reverse().map(pt=>`L ${toScreen(pt)}`).join(' '),
       startAngle:angle(p,pieces[1]),endAngle:angle(pieces.at(-2),q)};
   });
-  return {pts,screen,edges,path:`M ${screen[0].join(' ')} ${edges.map(e=>e.cmd).join(' ')} Z`};
+  return {pts,screen,edges,extrema,path:`M ${screen[0].join(' ')} ${edges.map(e=>e.cmd).join(' ')} Z`};
 }
 
+function fittedGlass(entry,geometry,f,tech,X=mm=>mm,Y=mm=>mm,sx=1,sy=1) {
+  const {sashBox,opening}=geometry;
+  const bite=tech.bite[sashBox ? "створка" : "рама"];
+  const fbox=[f.x,f.y,f.x+f.w,f.y+f.h];
+  const contact=[Math.abs(fbox[1]-opening[1]+bite),Math.abs(fbox[2]-opening[2]-bite),
+    Math.abs(fbox[3]-opening[3]-bite),Math.abs(fbox[0]-opening[0]+bite)];
+  const sides=[entry.edges[2],entry.edges[1],entry.edges[3],entry.edges[0]];
+  const depth=tech.frame+(sashBox?tech.sash-SASH_LAP:0)-bite;
+  const depths=sides.map((touch,i)=>touch&&contact[i]<1e-5?depth:null);
+  const outline=fittedOutline(fbox,depths,null,X,Y,sx,sy);
+  const points=outline.extrema || outline.pts;
+  const xs=points.map(p=>p[0]), ys=points.map(p=>p[1]);
+  return {path:outline.path,w:Math.max(...xs)-Math.min(...xs),h:Math.max(...ys)-Math.min(...ys)};
+}
 function profileEdgeTargets(outer, inner, type, index = null) {
   const label=type === 'frame' ? 'Рама' : 'Створка';
   const joints=outer.edges.map((edge,i)=>{
@@ -1400,17 +1432,31 @@ function editProfileSide(node) {
       <strong data-arc-title></strong>
       <label>Форма <select name="shape"><option value="line">Прямая</option><option value="arc">Дуга</option></select></label>
       <label>Радиус, мм <input name="radius" type="number" step="any"></label>
+      <label>Высота дуги, мм <input name="rise" type="number" step="any"></label>
       <label>Направление <select name="direction"><option value="out">Наружу</option><option value="in">Внутрь</option></select></label>
       <small data-arc-hint></small><div><button type="submit" value="cancel" formnovalidate>Отмена</button> <button type="submit" value="apply">Применить</button></div></form>`;
     document.body.append(dialog);
   }
-  const form=dialog.querySelector("form"), {shape,radius,direction}=Object.fromEntries([...form.elements].filter(e=>e.name).map(e=>[e.name,e]));
+  const form=dialog.querySelector("form"), {shape,radius,rise,direction}=Object.fromEntries([...form.elements].filter(e=>e.name).map(e=>[e.name,e]));
   dialog.querySelector('[data-arc-title]').textContent=`${pane?'Створка':'Рама'}: ${PROFILE_SIDES[side]}`;
-  radius.min=String(Math.ceil(chord/2)); radius.value=current?.radius ?? Math.ceil(chord);
+  const half=chord/2;
+  radius.min=String(half); radius.value=Math.max(half,current?.radius ?? Math.ceil(chord));
+  rise.min="0.000001"; rise.max=String(half);
+  const rounded=value=>String(Number(value.toFixed(6)));
+  rise.value=rounded(Math.min(half,arcRise(chord,radius.valueAsNumber)));
   shape.value=current?'arc':'line'; direction.value=current?.direction ?? 'out';
-  dialog.querySelector('[data-arc-hint]').textContent=`Минимальный радиус по длине стороны: ${radius.min} мм.`;
-  shape.onchange=()=>{radius.disabled=direction.disabled=shape.value!=="arc";radius.required=!radius.disabled;}; shape.onchange();
-  radius.oninput=direction.onchange=()=>radius.setCustomValidity("");
+  dialog.querySelector('[data-arc-hint]').textContent=`Высота измеряется от линии между концами до вершины. Радиус и высота пересчитываются друг из друга.`;
+  shape.onchange=()=>{radius.disabled=rise.disabled=direction.disabled=shape.value!=="arc";radius.required=rise.required=!radius.disabled;}; shape.onchange();
+  radius.oninput=()=>{
+    radius.setCustomValidity("");
+    if(radius.valueAsNumber>=half) rise.value=rounded(Math.min(half,arcRise(chord,radius.valueAsNumber)));
+  };
+  rise.oninput=()=>{
+    radius.setCustomValidity("");
+    const h=rise.valueAsNumber;
+    if(h>0 && h<=half) radius.value=String(Math.max(half,(half*half+h*h)/(2*h)));
+  };
+  direction.onchange=()=>radius.setCustomValidity("");
   radius.setCustomValidity("");
   form.onsubmit=event=>{
     if(event.submitter?.value!=="apply") return;
@@ -1542,16 +1588,12 @@ function renderCanvas() {
     for (const f of fields) {
       if (f.clearW<=0 || f.clearH<=0) continue;
       const w=f.w*sx,h=f.h*sy;
-      const bite=tech.bite[sashBox ? "створка" : "рама"];
-      const fbox=[f.x,f.y,f.x+f.w,f.y+f.h];
-      const contact=[Math.abs(fbox[1]-opening[1]+bite),Math.abs(fbox[2]-opening[2]-bite),
-        Math.abs(fbox[3]-opening[3]-bite),Math.abs(fbox[0]-opening[0]+bite)];
-      const depths=offsets((sashBox ? innerDepth : tech.frame)-bite).map((d,i)=>contact[i]<1e-5?d:null);
-      const glassPath=fittedOutline(fbox,depths,null,X,Y,sx,sy).path;
+      const fitted=fittedGlass(entry,{sashBox,opening},f,tech,X,Y,sx,sy);
+      const glassPath=fitted.path;
       if (selected) glassMarkup += `<path class="pane-selected" d="${glassPath}" fill="none" />`;
       const font=Math.min(10,w/8,h/4);
       if (font>=4) glassMarkup += `<text x="${X(f.x)+w/2}" y="${Y(f.y)+h/2+Math.min(26,h/3)}"
-        text-anchor="middle" font-size="${font}" fill="#20384c" paint-order="stroke" stroke="#edf6fa" stroke-width="2">${state.shape === "rect" && !customProfileArcs() ? "" : "≈ "}${glassSizeLabel(f)}</text>`;
+        text-anchor="middle" font-size="${font}" fill="#20384c" paint-order="stroke" stroke="#edf6fa" stroke-width="2">${state.shape === "rect" && !customProfileArcs() ? "" : "≈ "}${glassSizeLabel({...f,w:fitted.w,h:fitted.h})}</text>`;
     }
     const paneOutline=hasFrameArc ? fit([physical.x,physical.y,physical.x+physical.width,physical.y+physical.height],0).path : null;
     const areaAttrs=paneOutline?`d="${paneOutline}"`:`x="${px}" y="${py}" width="${paneWidth}" height="${paneHeight}"`;
@@ -1591,8 +1633,10 @@ function renderCanvas() {
   });
 
   canvasLayout = { x, y, width, height, box, xBounds, yBounds, paneRects };
-  const leftDimensionX = Math.max(24, x - 39);
-  const bottomDimensionY = Math.min(476, y + height + 39);
+  const [gL,gT,gR,gB]=windowOuterBounds();
+  const bx0=X(gL),by0=Y(gT),bx1=X(gR),by1=Y(gB);
+  const leftDimensionX=bx0-39,bottomDimensionY=by1+39;
+  const actualWidth=gR-gL,actualHeight=gB-gT;
   const axisGroups = [...dimensionGroups.values()];
   const tracks = [[], []];
   const axisMarkup = axisGroups.map((group, i) => {
@@ -1604,7 +1648,7 @@ function renderCanvas() {
     const range = [Math.min(start,end,mid-45), Math.max(start,end,mid+45)];
     let level = rows.findIndex(row => row.every(([a,b])=>b<range[0]||a>range[1]));
     if(level<0){level=rows.length;rows.push([]);} rows[level].push(range);
-    const edge = vertical ? x+width+5 : y-5;
+    const edge = vertical ? bx1+5 : by0-5;
     const track = edge+(vertical?1:-1)*(25+level*29);
     const line=(a,b,c,d,arrows=false)=>`<line class="dimension-line" x1="${vertical?b:a}" y1="${vertical?a:b}" x2="${vertical?d:c}" y2="${vertical?c:d}" ${arrows?'marker-start="url(#dimArrow)" marker-end="url(#dimArrow)"':'opacity=".45"'}/>`;
     const text=`${Math.round(vertical ? state.height-first.absolute : first.absolute)} мм`;
@@ -1615,11 +1659,10 @@ function renderCanvas() {
       <text class="dimension-text" x="0" y="5" pointer-events="none">${text}</text></g></g>`;
   }).join("");
   canvasLayout.axisGroups = axisGroups;
-  const pad=customProfileArcs()?Math.max(width,height)/2+16:0;
-  const viewTop=Math.min(0,y-46-Math.max(0,tracks[0].length-1)*29,y-pad);
-  const viewRight=Math.max(640,x+width+46+Math.max(0,tracks[1].length-1)*29);
-  const viewLeft=Math.min(0,x-pad);
-  svg.setAttribute("viewBox",`${viewLeft} ${viewTop} ${Math.max(viewRight,x+width+pad)-viewLeft} ${Math.max(500,y+height+pad)-viewTop}`);
+  const viewTop=Math.min(0,by0-46-Math.max(0,tracks[0].length-1)*29);
+  const viewRight=Math.max(640,bx1+46+Math.max(0,tracks[1].length-1)*29);
+  const viewLeft=Math.min(0,leftDimensionX-21);
+  svg.setAttribute("viewBox",`${viewLeft} ${viewTop} ${viewRight-viewLeft} ${Math.max(500,bottomDimensionY+21)-viewTop}`);
   svg.innerHTML = `
     <defs>
       <filter id="windowShadow" x="-30%" y="-30%" width="160%" height="170%">
@@ -1642,17 +1685,17 @@ function renderCanvas() {
     <g clip-path="url(#glassCutClip)" pointer-events="none">${sashMarkup}${glassMarkup}</g>
     <g>${profileTargets}</g>
     <g class="dimensions">${axisMarkup}
-      <line class="dimension-line" x1="${x}" y1="${y + height + 6}" x2="${x}" y2="${bottomDimensionY + 7}" opacity=".45" />
-      <line class="dimension-line" x1="${x + width}" y1="${y + height + 6}" x2="${x + width}" y2="${bottomDimensionY + 7}" opacity=".45" />
-      <line class="dimension-line" x1="${x + 4}" y1="${bottomDimensionY}" x2="${x + width - 4}" y2="${bottomDimensionY}" marker-start="url(#dimArrow)" marker-end="url(#dimArrow)" />
-      <g data-window-dimension="width" tabindex="0" role="button" aria-label="Изменить ширину или диаметр" style="cursor:pointer"><rect x="${x + width / 2 - 48}" y="${bottomDimensionY - 13}" width="96" height="24" rx="6" fill="#eef2f6" />
-      <text class="dimension-text" x="${x + width / 2}" y="${bottomDimensionY + 5}">${state.shape === "circle" ? "Ø " : ""}${numberFormatter.format(state.width)} мм</text></g>
-      <line class="dimension-line" x1="${x - 6}" y1="${y}" x2="${leftDimensionX - 7}" y2="${y}" opacity=".45" />
-      <line class="dimension-line" x1="${x - 6}" y1="${y + height}" x2="${leftDimensionX - 7}" y2="${y + height}" opacity=".45" />
-      <line class="dimension-line" x1="${leftDimensionX}" y1="${y + 4}" x2="${leftDimensionX}" y2="${y + height - 4}" marker-start="url(#dimArrow)" marker-end="url(#dimArrow)" />
-      <g transform="translate(${leftDimensionX - 1} ${y + height / 2}) rotate(-90)" data-window-dimension="${state.shape === "circle" ? "width" : "height"}" tabindex="0" role="button" aria-label="Изменить высоту или диаметр" style="cursor:pointer">
+      <line class="dimension-line" x1="${bx0}" y1="${by1 + 6}" x2="${bx0}" y2="${bottomDimensionY + 7}" opacity=".45" />
+      <line class="dimension-line" x1="${bx1}" y1="${by1 + 6}" x2="${bx1}" y2="${bottomDimensionY + 7}" opacity=".45" />
+      <line class="dimension-line" x1="${bx0 + 4}" y1="${bottomDimensionY}" x2="${bx1 - 4}" y2="${bottomDimensionY}" marker-start="url(#dimArrow)" marker-end="url(#dimArrow)" />
+      <g data-window-dimension="width" tabindex="0" role="button" aria-label="Габаритная ширина. Нажмите, чтобы изменить ширину между углами" style="cursor:pointer"><rect x="${(bx0 + bx1) / 2 - 48}" y="${bottomDimensionY - 13}" width="96" height="24" rx="6" fill="#eef2f6" />
+      <text class="dimension-text" x="${(bx0 + bx1) / 2}" y="${bottomDimensionY + 5}">${state.shape === "circle" ? "Ø " : ""}${numberFormatter.format(Math.round(actualWidth))} мм</text></g>
+      <line class="dimension-line" x1="${bx0 - 6}" y1="${by0}" x2="${leftDimensionX - 7}" y2="${by0}" opacity=".45" />
+      <line class="dimension-line" x1="${bx0 - 6}" y1="${by1}" x2="${leftDimensionX - 7}" y2="${by1}" opacity=".45" />
+      <line class="dimension-line" x1="${leftDimensionX}" y1="${by0 + 4}" x2="${leftDimensionX}" y2="${by1 - 4}" marker-start="url(#dimArrow)" marker-end="url(#dimArrow)" />
+      <g transform="translate(${leftDimensionX - 1} ${(by0 + by1) / 2}) rotate(-90)" data-window-dimension="${state.shape === "circle" ? "width" : "height"}" tabindex="0" role="button" aria-label="Габаритная высота. Нажмите, чтобы изменить высоту между углами" style="cursor:pointer">
         <rect x="-48" y="-13" width="96" height="24" rx="6" fill="#eef2f6" />
-        <text class="dimension-text" x="0" y="5">${numberFormatter.format(state.height)} мм</text>
+        <text class="dimension-text" x="0" y="5">${numberFormatter.format(Math.round(actualHeight))} мм</text>
       </g>
     </g>`;
 
@@ -1942,7 +1985,10 @@ function renderInspector() {
   select.value = pane.glass;
   let note = $("#paneGlassSize");
   if (!note) { note = document.createElement("small"); note.id = "paneGlassSize"; select.after(note); }
-  note.textContent = `${state.shape === "rect" ? "Размер" : "Размер ориентировочно"}: ${[...new Set(glassGeometry(sectionLayout()[state.selectedPane]).fields.map(glassSizeLabel))].join("; ")}`;
+  const entry=sectionLayout()[state.selectedPane], tech=getTechnology();
+  const geometry=glassGeometry(entry,tech);
+  const labels=geometry.fields.map(f=>glassSizeLabel({...f,...fittedGlass(entry,geometry,f,tech)}));
+  note.textContent=`${state.shape === "rect" && !customProfileArcs() ? "Размер" : "Габарит по контуру, ориентировочно"}: ${[...new Set(labels)].join("; ")}`;
   const innerCount = pane.innerImposts.length;
   const paneKind = pane.opening === "fixed" ? "глухой секции" : "створке";
   $("#innerImpostHint").textContent = innerCount
@@ -2033,7 +2079,7 @@ function renderAll() {
   renderSpecification(calculation);
   if(customProfileArcs()) {
     $("#currentEstimateStatus").textContent="Эскиз с дугами";
-    $("#currentEstimateHint").textContent="Контуры с дугами показаны схематически; числовые размеры и цена относятся к прямоугольной основе. Не используйте их для изготовления.";
+    $("#currentEstimateHint").textContent="Габариты показаны по контурам эскиза; цена и площадь сметы рассчитаны по прямоугольной основе. Не используйте эскиз для изготовления.";
   }
   updateActiveControls();
   renderProjectToolbar();
