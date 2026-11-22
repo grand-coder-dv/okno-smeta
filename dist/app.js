@@ -112,6 +112,7 @@ const DEFAULT_RATES = Object.freeze({
   handle: 520,
   archSurcharge: 25,
   circleSurcharge: 38,
+  skewSurcharge: 0,
   markup: 10,
 });
 
@@ -1182,12 +1183,12 @@ function buildSpecification() {
   }
 
   let unitSubtotal = lines.reduce((sum, line) => sum + line.total, 0) / quantity;
-  const shapeRate = state.shape === "arch" && customProfileArcs() ? rates.archSurcharge : state.shape === "circle" ? rates.circleSurcharge : 0;
+  const shapeRate = state.shape === "arch" && customProfileArcs() ? rates.archSurcharge : state.shape === "circle" ? rates.circleSurcharge : state.shape === "skew" ? rates.skewSurcharge : 0;
   if (shapeRate > 0) {
     const shapeUnitTotal = unitSubtotal * (shapeRate / 100);
     addLine({
       name: "Изготовление нестандартной формы",
-      note: "Гибка профиля и индивидуальная сборка",
+      note: state.shape === "skew" ? "Раскрой под углом и индивидуальная сборка" : "Гибка профиля и индивидуальная сборка",
       characteristic: `${SHAPES[state.shape]}; +${shapeRate}%`,
       qty: quantity,
       unit: "компл.",
@@ -2779,6 +2780,7 @@ const PRICE_BINDINGS = {
   woodAssembly: ["assembly", "wood"],
   archSurcharge: ["archSurcharge"],
   circleSurcharge: ["circleSurcharge"],
+  skewSurcharge: ["skewSurcharge"],
   markup: ["markup"],
 };
 
@@ -2791,16 +2793,24 @@ function setRate(path, value) {
   else rates[path[0]][path[1]] = value;
 }
 
+function ensureSkewSurchargeInput() {
+  const form=$("#pricesForm");
+  if(form.elements.namedItem("skewSurcharge"))return;
+  const anchor=form.elements.namedItem("circleSurcharge").closest("label");
+  anchor.insertAdjacentHTML("afterend", '<label><span>Косая форма</span><input name="skewSurcharge" type="number" min="0" max="300" step="1" /></label>');
+}
 function populatePriceForm() {
+  ensureSkewSurchargeInput();
   Object.entries(PRICE_BINDINGS).forEach(([name, path]) => {
     $("#pricesForm").elements[name].value = getRate(path);
   });
 }
 
 function readPriceForm() {
+  ensureSkewSurchargeInput();
   Object.entries(PRICE_BINDINGS).forEach(([name, path]) => {
     const input = $("#pricesForm").elements[name];
-    setRate(path, Math.max(0, Number(input.value) || 0));
+    setRate(path, name === "skewSurcharge" ? clamp(input.value, 0, 300) : Math.max(0, Number(input.value) || 0));
   });
 }
 
