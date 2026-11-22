@@ -465,9 +465,7 @@ function renderOrder() {
     .map((item, index) => {
       const material = MATERIALS[item.configuration.material];
       const shape = SHAPES[item.configuration.shape] || item.configuration.shape;
-      const dimensions = item.configuration.shape === "circle"
-        ? `Ø ${numberFormatter.format(item.configuration.width)} мм`
-        : `${numberFormatter.format(item.configuration.width)} × ${numberFormatter.format(item.configuration.height)} мм`;
+      const dimensions = overallSizeLabel(item.configuration);
       return `
         <article class="order-item${item.id === editingOrderItemId ? " editing" : ""}" data-order-item-id="${escapeHtml(item.id)}">
           <div class="order-item-title">
@@ -521,9 +519,7 @@ function renderPrintOrder() {
       const profile = material?.profiles.find((candidate) => candidate.id === configuration.profile);
       const finish = material?.finishes.find((candidate) => candidate.id === configuration.finish);
       const presentation = item.presentation || {};
-      const dimensions = configuration.shape === "circle"
-        ? `Ø ${numberFormatter.format(configuration.width)} мм`
-        : `${numberFormatter.format(configuration.width)} × ${numberFormatter.format(configuration.height)} мм`;
+      const dimensions = overallSizeLabel(configuration);
       const specificationRows = (item.specification || [])
         .map(
           (line, lineIndex) => `
@@ -1014,7 +1010,9 @@ function geometry() {
     perimeter = 2 * (widthM + heightM);
   }
 
-  const shapeFactor = Math.min(1, area / Math.max(widthM * heightM, 0.001));
+  const customFrame=customFrameMeasures();
+  if(customFrame){area=customFrame.area;perimeter=customFrame.perimeter;}
+  const shapeFactor = customFrame ? 1 : Math.min(1, area / Math.max(widthM * heightM, 0.001));
   const primaryImpost = state.vImposts.length * heightM * verticalFactor + state.hImposts.length * widthM * horizontalFactor;
   let nestedImpost = 0;
   let nestedCount = 0;
@@ -1032,7 +1030,7 @@ function geometry() {
   });
   const glazingArea = paneGlazingAreas.reduce((sum, value) => sum + value, 0);
   const impost = primaryImpost + nestedImpost;
-  return { area, perimeter, glazingArea, paneGlazingAreas, impost, primaryImpost, nestedImpost, nestedCount, glassUnits };
+  return { area, perimeter, glazingArea, paneGlazingAreas, impost, primaryImpost, nestedImpost, nestedCount, glassUnits, overall:overallSize() };
 }
 
 function buildSpecification() {
@@ -1054,7 +1052,7 @@ function buildSpecification() {
   const frameUnitTotal = dimensions.perimeter * frameRate;
   addLine({
     name: "Профиль рамы",
-    note: "Внешний контур конструкции",
+    note: `Наружный габарит: ${overallSizeLabel()}`,
     characteristic: `${profile.name}; ${finish.name}; ширина ${tech.frame} мм`,
     qty: dimensions.perimeter * quantity,
     unit: "пог. м",
@@ -1411,14 +1409,66 @@ function arcRise(chord,radius) {
   const R=Math.max(half,radius);
   return half*half/(R+Math.sqrt(Math.max(0,R*R-half*half)));
 }
-function windowOuterBounds() {
-  const poly=polygonPoints(); if(poly)return polyBounds(poly);
+function windowOuterBounds(config = state) {
+  if(config.shape === "rect" && config.framePolygon?.length) {
+    return polyBounds(config.framePolygon.map(([x,y])=>[x*config.width,y*config.height]));
+  }
   const rise=(side,span)=> {
-    const arc=state.shape === "rect" && state.frameArcs?.[side];
+    const arc=config.shape === "rect" && config.frameArcs?.[side];
     return arc && arc.direction !== "in" ? arcRise(span,arc.radius) : 0;
   };
-  return [-rise(3,state.height),-rise(0,state.width),
-    state.width+rise(1,state.height),state.height+rise(2,state.width)];
+  return [-rise(3,config.height),-rise(0,config.width),
+    config.width+rise(1,config.height),config.height+rise(2,config.width)];
+}
+function overallSize(config = state) {
+  const [l,t,r,b]=windowOuterBounds(config);
+  return {width:r-l,height:b-t};
+}
+function overallSizeLabel(config = state) {
+  const {width,height}=overallSize(config);
+  const mm=value=>numberFormatter.format(Math.round(value));
+  return config.shape==="circle" ? `Ø ${mm(width)} мм` : `${mm(width)} × ${mm(height)} мм`;
+}
+function syncOverallInputs(force=false) {
+  const size=overallSize();
+  for(const key of ["width","height"]){
+    const input=$("#"+key);
+    const baseMin=400, baseMax=key==="width"?5000:4000;
+    input.min=String(Math.round(overallSize({...state,[key]:baseMin})[key]));
+    input.max=String(Math.round(overallSize({...state,[key]:baseMax})[key]));
+    if(force || document.activeElement!==input) input.value=String(Math.round(size[key]));
+  }
+}
+function commitOverallDimension(key,input) {
+  const desired=input.valueAsNumber;
+  if(!Number.isFinite(desired)){syncOverallInputs(true);return;}
+  const lo=400,hi=key==="width"?5000:4000;
+  const min=overallSize({...state,[key]:lo})[key],max=overallSize({...state,[key]:hi})[key];
+  if(max>min && Math.round(overallSize()[key])!==desired){
+    const base=lo+(clamp(desired,min,max)-min)*(hi-lo)/(max-min);
+    state[key]=Math.round(base*1000)/1000;
+    if(state.shape==="circle")state.height=state.width;
+  }
+  syncOverallInputs(true);
+  renderAll();
+}
+function closedArea(points) {
+  return Math.abs(points.reduce((sum,p,i)=>{const q=points[(i+1)%points.length];return sum+p[0]*q[1]-p[1]*q[0];},0))/2;
+}
+function customFrameMeasures() {
+  const poly=polygonPoints();
+  if(poly) return {area:closedArea(poly)/1e6,
+    perimeter:poly.reduce((sum,p,i)=>{const q=poly[(i+1)%poly.length];return sum+Math.hypot(q[0]-p[0],q[1]-p[1]);},0)/1000};
+  if(state.shape!=="rect" || !Object.values(state.frameArcs||{}).some(Boolean))return null;
+  let area=state.width*state.height, perimeter=2*(state.width+state.height);
+  for(const [i,arc] of Object.entries(state.frameArcs||{})){
+    if(!arc || !Number.isFinite(arc.radius))continue;
+    const chord=Number(i)%2?state.height:state.width, radius=Math.max(chord/2,arc.radius);
+    const angle=2*Math.asin(chord/(2*radius));
+    area+=(arc.direction==="in"?-1:1)*radius*radius*(angle-Math.sin(angle))/2;
+    perimeter+=radius*angle-chord;
+  }
+  return {area:Math.max(0,area)/1e6,perimeter:perimeter/1000};
 }
 function frameCurve(side, offset) {
   const arc = state.shape === "rect" && state.frameArcs?.[side];
@@ -1857,12 +1907,12 @@ function renderCanvas() {
       <line class="dimension-line" x1="${bx0}" y1="${by1 + 6}" x2="${bx0}" y2="${bottomDimensionY + 7}" opacity=".45" />
       <line class="dimension-line" x1="${bx1}" y1="${by1 + 6}" x2="${bx1}" y2="${bottomDimensionY + 7}" opacity=".45" />
       <line class="dimension-line" x1="${bx0 + 4}" y1="${bottomDimensionY}" x2="${bx1 - 4}" y2="${bottomDimensionY}" marker-start="url(#dimArrow)" marker-end="url(#dimArrow)" />
-      <g data-window-dimension="width" tabindex="0" role="button" aria-label="Габаритная ширина. Нажмите, чтобы изменить ширину между углами" style="cursor:pointer"><rect x="${(bx0 + bx1) / 2 - 48}" y="${bottomDimensionY - 13}" width="96" height="24" rx="6" fill="#eef2f6" />
+      <g data-window-dimension="width" tabindex="0" role="button" aria-label="Изменить габаритную ширину" style="cursor:pointer"><rect x="${(bx0 + bx1) / 2 - 48}" y="${bottomDimensionY - 13}" width="96" height="24" rx="6" fill="#eef2f6" />
       <text class="dimension-text" x="${(bx0 + bx1) / 2}" y="${bottomDimensionY + 5}">${state.shape === "circle" ? "Ø " : ""}${numberFormatter.format(Math.round(actualWidth))} мм</text></g>
       <line class="dimension-line" x1="${bx0 - 6}" y1="${by0}" x2="${leftDimensionX - 7}" y2="${by0}" opacity=".45" />
       <line class="dimension-line" x1="${bx0 - 6}" y1="${by1}" x2="${leftDimensionX - 7}" y2="${by1}" opacity=".45" />
       <line class="dimension-line" x1="${leftDimensionX}" y1="${by0 + 4}" x2="${leftDimensionX}" y2="${by1 - 4}" marker-start="url(#dimArrow)" marker-end="url(#dimArrow)" />
-      <g transform="translate(${leftDimensionX - 1} ${(by0 + by1) / 2}) rotate(-90)" data-window-dimension="${state.shape === "circle" ? "width" : "height"}" tabindex="0" role="button" aria-label="Габаритная высота. Нажмите, чтобы изменить высоту между углами" style="cursor:pointer">
+      <g transform="translate(${leftDimensionX - 1} ${(by0 + by1) / 2}) rotate(-90)" data-window-dimension="${state.shape === "circle" ? "width" : "height"}" tabindex="0" role="button" aria-label="Изменить габаритную высоту" style="cursor:pointer">
         <rect x="-48" y="-13" width="96" height="24" rx="6" fill="#eef2f6" />
         <text class="dimension-text" x="0" y="5">${numberFormatter.format(Math.round(actualHeight))} мм</text>
       </g>
@@ -2187,7 +2237,7 @@ function renderSummary(calculation) {
   $("#summaryShape").textContent = SHAPES[state.shape];
   $("#summaryFinish").textContent = calculation.finish.name;
   $("#specTotal").textContent = formatMoney(calculation.total);
-  $("#editorDimensions").textContent = `${numberFormatter.format(state.width)} × ${numberFormatter.format(state.height)} мм`;
+  $("#editorDimensions").textContent = overallSizeLabel();
   $("#editorArea").textContent = `${formatNumber(calculation.area)} м²`;
 
   const preliminary = isPreliminaryShape();
@@ -2250,13 +2300,14 @@ function renderAll() {
   syncGlassChoices();
   const calculation = buildSpecification();
   renderCanvas();
+  syncOverallInputs();
   refreshProfileEdit();
   renderInspector();
   renderSummary(calculation);
   renderSpecification(calculation);
   if(customProfileArcs()) {
     $("#currentEstimateStatus").textContent="Эскиз с дугами";
-    $("#currentEstimateHint").textContent="Габариты показаны по контурам эскиза; цена и площадь сметы рассчитаны по прямоугольной основе. Не используйте эскиз для изготовления.";
+    $("#currentEstimateHint").textContent="Габариты и наружный контур рамы учтены. Площадь стекла и длины импостов в смете остаются предварительными. Не используйте эскиз для изготовления.";
   }
   updateActiveControls();
   renderProjectToolbar();
@@ -2325,25 +2376,10 @@ function bindEvents() {
     });
   });
 
-  $("#width").addEventListener("keydown", event => { if(event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); } });
-  $("#width").addEventListener("change", (event) => {
-    if (event.target.value === "") { event.target.value = state.width; return; }
-    state.width = clamp(event.target.value, 400, 5000);
-    if (state.shape === "circle") {
-      state.height = state.width;
-      $("#height").value = state.height;
-    }
-    renderAll();
-  });
-  $("#width").addEventListener("change", (event) => (event.target.value = state.width));
-
-  $("#height").addEventListener("keydown", event => { if(event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); } });
-  $("#height").addEventListener("change", (event) => {
-    if (event.target.value === "") { event.target.value = state.height; return; }
-    state.height = clamp(event.target.value, 400, 4000);
-    renderAll();
-  });
-  $("#height").addEventListener("change", (event) => (event.target.value = state.height));
+  for(const key of ["width","height"]){
+    $("#"+key).addEventListener("keydown",event=>{if(event.key==="Enter"){event.preventDefault();event.currentTarget.blur();}});
+    $("#"+key).addEventListener("change",event=>commitOverallDimension(key,event.currentTarget));
+  }
 
   $("#quantity").addEventListener("input", (event) => {
     state.quantity = clamp(event.target.value, 1, 99);
@@ -2664,8 +2700,7 @@ function bindEvents() {
 function syncFormFromState() {
   $$('input[name="material"]').forEach((input) => (input.checked = input.value === state.material));
   updateMaterialSelects();
-  $("#width").value = state.width;
-  $("#height").value = state.height;
+  syncOverallInputs(true);
   $("#quantity").value = state.quantity;
   $("#columns").value = state.cols;
   $("#rows").value = state.rows;
