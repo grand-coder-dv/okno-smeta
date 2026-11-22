@@ -199,12 +199,9 @@
                 <option value="tilt">Откидная</option>
               </select>
             </label>
-            <label class="field" id="hingeSideField" hidden style="display: none">
+            <label class="field" id="hingeSideField" hidden style="display:none">
               <span>Сторона петель на рисунке</span>
-              <select id="hingeSide">
-                <option value="left">Петли слева — ручка справа</option>
-                <option value="right">Петли справа — ручка слева</option>
-              </select>
+              <select id="hingeSide"><option value="left">Петли слева — ручка справа</option><option value="right">Петли справа — ручка слева</option></select>
             </label>
             <label class="field">
               <span>Стеклопакет секции</span>
@@ -456,6 +453,12 @@
             <button type="button" data-catalog-material="wood" aria-selected="false">Дерево</button>
           </div>
           <div id="technologyCatalogEditor" class="technology-catalog-editor"></div>
+          <section class="technology-catalog-editor">
+            <h3>Стеклопакеты материала</h3>
+            <p>Цена за м². Если цену не указать, для стандартного стеклопакета используется тариф из вкладки «Цены».</p>
+            <div id="glassCatalogEditor"></div>
+            <button type="button" class="button ghost" id="addGlassCatalog">Добавить стеклопакет</button>
+          </section>
           <p class="technology-note">Нельзя удалить последнюю систему или последний цвет материала. Изменения сохраняются на этом устройстве.</p>
           <div class="dialog-actions">
             <button class="button ghost" id="resetTechnology" type="button">Вернуть стандартные</button>
