@@ -1846,10 +1846,14 @@ tbody tr:hover {
     gap: 18px;
   }
 
-  .summary-panel .panel-title-row,
-  .summary-panel .estimate-note,
-  .summary-panel .wide {
+  .summary-panel .panel-title-row {
     display: none;
+  }
+
+  .summary-panel .estimate-note,
+  .summary-panel #scrollToSpec,
+  .summary-panel #saveOrderItem {
+    grid-column: 1 / -1;
   }
 
   .summary-panel .price-block,
@@ -2380,30 +2384,4 @@ tbody tr:hover {
   .print-order-footer p {
     grid-column: 1 / -1;
   }
-}
-/* Назад и вперёд в графическом редакторе */
-#editorHistory .button.ghost:enabled {
-  color: #fff;
-  background: #24384f;
-  border-color: #24384f;
-  opacity: 1;
-  cursor: pointer;
-}
-
-#editorHistory .button.ghost:enabled:hover {
-  background: #17283b;
-  border-color: #17283b;
-}
-
-#editorHistory .button.ghost:disabled {
-  color: #68778a;
-  background: #edf1f5;
-  border-color: #dce3eb;
-  opacity: 1;
-  cursor: not-allowed;
-}
-
-#editorHistory .button.ghost:focus-visible {
-  outline: 2px solid #24384f;
-  outline-offset: 3px;
 }
