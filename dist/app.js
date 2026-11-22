@@ -1292,20 +1292,45 @@ function profileOutline(bounds, arcs, X, Y, sx, sy) {
   const edges = pts.map((p,i) => {
     const q=pts[(i+1)%4], chord=Math.hypot(q[0]-p[0],q[1]-p[1]);
     const a=arcs?.[i];
-    if (!a || !Number.isFinite(a.radius) || !chord) return {p, cmd:`L ${point(q)}`};
-    const radius=Math.max(chord/2,a.radius);
-    return {p,cmd:`A ${radius*sx} ${radius*sy} 0 0 ${a.direction === 'in' ? 0 : 1} ${point(q)}`};
+    const angle=Math.atan2(q[1]-p[1],q[0]-p[0]);
+    if (!a || !Number.isFinite(a.radius) || !chord) return {
+      cmd:`L ${point(q)}`, reverse:`L ${point(p)}`, startAngle:angle,endAngle:angle,
+    };
+    const radius=Math.max(chord/2,a.radius), sweep=a.direction === 'in' ? 0 : 1;
+    const shift=Math.asin(chord/(2*radius))*(sweep?1:-1);
+    return {cmd:`A ${radius*sx} ${radius*sy} 0 0 ${sweep} ${point(q)}`,
+      reverse:`A ${radius*sx} ${radius*sy} 0 0 ${1-sweep} ${point(p)}`,
+      startAngle:angle-shift,endAngle:angle+shift};
   });
-  return {path:`M ${point(pts[0])} ${edges.map(e=>e.cmd).join(' ')} Z`,
-    sides:edges.map(e=>`M ${point(e.p)} ${e.cmd}`)};
+  return {path:`M ${point(pts[0])} ${edges.map(e=>e.cmd).join(' ')} Z`, edges, pts,
+    screen:pts.map(([x,y])=>[X(x),Y(y)])};
 }
-function profileEdgeTargets(outline, type, index = null) {
-  return outline.sides.map((d,side) => {
+function profileEdgeTargets(outer, inner, type, index = null) {
+  const label=type === 'frame' ? 'Рама' : 'Створка';
+  const joints=outer.edges.map((edge,i)=>{
+    const previous=outer.edges[(i+3)%4];
+    const delta=edge.startAngle-(previous.endAngle+Math.PI);
+    return Math.acos(Math.max(-1,Math.min(1,Math.cos(delta))))*90/Math.PI;
+  });
+  let notes="";
+  const bands=outer.edges.map((edge,side) => {
+    const next=(side+1)%4;
     const selected=activeProfileEdge?.owner===state && activeProfileEdge.type===type && activeProfileEdge.index===index && activeProfileEdge.side===side;
-    return `<path d="${d}" fill="none" stroke="${selected?'#ef8b25':'transparent'}" stroke-width="${selected?4:11}"
-      pointer-events="stroke" style="cursor:pointer" data-profile-edge="${type}" data-edge-side="${side}"
-      data-edge-index="${index ?? ''}" role="button" tabindex="0" aria-label="${type==='frame'?'Рама':'Створка'}: ${PROFILE_SIDES[side]}" />`;
+    const d=`M ${outer.screen[side].join(' ')} ${edge.cmd} L ${inner.screen[next].join(' ')} ${inner.edges[side].reverse} Z`;
+    const ends=`Углы стыка пополам: ${formatNumber(joints[side],1)}° и ${formatNumber(joints[next],1)}°`;
+    if (selected) for(const i of [side,next]){
+      const [x,y]=outer.screen[i], [u,v]=inner.screen[i];
+      notes+=`<text x="${(x+u)/2}" y="${(y+v)/2}" dy=".32em" text-anchor="middle" font-size="9"
+        fill="#20384c" stroke="white" stroke-width="2" paint-order="stroke" pointer-events="none">${formatNumber(joints[i],1)}°</text>`;
+    }
+    return `<path d="${d}" fill="${selected?'#ff9a36':'transparent'}" fill-opacity="${selected ? 0.42 : 0}"
+      stroke="${selected?'#e97d14':'none'}" stroke-width="${selected?1.4:0}" pointer-events="fill" style="cursor:pointer"
+      data-profile-edge="${type}" data-edge-side="${side}" data-edge-index="${index ?? ''}" role="button" tabindex="0"
+      aria-label="${label}: ${PROFILE_SIDES[side]}. ${ends}"><title>${label}: ${PROFILE_SIDES[side]}. ${ends}</title></path>`;
   }).join('');
+  const seams=outer.screen.map(([x,y],i)=>`<line x1="${x}" y1="${y}" x2="${inner.screen[i][0]}" y2="${inner.screen[i][1]}"
+    stroke="#506176" stroke-opacity=".75" stroke-width="1" pointer-events="none"/>`).join('');
+  return bands+seams+notes;
 }
 function editProfileSide(node) {
   const {profileEdge:type,edgeIndex,edgeSide} = node.dataset;
@@ -1385,7 +1410,7 @@ function renderCanvas() {
     const outer=profileOutline([0,0,state.width,state.height],state.frameArcs,X,Y,sx,sy);
     const inset=getTechnology().frame;
     const inner=profileOutline([inset,inset,state.width-inset,state.height-inset],state.frameArcs,X,Y,sx,sy);
-    profileTargets=profileEdgeTargets(outer,"frame");
+    if (state.width>2*inset && state.height>2*inset) profileTargets=profileEdgeTargets(outer,inner,"frame");
     if(Object.values(state.frameArcs||{}).some(Boolean)) {
       paths.outer=`<path d="${outer.path}" />`;
       paths.inner=`<path d="${inner.path}" />`;
@@ -1446,7 +1471,9 @@ function renderCanvas() {
     const {opening,sashBox,fields} = glassGeometry(entry,tech);
     const sashArcs=state.shape==="rect" ? pane.sashArcs : null;
     const outline=bounds=>profileOutline(bounds,sashArcs,X,Y,sx,sy);
-    if (sashBox && state.shape==="rect") profileTargets+=profileEdgeTargets(outline(sashBox),"sash",index);
+    if (sashBox && state.shape==="rect" && opening[2]>opening[0] && opening[3]>opening[1]) {
+      profileTargets+=profileEdgeTargets(outline(sashBox),outline(opening),"sash",index);
+    }
     const path = bounds => outline(bounds).path;
     if (sashBox && opening[2]>opening[0] && opening[3]>opening[1]) {
       sashMarkup += `<path d="${path(sashBox)} ${path(opening)}" fill="${profileColor}" fill-rule="evenodd" stroke="${material.edge}" stroke-width=".8" />`;
