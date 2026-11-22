@@ -171,12 +171,30 @@ function readStoredProjects() {
   }
 }
 
-function persistProjects(nextProjects) {
-  try {
-    localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(nextProjects));
-    return true;
-  } catch {
+async function changeStoredProjects(change) {
+  if (!navigator.locks?.request) {
+    showToast("Для безопасного сохранения откройте приложение через HTTPS или localhost в браузере с поддержкой Web Locks");
     return false;
+  }
+  if (projectWritePending) return false;
+  projectWritePending = true;
+  try {
+    return await navigator.locks.request(PROJECTS_STORAGE_KEY, () => {
+      const raw = localStorage.getItem(PROJECTS_STORAGE_KEY);
+      const latest = JSON.parse(raw ?? "[]");
+      if (!Array.isArray(latest)) throw new Error("Неверный формат проектов");
+      const next = change(latest);
+      if (!next) return false;
+      localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(next));
+      return true;
+    });
+  } catch {
+    showToast("Не удалось записать проекты в браузере. Изменения остались в редакторе.");
+    return false;
+  } finally {
+    projectWritePending = false;
+    projects = readStoredProjects();
+    renderProjectsList();
   }
 }
 
@@ -308,6 +326,8 @@ let editingOrderItemId = null;
 let orderItemSequence = 0;
 let projects = readStoredProjects();
 let activeProjectId = null;
+let activeProjectSnapshot = null;
+let projectWritePending = false;
 let activeProjectName = "";
 let projectDirty = false;
 let currentStateBaseline = "";
@@ -672,30 +692,30 @@ function confirmProjectSaveWithoutCurrentProduct() {
   return window.confirm(message);
 }
 
-function saveProjectRecord(name) {
+async function saveProjectRecord(name) {
   const cleanName = String(name || "").trim();
-  if (!cleanName) return false;
+  if (!cleanName || projectWritePending) return false;
+  const id = activeProjectId, baseline = activeProjectSnapshot;
   const now = new Date().toISOString();
-  const existing = activeProjectId ? projects.find((project) => project.id === activeProjectId) : null;
   const project = {
-    id: existing?.id || createProjectId(),
-    name: cleanName,
-    createdAt: existing?.createdAt || now,
-    updatedAt: now,
-    items: cloneData(orderItems),
-    orderItemSequence,
+    id: id || createProjectId(), name: cleanName,
+    createdAt: baseline ? JSON.parse(baseline).createdAt || now : now,
+    updatedAt: now, revision: createProjectId(),
+    items: cloneData(orderItems), orderItemSequence,
   };
-  const nextProjects = existing
-    ? projects.map((candidate) => (candidate.id === existing.id ? project : candidate))
-    : [...projects, project];
-  if (!persistProjects(nextProjects)) {
-    showToast("Не удалось сохранить проект в браузере");
-    return false;
-  }
-  projects = nextProjects;
+  const saved = await changeStoredProjects(latest => {
+    const existing = latest.find(p => p?.id === project.id);
+    if (id ? (!existing || JSON.stringify(existing) !== baseline) : Boolean(existing)) {
+      showToast("Проект изменён или удалён в другой вкладке. Ваши изменения не записаны; открытая копия осталась в редакторе.");
+      return null;
+    }
+    return id ? latest.map(p => p?.id === id ? project : p) : [...latest, project];
+  });
+  if (!saved) return false;
   activeProjectId = project.id;
+  activeProjectSnapshot = JSON.stringify(project);
   activeProjectName = project.name;
-  projectDirty = false;
+  projectDirty = JSON.stringify(orderItems) !== JSON.stringify(project.items);
   renderProjectToolbar();
   renderProjectsList();
   showToast(`Проект «${project.name}» сохранён`);
@@ -719,6 +739,8 @@ function requestProjectSave() {
 }
 
 function openProject(projectId) {
+  if (projectWritePending) return;
+  projects = readStoredProjects();
   const project = projects.find((candidate) => candidate.id === projectId);
   if (!project) return;
   if (!confirmDiscardUnsavedWork(`Открыть проект «${project.name}»`)) return;
@@ -729,6 +751,7 @@ function openProject(projectId) {
     orderItems.length,
   );
   activeProjectId = project.id;
+  activeProjectSnapshot = JSON.stringify(project);
   activeProjectName = project.name;
   projectDirty = false;
   resetCurrentProduct();
@@ -737,17 +760,21 @@ function openProject(projectId) {
   showToast(`Проект «${project.name}» открыт`);
 }
 
-function deleteProject(projectId) {
+async function deleteProject(projectId) {
   const project = projects.find((candidate) => candidate.id === projectId);
   if (!project || !window.confirm(`Удалить проект «${project.name}»? Восстановить его будет невозможно.`)) return;
-  const nextProjects = projects.filter((candidate) => candidate.id !== projectId);
-  if (!persistProjects(nextProjects)) {
-    showToast("Не удалось удалить проект из браузера");
-    return;
-  }
-  projects = nextProjects;
+  const expected = JSON.stringify(project);
+  if (!await changeStoredProjects(latest => {
+    const current = latest.find(p => p?.id === projectId);
+    if (!current || JSON.stringify(current) !== expected) {
+      showToast("Проект уже изменён или удалён в другой вкладке. Проверьте обновлённый список.");
+      return null;
+    }
+    return latest.filter(p => p?.id !== projectId);
+  })) return;
   if (activeProjectId === projectId) {
     activeProjectId = null;
+    activeProjectSnapshot = null;
     activeProjectName = "";
     projectDirty = orderItems.length > 0;
   }
@@ -757,8 +784,10 @@ function deleteProject(projectId) {
 }
 
 function startNewProject() {
+  if (projectWritePending) return;
   if (!confirmDiscardUnsavedWork("Создать новый проект")) return;
   activeProjectId = null;
+  activeProjectSnapshot = null;
   activeProjectName = "";
   projectDirty = false;
   orderItems = [];
@@ -769,6 +798,18 @@ function startNewProject() {
 }
 
 function saveCurrentOrderItem() {
+  const blockedSashes = circleSashesBlocked() ? sectionPanes().filter(p => !p.split && p.opening !== "fixed") : [];
+  if (blockedSashes.length) {
+    if (!window.confirm("Эта профильная система не разрешает круглые створки. Заменить створки глухим остеклением и сохранить изделие?")) return false;
+    const previous = blockedSashes.map(p => p.opening);
+    blockedSashes.forEach(p => { p.opening = "fixed"; });
+    const issue = validateCurrentProduct();
+    if (issue) {
+      blockedSashes.forEach((p,i) => { p.opening = previous[i]; });
+      showToast(issue);
+      return false;
+    }
+  }
   if(customProfileArcs()) return showToast("Дуги пока доступны для эскиза. Для добавления в заказ нужен расчёт криволинейного стеклопакета.");
   ensurePanes();
   const validationError = validateCurrentProduct();
@@ -810,13 +851,20 @@ function saveCurrentOrderItem() {
   }
   projectDirty = true;
   resetCurrentProduct();
+  return true;
 }
 
 function editOrderItem(itemId) {
   const item = orderItems.find((candidate) => candidate.id === itemId);
   if (!item) return;
+  if (currentProductIsDirty()) {
+    const choice = window.prompt("Есть несохранённое изделие. Введите 1 — сохранить в заказ; 2 — отбросить изменения. Отмена — остаться в редакторе.", "");
+    if (choice?.trim() === "1") {
+      if (!saveCurrentOrderItem()) return;
+    } else if (choice?.trim() !== "2") return;
+  }
   editingOrderItemId = item.id;
-  restoreProductState(item.configuration);
+  restoreProductState(orderItems.find(candidate => candidate.id === itemId).configuration);
   renderOrder();
   $("#saveOrderItem").scrollIntoView({ behavior: "smooth", block: "center" });
 }
@@ -928,7 +976,7 @@ function ensurePanes() {
   state.panes = panes;
   sectionPanes().forEach(p => {
     if (p.split) p.innerImposts = [p.split];
-    if (circleSashesBlocked()) p.opening = "fixed";
+
   });
   if (state.selectedPane !== null) state.selectedPane = clamp(state.selectedPane, 0, Math.max(sectionPanes().length - 1, 0));
   if (state.selectedImpost?.scope === "pane" && !sectionPanes()[state.selectedImpost.paneIndex]?.innerImposts.some(item => item.id === state.selectedImpost.id)) state.selectedImpost = null;
@@ -2398,6 +2446,10 @@ function renderAll() {
     $("#currentEstimateStatus").textContent="Эскиз с дугами";
     $("#currentEstimateHint").textContent="Габариты и наружный контур рамы учтены. Площадь стекла и длины импостов в смете остаются предварительными. Не используйте эскиз для изготовления.";
   }
+  if (circleSashesBlocked() && sectionPanes().some(p => !p.split && p.opening !== "fixed")) {
+    $("#currentEstimateStatus").textContent = "Створка не разрешена текущим профилем";
+    $("#currentEstimateHint").textContent = "Конфигурация сохранена в редакторе. Чтобы сохранить изделие, разрешите круглые створки в технологии, выберите совместимый профиль или подтвердите замену на глухое остекление.";
+  }
   updateActiveControls();
   renderProjectToolbar();
 }
@@ -2636,11 +2688,17 @@ function bindEvents() {
   });
   $("#newProject").addEventListener("click", startNewProject);
   $("#saveProject").addEventListener("click", requestProjectSave);
+  window.addEventListener("storage", event => {
+    if (event.key !== PROJECTS_STORAGE_KEY && event.key !== null) return;
+    projects = readStoredProjects();
+    renderProjectsList();
+  });
   $("#myProjects").addEventListener("click", () => {
+    projects = readStoredProjects();
     renderProjectsList();
     $("#projectsDialog").showModal();
   });
-  $("#projectNameForm").addEventListener("submit", (event) => {
+  $("#projectNameForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     const name = $("#projectNameInput").value.trim();
     if (!name) {
@@ -2648,7 +2706,7 @@ function bindEvents() {
       $("#projectNameError").hidden = false;
       return;
     }
-    if (saveProjectRecord(name)) $("#projectNameDialog").close();
+    if (await saveProjectRecord(name)) $("#projectNameDialog").close();
   });
   ["#cancelProjectName", "#closeProjectNameDialog"].forEach((selector) => {
     $(selector).addEventListener("click", () => $("#projectNameDialog").close());
