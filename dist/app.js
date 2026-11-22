@@ -2178,6 +2178,7 @@ function renderTechnologyCatalog() {
     )
     .join("");
 
+  const glassSection = $("#glassCatalogSection");
   $("#technologyCatalogEditor").innerHTML = `
     <section class="catalog-section">
       <div class="catalog-section-header">
@@ -2193,6 +2194,7 @@ function renderTechnologyCatalog() {
       </div>
       <div class="catalog-color-list">${finishRows}</div>
     </section>`;
+  $("#technologyCatalogEditor").append(glassSection);
   updateCatalogMaterialTabs();
 }
 
