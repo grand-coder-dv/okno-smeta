@@ -346,13 +346,14 @@ function validateCurrentProduct() {
   if (!Array.isArray(state.panes) || state.panes.length !== state.cols * state.rows) return "Количество секций не соответствует выбранной разбивке.";
 
   const tech = getTechnology();
-  for (let index = 0; index < state.panes.length; index += 1) {
-    const pane = state.panes[index];
+  const sections = sectionPanes();
+  for (let index = 0; index < sections.length; index += 1) {
+    const pane = sections[index];
+    if (pane.split) continue;
     const rect = getPanePhysicalRect(index);
-    const col = index % state.cols;
-    const row = Math.floor(index / state.cols);
-    const verticalProfiles = (col === 0 ? tech.frame : tech.impost / 2) + (col === state.cols - 1 ? tech.frame : tech.impost / 2);
-    const horizontalProfiles = (row === 0 ? tech.frame : tech.impost / 2) + (row === state.rows - 1 ? tech.frame : tech.impost / 2);
+    const [left, right, top, bottom] = sectionLayout()[index].edges.map(edge => edge ? tech.frame : tech.impost / 2);
+    const verticalProfiles = left + right;
+    const horizontalProfiles = top + bottom;
     const sashReduction = pane.opening === "fixed" ? 0 : tech.sash * 2;
     const nestedVertical = pane.innerImposts.filter((item) => item.orientation === "vertical").length * tech.impost;
     const nestedHorizontal = pane.innerImposts.filter((item) => item.orientation === "horizontal").length * tech.impost;
@@ -371,7 +372,7 @@ function validateCurrentProduct() {
 function restoreProductState(configuration) {
   state = cloneData(configuration);
   state.selectedImpost = null;
-  state.selectedPane = clamp(state.selectedPane ?? 0, 0, Math.max((state.panes?.length || 1) - 1, 0));
+  state.selectedPane = clamp(state.selectedPane ?? 0, 0, Math.max((sectionPanes().length || 1) - 1, 0));
   updateMaterialSelects();
   ensurePanes();
   syncFormFromState();
@@ -790,18 +791,34 @@ function primaryBoundaries(orientation) {
   return [0, ...items.map((item) => item.position), size];
 }
 
-function getPanePhysicalRect(index) {
-  const xBounds = primaryBoundaries("vertical");
-  const yBounds = primaryBoundaries("horizontal");
-  const col = index % state.cols;
-  const row = Math.floor(index / state.cols);
-  return {
-    x: xBounds[col],
-    y: yBounds[row],
-    width: xBounds[col + 1] - xBounds[col],
-    height: yBounds[row + 1] - yBounds[row],
-  };
+function sectionLayout(x = primaryBoundaries("vertical"), y = primaryBoundaries("horizontal")) {
+  const entries = [];
+  function visit(pane, rect, edges) {
+    entries.push({ pane, rect, edges });
+    const item = pane.split;
+    if (!item) return;
+    const [a, b] = pane.children;
+    if (item.orientation === "vertical") {
+      const d = rect.width * item.position;
+      visit(a, { ...rect, width: d }, [edges[0], false, edges[2], edges[3]]);
+      visit(b, { ...rect, x: rect.x + d, width: rect.width - d }, [false, edges[1], edges[2], edges[3]]);
+    } else {
+      const d = rect.height * item.position;
+      visit(a, { ...rect, height: d }, [edges[0], edges[1], edges[2], false]);
+      visit(b, { ...rect, y: rect.y + d, height: rect.height - d }, [edges[0], edges[1], false, edges[3]]);
+    }
+  }
+  state.panes.forEach((pane, i) => {
+    const c = i % state.cols, r = Math.floor(i / state.cols);
+    visit(pane, { x: x[c], y: y[r], width: x[c+1]-x[c], height: y[r+1]-y[r] },
+      [c === 0, c === state.cols-1, r === 0, r === state.rows-1]);
+  });
+  return entries;
 }
+
+function sectionPanes() { return sectionLayout().map(entry => entry.pane); }
+function getPanePhysicalRect(index) { return sectionLayout()[index].rect; }
+function sectionNumber(index) { return sectionPanes().slice(0, index + 1).filter(pane => !pane.split).length; }
 
 function paneGlassUnits(pane) {
   const vertical = pane.innerImposts.filter((item) => item.orientation === "vertical").length;
@@ -816,14 +833,16 @@ function ensurePanes() {
     if (state.panes[index]) {
       return {
         ...state.panes[index],
-        innerImposts: Array.isArray(state.panes[index].innerImposts) ? state.panes[index].innerImposts.map((item) => ({ ...item })) : [],
+        innerImposts: state.panes[index].split ? [state.panes[index].split] : Array.isArray(state.panes[index].innerImposts) ? state.panes[index].innerImposts.map((item) => ({ ...item })) : [],
       };
     }
     return { opening: "fixed", glass: state.defaultGlass, innerImposts: [] };
   });
   state.panes = panes;
-  state.selectedPane = clamp(state.selectedPane, 0, Math.max(count - 1, 0));
-  if (state.selectedImpost?.scope === "pane" && !state.panes[state.selectedImpost.paneIndex]) state.selectedImpost = null;
+  sectionPanes().forEach(pane => { if (pane.split) pane.innerImposts = [pane.split]; });
+  state.selectedPane = clamp(state.selectedPane, 0, Math.max(sectionPanes().length - 1, 0));
+  if (state.selectedImpost?.scope === "pane" && !sectionPanes()[state.selectedImpost.paneIndex]?.innerImposts.some(item => item.id === state.selectedImpost.id)) state.selectedImpost = null;
+  if (!state.selectedImpost) while (sectionPanes()[state.selectedPane]?.split) state.selectedPane += 1;
 }
 
 function getSelectedImpostRecord() {
@@ -834,7 +853,7 @@ function getSelectedImpostRecord() {
     const item = collection.find((candidate) => candidate.id === selected.id);
     return item ? { selected, item, collection } : null;
   }
-  const pane = state.panes[selected.paneIndex];
+  const pane = sectionPanes()[selected.paneIndex];
   const item = pane?.innerImposts.find((candidate) => candidate.id === selected.id);
   return item ? { selected, item, collection: pane.innerImposts, pane } : null;
 }
@@ -876,19 +895,18 @@ function updateMaterialSelects(reset = false) {
 function paneGlazingArea(index, pane, shapeFactor = 1) {
   const rect = getPanePhysicalRect(index);
   const tech = getTechnology();
-  const col = index % state.cols;
-  const row = Math.floor(index / state.cols);
+  const [left, right, top, bottom] = sectionLayout()[index].edges;
   const sideProfile = (atEdge) => (atEdge ? tech.frame : tech.impost / 2);
   const sashReduction = pane.opening === "fixed" ? 0 : tech.sash * 2;
   const verticalImposts = pane.innerImposts.filter((item) => item.orientation === "vertical").length;
   const horizontalImposts = pane.innerImposts.filter((item) => item.orientation === "horizontal").length;
   const clearWidth = Math.max(
     20,
-    rect.width - sideProfile(col === 0) - sideProfile(col === state.cols - 1) - sashReduction - verticalImposts * tech.impost,
+    rect.width - sideProfile(left) - sideProfile(right) - sashReduction - verticalImposts * tech.impost,
   );
   const clearHeight = Math.max(
     20,
-    rect.height - sideProfile(row === 0) - sideProfile(row === state.rows - 1) - sashReduction - horizontalImposts * tech.impost,
+    rect.height - sideProfile(top) - sideProfile(bottom) - sashReduction - horizontalImposts * tech.impost,
   );
   return (clearWidth * clearHeight * shapeFactor) / 1_000_000;
 }
@@ -928,12 +946,13 @@ function geometry() {
   let nestedCount = 0;
   let glassUnits = 0;
   const paneGlazingAreas = [];
-  state.panes.forEach((pane, index) => {
+  sectionPanes().forEach((pane, index) => {
     const paneRect = getPanePhysicalRect(index);
     pane.innerImposts.forEach((item) => {
       nestedCount += 1;
       nestedImpost += item.orientation === "vertical" ? (paneRect.height / 1000) * verticalFactor : (paneRect.width / 1000) * horizontalFactor;
     });
+    if (pane.split) return;
     glassUnits += paneGlassUnits(pane);
     paneGlazingAreas[index] = paneGlazingArea(index, pane, shapeFactor);
   });
@@ -1012,7 +1031,8 @@ function buildSpecification() {
     rate: rates.bead[state.material],
   });
 
-  const glassGroups = state.panes.reduce((groups, pane, index) => {
+  const glassGroups = sectionPanes().reduce((groups, pane, index) => {
+    if (pane.split) return groups;
     const group = groups[pane.glass] || { fields: 0, area: 0 };
     group.fields += paneGlassUnits(pane);
     group.area += dimensions.paneGlazingAreas[index] || 0;
@@ -1031,7 +1051,8 @@ function buildSpecification() {
     });
   });
 
-  const openingGroups = state.panes.reduce((groups, pane) => {
+  const openingGroups = sectionPanes().reduce((groups, pane) => {
+    if (pane.split) return groups;
     if (pane.opening !== "fixed") groups[pane.opening] = (groups[pane.opening] || 0) + 1;
     return groups;
   }, {});
@@ -1204,14 +1225,9 @@ function renderCanvas() {
   const yBounds = [box.y, ...rootHorizontalY, box.y + box.height];
   const paneRects = [];
 
-  let panesMarkup = "";
-  state.panes.forEach((pane, index) => {
-    const col = index % state.cols;
-    const row = Math.floor(index / state.cols);
-    const px = xBounds[col];
-    const py = yBounds[row];
-    const paneWidth = xBounds[col + 1] - px;
-    const paneHeight = yBounds[row + 1] - py;
+  let panesMarkup = "", localImpostsMarkup = "";
+  sectionLayout(xBounds, yBounds).forEach(({ pane, rect }, index) => {
+    const { x: px, y: py, width: paneWidth, height: paneHeight } = rect;
     const physical = getPanePhysicalRect(index);
     paneRects[index] = { x: px, y: py, width: paneWidth, height: paneHeight, physicalWidth: physical.width, physicalHeight: physical.height };
     const glass = GLASS[pane.glass];
@@ -1244,6 +1260,8 @@ function renderCanvas() {
       }
     });
 
+    localImpostsMarkup += innerImpostsMarkup;
+    if (pane.split) return;
     panesMarkup += `
       <g class="pane" data-index="${index}" clip-path="url(#innerClip)">
         <rect x="${px}" y="${py}" width="${paneWidth}" height="${paneHeight}" fill="${glass.color}" />
@@ -1252,9 +1270,8 @@ function renderCanvas() {
         ${openingSymbol(pane.opening, px, py, paneWidth, paneHeight)}
         ${selected ? `<rect class="pane-selected" x="${px + 3}" y="${py + 3}" width="${Math.max(paneWidth - 6, 2)}" height="${Math.max(paneHeight - 6, 2)}" />` : ""}
         <circle cx="${px + paneWidth / 2}" cy="${py + paneHeight / 2}" r="14" fill="rgba(255,255,255,.82)" stroke="rgba(53,80,105,.22)" />
-        <text class="pane-number" x="${px + paneWidth / 2}" y="${py + paneHeight / 2 + 4}">${index + 1}</text>
+        <text class="pane-number" x="${px + paneWidth / 2}" y="${py + paneHeight / 2 + 4}">${sectionNumber(index)}</text>
         <rect class="pane-hit" data-pane="${index}" x="${px}" y="${py}" width="${paneWidth}" height="${paneHeight}" fill="transparent" tabindex="0" role="button" aria-label="Настроить секцию ${index + 1}" />
-        ${innerImpostsMarkup}
       </g>`;
   });
 
@@ -1300,7 +1317,7 @@ function renderCanvas() {
     </defs>
     <g filter="url(#windowShadow)" fill="${profileColor}" stroke="${material.edge}" stroke-width="2.2">${paths.outer}</g>
     <g fill="#bfe3ef" stroke="${material.edge}" stroke-width="1.6">${paths.inner}</g>
-    <g clip-path="url(#innerClip)">${panesMarkup}${rootImpostsMarkup}</g>
+    <g clip-path="url(#innerClip)">${panesMarkup}${localImpostsMarkup}${rootImpostsMarkup}</g>
     <g class="dimensions">
       <line class="dimension-line" x1="${x}" y1="${y + height + 6}" x2="${x}" y2="${bottomDimensionY + 7}" opacity=".45" />
       <line class="dimension-line" x1="${x + width}" y1="${y + height + 6}" x2="${x + width}" y2="${bottomDimensionY + 7}" opacity=".45" />
@@ -1449,25 +1466,33 @@ function largestGapPosition(items) {
 }
 
 function addInnerImpost(orientation) {
-  const pane = state.panes[state.selectedPane];
-  const siblings = pane.innerImposts.filter((item) => item.orientation === orientation);
-  if (siblings.length >= 3) {
-    showToast("В одной секции допускается до трёх импостов одного направления");
+  const index = state.selectedPane;
+  const pane = sectionPanes()[index];
+  if (!pane || pane.split) return;
+  const old = pane.innerImposts;
+  const item = { id: createImpostId("pane", orientation), orientation, position: 0.5 };
+  pane.split = item;
+  pane.innerImposts = [item];
+  pane.children = [
+    { opening: pane.opening, glass: pane.glass, innerImposts: [] },
+    { opening: "fixed", glass: pane.glass, innerImposts: [] },
+  ];
+  const issue = validateCurrentProduct();
+  if (issue) {
+    delete pane.split;
+    delete pane.children;
+    pane.innerImposts = old;
+    showToast(issue);
     return;
   }
-  const item = {
-    id: createImpostId("pane", orientation),
-    orientation,
-    position: largestGapPosition(siblings),
-  };
-  pane.innerImposts.push(item);
-  state.selectedImpost = { scope: "pane", paneIndex: state.selectedPane, orientation, id: item.id };
+  state.selectedPane = index + 1;
+  state.selectedImpost = null;
   renderAll();
-  showToast(`Импост добавлен в ${pane.opening === "fixed" ? "глухую секцию" : "створку"}`);
+  showToast("Секция разделена на две");
 }
 
 function renderInspector() {
-  const pane = state.panes[state.selectedPane];
+  const pane = sectionPanes()[state.selectedPane];
   const record = getSelectedImpostRecord();
   if (state.selectedImpost && !record) state.selectedImpost = null;
 
@@ -1507,7 +1532,7 @@ function renderInspector() {
 
   $("#paneInspector").hidden = false;
   $("#impostInspector").hidden = true;
-  $("#selectedPaneName").textContent = `№ ${state.selectedPane + 1}`;
+  $("#selectedPaneName").textContent = `№ ${sectionNumber(state.selectedPane)}`;
   $("#openingType").value = pane.opening;
   $("#paneGlass").value = pane.glass;
   const innerCount = pane.innerImposts.length;
@@ -1605,7 +1630,7 @@ function setSplit(cols, rows) {
   const nextCols = clamp(cols, 1, 4);
   const nextRows = clamp(rows, 1, 3);
   if (nextCols === state.cols && nextRows === state.rows) return;
-  const hasSectionSettings = state.panes.some(
+  const hasSectionSettings = sectionPanes().some(
     (pane) => pane.opening !== "fixed" || pane.glass !== state.defaultGlass || pane.innerImposts.length > 0,
   );
   if (hasSectionSettings && !window.confirm("Изменение сетки сбросит створки, стеклопакеты и вложенные импосты секций. Продолжить?")) {
@@ -1699,22 +1724,22 @@ function bindEvents() {
 
   $("#defaultGlass").addEventListener("change", (event) => {
     state.defaultGlass = event.target.value;
-    state.panes = state.panes.map((pane) => ({ ...pane, glass: state.defaultGlass }));
+    sectionPanes().forEach(pane => { pane.glass = state.defaultGlass; });
     renderAll();
   });
 
   $("#openingType").addEventListener("change", (event) => {
-    state.panes[state.selectedPane].opening = event.target.value;
+    sectionPanes()[state.selectedPane].opening = event.target.value;
     renderAll();
   });
   $("#paneGlass").addEventListener("change", (event) => {
-    state.panes[state.selectedPane].glass = event.target.value;
+    sectionPanes()[state.selectedPane].glass = event.target.value;
     renderAll();
   });
   $("#applyGlassToAll").addEventListener("click", () => {
-    const glass = state.panes[state.selectedPane].glass;
+    const glass = sectionPanes()[state.selectedPane].glass;
     state.defaultGlass = glass;
-    state.panes = state.panes.map((pane) => ({ ...pane, glass }));
+    sectionPanes().forEach(pane => { pane.glass = glass; });
     $("#defaultGlass").value = glass;
     renderAll();
     showToast("Стеклопакет применён ко всем секциям");
@@ -1765,6 +1790,15 @@ function bindEvents() {
       const collection = record.selected.orientation === "vertical" ? state.vImposts : state.hImposts;
       const index = collection.findIndex((item) => item.id === record.item.id);
       collection.splice(index, 1);
+    } else if (record.pane.split) {
+      if (record.pane.children.some(child => child.split) && !window.confirm("Удалить импост и все секции внутри этого деления?")) return;
+      const first = record.pane.children[0];
+      record.pane.opening = first.opening;
+      record.pane.glass = first.glass;
+      delete record.pane.split;
+      delete record.pane.children;
+      record.pane.innerImposts = [];
+      state.selectedPane = record.selected.paneIndex;
     } else {
       const index = record.pane.innerImposts.findIndex((item) => item.id === record.item.id);
       record.pane.innerImposts.splice(index, 1);
