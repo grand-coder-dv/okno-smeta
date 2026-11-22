@@ -1157,7 +1157,7 @@ function shapePaths(x, y, width, height, frame) {
   };
 }
 
-function openingSymbol(type, x, y, width, height) {
+function openingSymbol(type, x, y, width, height, hingeSide = "left") {
   const pad = Math.min(11, width * 0.08, height * 0.08);
   const left = x + pad;
   const right = x + width - pad;
@@ -1168,14 +1168,19 @@ function openingSymbol(type, x, y, width, height) {
   const stroke = "#4d7085";
   let paths = "";
 
-  if (type === "turn" || type === "tiltturn") {
-    paths += `<path d="M ${left} ${top} L ${right} ${cy} L ${left} ${bottom}" fill="none" stroke="${stroke}" stroke-width="1.7" stroke-dasharray="5 4" />`;
+  const hasTurn = type === "turn" || type === "tiltturn";
+  const hingesRight = hasTurn && hingeSide === "right";
+  const hingeX = hingesRight ? right : left;
+  const freeX = hingesRight ? left : right;
+  const handleX = hingesRight ? left + 4 : right - 4;
+  if (hasTurn) {
+    paths += `<path d="M ${hingeX} ${top} L ${freeX} ${cy} L ${hingeX} ${bottom}" fill="none" stroke="${stroke}" stroke-width="1.7" stroke-dasharray="5 4" />`;
   }
   if (type === "tilt" || type === "tiltturn") {
     paths += `<path d="M ${left} ${bottom} L ${cx} ${top} L ${right} ${bottom}" fill="none" stroke="${stroke}" stroke-width="1.7" stroke-dasharray="5 4" />`;
   }
   if (type !== "fixed") {
-    paths += `<line x1="${right - 4}" y1="${cy - 10}" x2="${right - 4}" y2="${cy + 10}" stroke="#20384c" stroke-width="3" stroke-linecap="round" />`;
+    paths += `<line x1="${handleX}" y1="${cy - 10}" x2="${handleX}" y2="${cy + 10}" stroke="#20384c" stroke-width="3" stroke-linecap="round" />`;
   }
   return paths;
 }
@@ -1267,7 +1272,7 @@ function renderCanvas() {
         <rect x="${px}" y="${py}" width="${paneWidth}" height="${paneHeight}" fill="${glass.color}" />
         <rect x="${px}" y="${py}" width="${paneWidth}" height="${paneHeight}" fill="url(#glassSheen)" opacity="0.55" />
         ${pane.opening !== "fixed" ? `<rect x="${px + paneSashFace / 2}" y="${py + paneSashFace / 2}" width="${Math.max(paneWidth - paneSashFace, 2)}" height="${Math.max(paneHeight - paneSashFace, 2)}" fill="none" stroke="${profileColor}" stroke-width="${paneSashFace}" pointer-events="none" />` : ""}
-        ${openingSymbol(pane.opening, px, py, paneWidth, paneHeight)}
+        ${openingSymbol(pane.opening, px, py, paneWidth, paneHeight, pane.hingeSide)}
         ${selected ? `<rect class="pane-selected" x="${px + 3}" y="${py + 3}" width="${Math.max(paneWidth - 6, 2)}" height="${Math.max(paneHeight - 6, 2)}" />` : ""}
         <circle cx="${px + paneWidth / 2}" cy="${py + paneHeight / 2}" r="14" fill="rgba(255,255,255,.82)" stroke="rgba(53,80,105,.22)" />
         <text class="pane-number" x="${px + paneWidth / 2}" y="${py + paneHeight / 2 + 4}">${sectionNumber(index)}</text>
@@ -1474,7 +1479,7 @@ function addInnerImpost(orientation) {
   pane.split = item;
   pane.innerImposts = [item];
   pane.children = [
-    {opening:pane.opening, glass:pane.glass, innerImposts:[]},
+    {opening:pane.opening, hingeSide:pane.hingeSide, glass:pane.glass, innerImposts:[]},
     {opening:"fixed", glass:pane.glass, innerImposts:[]},
   ];
   const issue = validateCurrentProduct();
@@ -1534,6 +1539,11 @@ function renderInspector() {
   $("#impostInspector").hidden = true;
   $("#selectedPaneName").textContent = `№ ${sectionNumber(state.selectedPane)}`;
   $("#openingType").value = pane.opening;
+  const canChooseHingeSide = pane.opening === "turn" || pane.opening === "tiltturn";
+  const hingeField = $("#hingeSideField");
+  hingeField.hidden = !canChooseHingeSide;
+  hingeField.style.display = canChooseHingeSide ? "" : "none";
+  $("#hingeSide").value = pane.hingeSide === "right" ? "right" : "left";
   $("#paneGlass").value = pane.glass;
   const innerCount = pane.innerImposts.length;
   const paneKind = pane.opening === "fixed" ? "глухой секции" : "створке";
@@ -1732,6 +1742,12 @@ function bindEvents() {
     sectionPanes()[state.selectedPane].opening = event.target.value;
     renderAll();
   });
+  $("#hingeSide").addEventListener("change", (event) => {
+    const pane = sectionPanes()[state.selectedPane];
+    if (!pane || pane.split || (pane.opening !== "turn" && pane.opening !== "tiltturn")) return;
+    pane.hingeSide = event.target.value === "right" ? "right" : "left";
+    renderAll();
+  });
   $("#paneGlass").addEventListener("change", (event) => {
     sectionPanes()[state.selectedPane].glass = event.target.value;
     renderAll();
@@ -1799,6 +1815,7 @@ function bindEvents() {
       if (record.pane.children.some(child => child.split) && !window.confirm("Удалить импост и все секции внутри этого деления?")) return;
       const first = record.pane.children[0];
       record.pane.opening = first.opening;
+      record.pane.hingeSide = first.hingeSide;
       record.pane.glass = first.glass;
       delete record.pane.split;
       delete record.pane.children;
