@@ -909,6 +909,10 @@ function paneGlassUnits(pane) {
   return (vertical + 1) * (horizontal + 1);
 }
 
+function circleSashesBlocked() {
+  return state.shape === "circle" && getProfile().allowCircleSashes !== true;
+}
+
 function ensurePanes() {
   normalizeRootImposts();
   const count = state.cols * state.rows;
@@ -922,7 +926,10 @@ function ensurePanes() {
     return { opening: "fixed", glass: state.defaultGlass, innerImposts: [] };
   });
   state.panes = panes;
-  sectionPanes().forEach(p => { if (p.split) p.innerImposts = [p.split]; });
+  sectionPanes().forEach(p => {
+    if (p.split) p.innerImposts = [p.split];
+    if (circleSashesBlocked()) p.opening = "fixed";
+  });
   if (state.selectedPane !== null) state.selectedPane = clamp(state.selectedPane, 0, Math.max(sectionPanes().length - 1, 0));
   if (state.selectedImpost?.scope === "pane" && !sectionPanes()[state.selectedImpost.paneIndex]?.innerImposts.some(item => item.id === state.selectedImpost.id)) state.selectedImpost = null;
   if (!state.selectedImpost) while (sectionPanes()[state.selectedPane]?.split) state.selectedPane += 1;
@@ -1672,6 +1679,16 @@ function editProfileSide(node) {
   dialog.showModal();
 }
 
+function circleFrameTargets(cx,cy,rx,ry,frame) {
+  const ix=Math.max(rx-frame,2), iy=Math.max(ry-frame,2);
+  const halves=[1,0].map((sweep,side)=>{
+    const selected=activeProfileEdge?.owner===state && activeProfileEdge.type==="circle-frame" && activeProfileEdge.side===side;
+    const d=`M ${cx-rx} ${cy} A ${rx} ${ry} 0 0 ${sweep} ${cx+rx} ${cy} L ${cx+ix} ${cy} A ${ix} ${iy} 0 0 ${1-sweep} ${cx-ix} ${cy} Z`;
+    return `<path d="${d}" fill="${selected?'#ef8b25':'transparent'}" fill-opacity="${selected?0.45:1}" pointer-events="fill" tabindex="0" role="button" data-profile-edge="circle-frame" data-edge-side="${side}" aria-label="${side?'Нижний':'Верхний'} сегмент рамы" style="cursor:pointer"/>`;
+  }).join("");
+  return halves+`<path d="M ${cx-rx} ${cy} H ${cx-ix} M ${cx+ix} ${cy} H ${cx+rx}" fill="none" stroke="#506176" stroke-width="1" pointer-events="none"/>`;
+}
+
 function renderCanvas() {
   const svg = $("#windowCanvas");
   const maxWidth = 455;
@@ -1695,7 +1712,7 @@ function renderCanvas() {
   const material = MATERIALS[state.material];
   const profileColor = getFinish().color || material.frame;
   const paths = shapePaths(x, y, width, height, frame);
-  let profileTargets = "";
+  let profileTargets = state.shape === "circle" ? circleFrameTargets(x+width/2,y+height/2,width/2,height/2,frame) : "";
   const poly=polygonPoints();
   if(poly){
     paths.outer=`<path d="${polyPath(poly,X,Y)}"/>`;
@@ -2237,6 +2254,8 @@ function renderInspector() {
   $("#selectedPaneName").textContent = multiSections.size > 1
     ? `Выбрано секций: ${multiSections.size}` : `№ ${sectionNumber(state.selectedPane)}`;
   const openingSelect = $("#openingType");
+  openingSelect.disabled = circleSashesBlocked();
+  openingSelect.title = openingSelect.disabled ? "Створки для круглой формы отключены в выбранной профильной системе" : "";
   openingSelect.querySelector('[data-mixed-opening]')?.remove();
   const mixed = selectedSections().some(entry => entry.pane.opening !== pane.opening);
   if (mixed) {
@@ -2453,6 +2472,7 @@ function bindEvents() {
   });
 
   $("#openingType").addEventListener("change", (event) => {
+    if (circleSashesBlocked()) { renderInspector(); return; }
     const targets = selectedSections();
     const old = targets.map(({pane}) => pane.opening);
     targets.forEach(({pane}) => { pane.opening = event.target.value; });
@@ -2795,9 +2815,8 @@ function setRate(path, value) {
 
 function ensureSkewSurchargeInput() {
   const form=$("#pricesForm");
-  if(form.elements.namedItem("skewSurcharge"))return;
-  const anchor=form.elements.namedItem("circleSurcharge").closest("label");
-  anchor.insertAdjacentHTML("afterend", '<label><span>Косая форма</span><input name="skewSurcharge" type="number" min="0" max="300" step="1" /></label>');
+  if(form.elements.namedItem("skewSurcharge")) return;
+  form.elements.namedItem("circleSurcharge").closest("label").insertAdjacentHTML("afterend", '<label><span>Косая форма</span><input name="skewSurcharge" type="number" min="0" max="300" step="1" /></label>');
 }
 function populatePriceForm() {
   ensureSkewSurchargeInput();
@@ -2869,6 +2888,10 @@ function renderTechnologyCatalog() {
             <span>Контуры уплотнения</span>
             <input type="number" data-profile-field="seals" value="${clamp(profile.seals, 1, 5)}" min="1" max="5" />
           </label>
+          <label class="catalog-field">
+            <span>Разрешить створки в круглых изделиях</span>
+            <input type="checkbox" data-profile-field="allowCircleSashes" ${profile.allowCircleSashes === true ? "checked" : ""} />
+          </label>
           <button class="catalog-remove-button" type="button" data-catalog-action="remove-profile" aria-label="Удалить профильную систему">Удалить</button>
         </article>`,
     )
@@ -2929,6 +2952,7 @@ function readCatalogDraftFromEditor() {
     profile.sashWidth = clamp(row.querySelector('[data-profile-field="sashWidth"]').value, 20, 250);
     profile.impostWidth = clamp(row.querySelector('[data-profile-field="impostWidth"]').value, 20, 250);
     profile.factor = clamp(row.querySelector('[data-profile-field="factor"]').value, 0.1, 5);
+    profile.allowCircleSashes = row.querySelector('[data-profile-field="allowCircleSashes"]').checked;
     profile.seals = Math.round(clamp(row.querySelector('[data-profile-field="seals"]').value, 1, 5));
   });
   $$("#technologyCatalogEditor [data-finish-id]").forEach((row) => {
