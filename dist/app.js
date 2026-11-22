@@ -839,7 +839,9 @@ function ensurePanes() {
   });
   state.panes = panes;
   sectionPanes().forEach(p => { if (p.split) p.innerImposts = [p.split]; });
-  state.selectedPane = clamp(state.selectedPane, 0, Math.max(sectionPanes().length - 1, 0));
+  if (state.selectedPane !== null) {
+    state.selectedPane = clamp(state.selectedPane, 0, Math.max(sectionPanes().length - 1, 0));
+  }
   if (state.selectedImpost?.scope === "pane" && !sectionPanes()[state.selectedImpost.paneIndex]?.innerImposts.some(item => item.id === state.selectedImpost.id)) state.selectedImpost = null;
   if (!state.selectedImpost) while (sectionPanes()[state.selectedPane]?.split) state.selectedPane += 1;
 }
@@ -1169,10 +1171,10 @@ function openingSymbol(type, x, y, width, height, hingeSide = "left") {
   let paths = "";
 
   const hasTurn = type === "turn" || type === "tiltturn";
-  const hingesRight = hasTurn && hingeSide === "right";
-  const hingeX = hingesRight ? right : left;
-  const freeX = hingesRight ? left : right;
-  const handleX = hingesRight ? left + 4 : right - 4;
+  const rightHinges = hasTurn && hingeSide === "right";
+  const hingeX = rightHinges ? right : left;
+  const freeX = rightHinges ? left : right;
+  const handleX = rightHinges ? left + 4 : right - 4;
   if (hasTurn) {
     paths += `<path d="M ${hingeX} ${top} L ${freeX} ${cy} L ${hingeX} ${bottom}" fill="none" stroke="${stroke}" stroke-width="1.7" stroke-dasharray="5 4" />`;
   }
@@ -1430,6 +1432,12 @@ function getCanvasPoint(event) {
 
 function bindCanvasDragging() {
   const svg = $("#windowCanvas");
+  svg.addEventListener("click", (event) => {
+    if (event.target !== svg || (state.selectedPane === null && !state.selectedImpost)) return;
+    state.selectedPane = null;
+    state.selectedImpost = null;
+    renderAll();
+  });
   svg.addEventListener("pointerdown", (event) => {
     const node = event.target.closest?.(".impost-hit");
     if (!node) return;
@@ -1535,15 +1543,22 @@ function renderInspector() {
     return;
   }
 
+  if (!pane) {
+    $("#paneInspector").hidden = true;
+    $("#impostInspector").hidden = true;
+    return;
+  }
   $("#paneInspector").hidden = false;
   $("#impostInspector").hidden = true;
   $("#selectedPaneName").textContent = `№ ${sectionNumber(state.selectedPane)}`;
   $("#openingType").value = pane.opening;
-  const canChooseHingeSide = pane.opening === "turn" || pane.opening === "tiltturn";
   const hingeField = $("#hingeSideField");
-  hingeField.hidden = !canChooseHingeSide;
-  hingeField.style.display = canChooseHingeSide ? "" : "none";
-  $("#hingeSide").value = pane.hingeSide === "right" ? "right" : "left";
+  if (hingeField) {
+    const visible = pane.opening === "turn" || pane.opening === "tiltturn";
+    hingeField.hidden = !visible;
+    hingeField.style.display = visible ? "" : "none";
+    $("#hingeSide").value = pane.hingeSide === "right" ? "right" : "left";
+  }
   $("#paneGlass").value = pane.glass;
   const innerCount = pane.innerImposts.length;
   const paneKind = pane.opening === "fixed" ? "глухой секции" : "створке";
@@ -1742,9 +1757,15 @@ function bindEvents() {
     sectionPanes()[state.selectedPane].opening = event.target.value;
     renderAll();
   });
-  $("#hingeSide").addEventListener("change", (event) => {
+  if (!$("#hingeSide")) {
+    $("#openingType").closest("label").insertAdjacentHTML("afterend", `<label class="field" id="hingeSideField" hidden style="display:none">
+      <span>Сторона петель на рисунке</span><select id="hingeSide">
+      <option value="left">Петли слева — ручка справа</option><option value="right">Петли справа — ручка слева</option>
+      </select></label>`);
+  }
+  $("#hingeSide").addEventListener("change", event => {
     const pane = sectionPanes()[state.selectedPane];
-    if (!pane || pane.split || (pane.opening !== "turn" && pane.opening !== "tiltturn")) return;
+    if (!pane || pane.split || !["turn", "tiltturn"].includes(pane.opening)) return;
     pane.hingeSide = event.target.value === "right" ? "right" : "left";
     renderAll();
   });
