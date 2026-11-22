@@ -195,6 +195,57 @@ function readStoredTechnology() {
 }
 
 let rates = readStoredRates();
+const glassCatalogKey = "oknoSmetaGlassCatalog";
+function standardGlassCatalog() {
+  return Object.fromEntries(["pvc", "aluminum", "wood"].map(material => [material, structuredClone(GLASS)]));
+}
+function loadGlassCatalog() {
+  const defaults = standardGlassCatalog();
+  try {
+    const saved = JSON.parse(localStorage.getItem(glassCatalogKey));
+    for (const material of Object.keys(defaults)) {
+      if (saved?.[material] && Object.keys(saved[material]).length) defaults[material] = saved[material];
+    }
+  } catch {}
+  return defaults;
+}
+let glassCatalog = loadGlassCatalog();
+let glassDraft;
+function materialGlass() { return glassCatalog[state.material]; }
+function syncGlassChoices() {
+  const catalog = materialGlass();
+  if (!Object.hasOwn(catalog, state.defaultGlass)) state.defaultGlass = Object.hasOwn(catalog, "double") ? "double" : Object.keys(catalog)[0];
+  sectionPanes().forEach(pane => { if (!Object.hasOwn(catalog, pane.glass)) pane.glass = state.defaultGlass; });
+  const options = Object.entries(catalog).map(([id, item]) =>
+    `<option value="${escapeHtml(id)}">${escapeHtml(item.name)}${item.detail ? ` · ${escapeHtml(item.detail)}` : ""}</option>`).join("");
+  for (const id of ["defaultGlass", "paneGlass"]) {
+    const select = $("#" + id);
+    if (select.innerHTML !== options && select.dataset.glassOptions !== options) {
+      select.innerHTML = options;
+      select.dataset.glassOptions = options;
+    }
+  }
+  $("#defaultGlass").value = state.defaultGlass;
+}
+function renderGlassCatalog() {
+  $("#glassCatalogEditor").innerHTML = Object.entries(glassDraft[catalogMaterial]).map(([id, item]) => `
+    <fieldset data-glass-id="${escapeHtml(id)}">
+      <label class="field"><span>Название</span><input data-glass-name value="${escapeHtml(item.name)}"></label>
+      <label class="field"><span>Толщина и описание</span><input data-glass-detail value="${escapeHtml(item.detail)}"></label>
+      <label class="field"><span>Цена за м²</span><input data-glass-rate type="number" min="0" step="any" value="${item.rate ?? ""}" ${Object.hasOwn(GLASS,id) ? `placeholder="${rates.glass[id]}"` : ""}></label>
+      <button type="button" class="button ghost" data-remove-glass>Удалить</button>
+    </fieldset>`).join("");
+}
+function captureGlassDraft() {
+  $$("#glassCatalogEditor [data-glass-id]").forEach(row => {
+    const item = glassDraft[catalogMaterial][row.dataset.glassId];
+    item.name = row.querySelector("[data-glass-name]").value.trim();
+    item.detail = row.querySelector("[data-glass-detail]").value.trim();
+    const raw = row.querySelector("[data-glass-rate]").value;
+    item.rate = raw === "" ? null : Number(raw);
+  });
+}
+
 let technology = readStoredTechnology();
 let catalogDraft = null;
 let catalogMaterial = "pvc";
@@ -839,9 +890,7 @@ function ensurePanes() {
   });
   state.panes = panes;
   sectionPanes().forEach(p => { if (p.split) p.innerImposts = [p.split]; });
-  if (state.selectedPane !== null) {
-    state.selectedPane = clamp(state.selectedPane, 0, Math.max(sectionPanes().length - 1, 0));
-  }
+  if (state.selectedPane !== null) state.selectedPane = clamp(state.selectedPane, 0, Math.max(sectionPanes().length - 1, 0));
   if (state.selectedImpost?.scope === "pane" && !sectionPanes()[state.selectedImpost.paneIndex]?.innerImposts.some(item => item.id === state.selectedImpost.id)) state.selectedImpost = null;
   if (!state.selectedImpost) while (sectionPanes()[state.selectedPane]?.split) state.selectedPane += 1;
 }
@@ -1041,14 +1090,14 @@ function buildSpecification() {
     return groups;
   }, {});
   Object.entries(glassGroups).forEach(([glassKey, group]) => {
-    const glass = GLASS[glassKey];
+    const glass = materialGlass()[glassKey] ?? materialGlass()[state.defaultGlass] ?? Object.values(materialGlass())[0];
     addLine({
       name: `${glass.name} стеклопакет`,
       note: "Заполнение светового проёма",
       characteristic: `${glass.detail}; полей: ${group.fields}`,
       qty: group.area * quantity,
       unit: "м²",
-      rate: rates.glass[glassKey],
+      rate: glass.rate ?? rates.glass[glassKey] ?? rates.glass[state.defaultGlass] ?? rates.glass["double"],
     });
   });
 
@@ -1159,7 +1208,7 @@ function shapePaths(x, y, width, height, frame) {
   };
 }
 
-function openingSymbol(type, x, y, width, height, hingeSide = "left") {
+function openingSymbol(type, x, y, width, height, side) {
   const pad = Math.min(11, width * 0.08, height * 0.08);
   const left = x + pad;
   const right = x + width - pad;
@@ -1170,19 +1219,17 @@ function openingSymbol(type, x, y, width, height, hingeSide = "left") {
   const stroke = "#4d7085";
   let paths = "";
 
-  const hasTurn = type === "turn" || type === "tiltturn";
-  const rightHinges = hasTurn && hingeSide === "right";
-  const hingeX = rightHinges ? right : left;
-  const freeX = rightHinges ? left : right;
-  const handleX = rightHinges ? left + 4 : right - 4;
-  if (hasTurn) {
-    paths += `<path d="M ${hingeX} ${top} L ${freeX} ${cy} L ${hingeX} ${bottom}" fill="none" stroke="${stroke}" stroke-width="1.7" stroke-dasharray="5 4" />`;
+  const mirrored = side === "right" && ["turn", "tiltturn"].includes(type);
+  const hinge = mirrored ? right : left, free = mirrored ? left : right;
+  const handle = mirrored ? left + 4 : right - 4;
+  if (type === "turn" || type === "tiltturn") {
+    paths += `<path d="M ${hinge} ${top} L ${free} ${cy} L ${hinge} ${bottom}" fill="none" stroke="${stroke}" stroke-width="1.7" stroke-dasharray="5 4" />`;
   }
   if (type === "tilt" || type === "tiltturn") {
     paths += `<path d="M ${left} ${bottom} L ${cx} ${top} L ${right} ${bottom}" fill="none" stroke="${stroke}" stroke-width="1.7" stroke-dasharray="5 4" />`;
   }
   if (type !== "fixed") {
-    paths += `<line x1="${handleX}" y1="${cy - 10}" x2="${handleX}" y2="${cy + 10}" stroke="#20384c" stroke-width="3" stroke-linecap="round" />`;
+    paths += `<line x1="${handle}" y1="${cy - 10}" x2="${handle}" y2="${cy + 10}" stroke="#20384c" stroke-width="3" stroke-linecap="round" />`;
   }
   return paths;
 }
@@ -1237,7 +1284,7 @@ function renderCanvas() {
 
     const physical = getPanePhysicalRect(index);
     paneRects[index] = { x: px, y: py, width: paneWidth, height: paneHeight, physicalWidth: physical.width, physicalHeight: physical.height };
-    const glass = GLASS[pane.glass];
+    const glass = materialGlass()[pane.glass];
     const selected = index === state.selectedPane;
     const paneKind = pane.opening === "fixed" ? "глухой секции" : "створке";
     const paneSashFace = Math.min(sashFace, paneWidth * 0.22, paneHeight * 0.22);
@@ -1432,7 +1479,7 @@ function getCanvasPoint(event) {
 
 function bindCanvasDragging() {
   const svg = $("#windowCanvas");
-  svg.addEventListener("click", (event) => {
+  svg.addEventListener("click", event => {
     if (event.target !== svg || (state.selectedPane === null && !state.selectedImpost)) return;
     state.selectedPane = null;
     state.selectedImpost = null;
@@ -1543,22 +1590,15 @@ function renderInspector() {
     return;
   }
 
-  if (!pane) {
-    $("#paneInspector").hidden = true;
-    $("#impostInspector").hidden = true;
-    return;
-  }
+  if (!pane) { $("#paneInspector").hidden = true; $("#impostInspector").hidden = true; return; }
   $("#paneInspector").hidden = false;
   $("#impostInspector").hidden = true;
   $("#selectedPaneName").textContent = `№ ${sectionNumber(state.selectedPane)}`;
   $("#openingType").value = pane.opening;
-  const hingeField = $("#hingeSideField");
-  if (hingeField) {
-    const visible = pane.opening === "turn" || pane.opening === "tiltturn";
-    hingeField.hidden = !visible;
-    hingeField.style.display = visible ? "" : "none";
-    $("#hingeSide").value = pane.hingeSide === "right" ? "right" : "left";
-  }
+  const canTurn = ["turn", "tiltturn"].includes(pane.opening);
+  $("#hingeSideField").hidden = !canTurn;
+  $("#hingeSideField").style.display = canTurn ? "" : "none";
+  $("#hingeSide").value = pane.hingeSide === "right" ? "right" : "left";
   $("#paneGlass").value = pane.glass;
   const innerCount = pane.innerImposts.length;
   const paneKind = pane.opening === "fixed" ? "глухой секции" : "створке";
@@ -1642,6 +1682,7 @@ function updateActiveControls() {
 
 function renderAll() {
   ensurePanes();
+  syncGlassChoices();
   const calculation = buildSpecification();
   renderCanvas();
   renderInspector();
@@ -1757,15 +1798,9 @@ function bindEvents() {
     sectionPanes()[state.selectedPane].opening = event.target.value;
     renderAll();
   });
-  if (!$("#hingeSide")) {
-    $("#openingType").closest("label").insertAdjacentHTML("afterend", `<label class="field" id="hingeSideField" hidden style="display:none">
-      <span>Сторона петель на рисунке</span><select id="hingeSide">
-      <option value="left">Петли слева — ручка справа</option><option value="right">Петли справа — ручка слева</option>
-      </select></label>`);
-  }
   $("#hingeSide").addEventListener("change", event => {
     const pane = sectionPanes()[state.selectedPane];
-    if (!pane || pane.split || !["turn", "tiltturn"].includes(pane.opening)) return;
+    if (!pane || pane.split) return;
     pane.hingeSide = event.target.value === "right" ? "right" : "left";
     renderAll();
   });
@@ -1945,12 +1980,41 @@ function bindEvents() {
   $$("[data-catalog-material]").forEach((button) => {
     button.addEventListener("click", () => {
       readCatalogDraftFromEditor();
+      captureGlassDraft();
       catalogMaterial = button.dataset.catalogMaterial;
       renderTechnologyCatalog();
+      renderGlassCatalog();
     });
   });
   $("#technologyCatalogEditor").addEventListener("click", handleCatalogAction);
+  $("#addGlassCatalog").addEventListener("click", () => {
+    captureGlassDraft();
+    const id = `glass-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    glassDraft[catalogMaterial][id] = { name: "", detail: "", rate: null, color: "#bfe3ef" };
+    renderGlassCatalog();
+    $("#glassCatalogEditor fieldset:last-child [data-glass-name]").focus();
+  });
+  $("#glassCatalogEditor").addEventListener("click", event => {
+    const button = event.target.closest("[data-remove-glass]");
+    if (!button) return;
+    const catalog = glassDraft[catalogMaterial];
+    if (Object.keys(catalog).length <= 1) return showToast("Оставьте хотя бы один стеклопакет для материала");
+    captureGlassDraft();
+    delete catalog[button.closest("[data-glass-id]").dataset.glassId];
+    renderGlassCatalog();
+  });
   $("#saveTechnology").addEventListener("click", () => {
+    captureGlassDraft();
+    for (const [material, catalog] of Object.entries(glassDraft)) {
+      for (const [id, item] of Object.entries(catalog)) {
+        if (!item.name || (item.rate == null ? !Object.hasOwn(GLASS, id) : !Number.isFinite(item.rate) || item.rate < 0)) {
+          return showToast(`${MATERIALS[material].label}: укажите название и неотрицательную цену стеклопакета`);
+        }
+      }
+    }
+    try { localStorage.setItem(glassCatalogKey, JSON.stringify(glassDraft)); }
+    catch { return showToast("Не удалось сохранить каталог стеклопакетов"); }
+    glassCatalog = structuredClone(glassDraft);
     readTechnologyForm();
     $("#pricesDialog").close();
     renderAll();
@@ -1958,8 +2022,10 @@ function bindEvents() {
   });
   $("#resetTechnology").addEventListener("click", () => {
     catalogDraft = cloneMaterials();
+    glassDraft = standardGlassCatalog();
     catalogMaterial = state.material;
     renderTechnologyCatalog();
+    renderGlassCatalog();
     showToast("Стандартный каталог подготовлен — нажмите «Сохранить каталог»");
   });
 
@@ -2189,8 +2255,10 @@ function handleCatalogAction(event) {
 
 function populateTechnologyForm() {
   catalogDraft = cloneMaterials(MATERIALS);
+  glassDraft = structuredClone(glassCatalog);
   catalogMaterial = state.material;
   renderTechnologyCatalog();
+  renderGlassCatalog();
 }
 
 function readTechnologyForm() {
