@@ -364,9 +364,8 @@ function getFinish() {
   return MATERIALS[state.material].finishes.find((item) => item.id === state.finish) || MATERIALS[state.material].finishes[0];
 }
 
-const SASH_OVERLAP_MM = 24;
-const DEFAULT_GLASS_BITE_MM = 14;
-
+const GLASS_BITE_FIELDS = [["glassBiteFrame", "рама"], ["glassBiteSash", "створка"], ["glassBiteImpost", "импост"]];
+const SASH_LAP = 24;
 function getTechnology() {
   const profile = getProfile();
   const fallback = technology[state.material];
@@ -374,7 +373,8 @@ function getTechnology() {
     frame: clamp(profile.frameWidth ?? fallback.frame, 20, 250),
     sash: clamp(profile.sashWidth ?? fallback.sash, 20, 250),
     impost: clamp(profile.impostWidth ?? fallback.impost, 20, 250),
-    glassBite: clamp(profile.glassBite ?? DEFAULT_GLASS_BITE_MM, 0, 100),
+    bite: Object.fromEntries(GLASS_BITE_FIELDS.map(([field, part]) =>
+      [part, clamp(profile[field] ?? profile.glassBite ?? 14, 0, 100)])),
   };
 }
 
@@ -423,10 +423,10 @@ function validateCurrentProduct() {
   if (!Array.isArray(state.panes) || state.panes.length !== state.cols * state.rows) return "Количество секций не соответствует выбранной разбивке.";
 
   const tech = getTechnology();
-  for (const [index, entry] of sectionLayout().entries()) {
-    if (entry.pane.split) continue;
-    const small = paneGlassGeometry(entry,tech).fields.find(f => f.clearWidth < 120 || f.clearHeight < 120);
-    if (small) return `Секция № ${sectionNumber(index)}: световой проём под стеклопакет должен быть не менее 120 × 120 мм.`;
+  for (const [i,entry] of sectionLayout().entries()) {
+    if (!entry.pane.split && glassGeometry(entry,tech).fields.some(f=>f.clearW<120 || f.clearH<120)) {
+      return `Секция № ${sectionNumber(i)}: световой проём должен быть не менее 120 × 120 мм.`;
+    }
   }
   return "";
 }
@@ -957,40 +957,31 @@ function updateMaterialSelects(reset = false) {
     .join("");
 }
 
-function paneGlassGeometry(entry, tech = getTechnology()) {
-  const {pane, rect, edges} = entry;
-  const cuts = edges.map(edge => edge ? tech.frame : tech.impost / 2);
+function glassGeometry({pane, rect, edges}, tech = getTechnology()) {
+  const [fl,fr,ft,fb] = edges.map(outer => outer ? tech.frame : tech.impost/2);
+  const [l,t,r,b] = [rect.x+fl,rect.y+ft,rect.x+rect.width-fr,rect.y+rect.height-fb];
   const sash = pane.opening !== "fixed";
-  const outer = [rect.x+cuts[0], rect.y+cuts[2], rect.x+rect.width-cuts[1], rect.y+rect.height-cuts[3]];
-  const sashBox = sash ? [outer[0]-SASH_OVERLAP_MM, outer[1]-SASH_OVERLAP_MM,
-    outer[2]+SASH_OVERLAP_MM, outer[3]+SASH_OVERLAP_MM] : null;
-  const opening = sash ? [sashBox[0]+tech.sash,sashBox[1]+tech.sash,sashBox[2]-tech.sash,sashBox[3]-tech.sash] : outer;
-  const [l,t,r,b] = opening;
-  const intervals = (orientation, low, high, origin, length) => {
-    const axes = pane.innerImposts.filter(item => item.orientation === orientation && !pane.split)
-      .map(item => origin + item.position * length).sort((a,b) => a-b);
-    return Array.from({length:axes.length+1},(_,i) => [
-      i ? axes[i-1]+tech.impost/2 : low,
-      i < axes.length ? axes[i]-tech.impost/2 : high,
-    ]);
+  const sashBox = sash ? [l-SASH_LAP,t-SASH_LAP,r+SASH_LAP,b+SASH_LAP] : null;
+  const d = sash ? tech.sash-SASH_LAP : 0;
+  const opening = [l+d,t+d,r-d,b-d];
+  const bites = edges.map(outer => tech.bite[sash ? "створка" : outer ? "рама" : "импост"]);
+  const intervals = (axis, lo, hi, origin, size, first, last) => {
+    const marks = pane.innerImposts.filter(i => !pane.split && i.orientation === axis)
+      .map(i => origin + i.position*size).sort((a,b) => a-b);
+    return Array.from({length:marks.length+1},(_,i)=>{
+      const start=i ? marks[i-1]+tech.impost/2 : lo;
+      const end=i<marks.length ? marks[i]-tech.impost/2 : hi;
+      const a=i ? tech.bite["импост"] : first, b=i<marks.length ? tech.bite["импост"] : last;
+      return {start:start-a, size:end-start+a+b, clear:end-start};
+    });
   };
-  const fields = intervals("horizontal",t,b,rect.y,rect.height).flatMap(([top,bottom]) =>
-    intervals("vertical",l,r,rect.x,rect.width).map(([left,right]) => {
-      const bite = tech.glassBite;
-      const clearWidth = right-left, clearHeight = bottom-top;
-      return {x:left-bite,y:top-bite,width:clearWidth+2*bite,height:clearHeight+2*bite,clearWidth,clearHeight};
-    }));
-  return {fields,sashBox,opening};
+  const xs=intervals("vertical",opening[0],opening[2],rect.x,rect.width,bites[0],bites[1]);
+  const ys=intervals("horizontal",opening[1],opening[3],rect.y,rect.height,bites[2],bites[3]);
+  return {opening,sashBox,fields:ys.flatMap(y=>xs.map(x=>({x:x.start,y:y.start,w:x.size,h:y.size,clearW:x.clear,clearH:y.clear})))};
 }
-
+function glassSizeLabel(f) { return f.clearW>0 && f.clearH>0 ? `${Math.round(f.w)} × ${Math.round(f.h)} мм` : "—"; }
 function paneGlazingArea(index, pane, shapeFactor = 1) {
-  return paneGlassGeometry(sectionLayout()[index]).fields.reduce((sum, field) =>
-    sum + (field.clearWidth > 0 && field.clearHeight > 0 ? field.width * field.height : 0), 0) * shapeFactor / 1_000_000;
-}
-
-function glassDimensionText(field) {
-  return field.clearWidth > 0 && field.clearHeight > 0
-    ? `${Math.round(field.width)} × ${Math.round(field.height)}` : "—";
+  return glassGeometry(sectionLayout()[index]).fields.reduce((sum,f)=>sum+(f.clearW>0 && f.clearH>0 ? f.w*f.h : 0),0)*shapeFactor/1e6;
 }
 
 function geometry() {
@@ -1303,11 +1294,10 @@ function renderCanvas() {
   const x = 326 - width / 2;
   const y = 229 - height / 2;
   const tech = getTechnology();
-  const sx = width/state.width, sy = height/state.height;
-  const canvasScale = Math.min(sx, sy);
-  const frame = tech.frame * canvasScale;
-  const impostFace = tech.impost * canvasScale;
-  const toX = value => x + value*sx, toY = value => y + value*sy;
+  const sx=width/state.width, sy=height/state.height;
+  const canvasScale=Math.min(sx,sy);
+  const frame=tech.frame*canvasScale, impostFace=tech.impost*canvasScale;
+  const X=mm=>x+mm*sx, Y=mm=>y+mm*sy;
   const material = MATERIALS[state.material];
   const profileColor = getFinish().color || material.frame;
   const paths = shapePaths(x, y, width, height, frame);
@@ -1325,11 +1315,10 @@ function renderCanvas() {
     dimensionGroups.get(key).push({vertical,start,end,absolute,local,item,index,id:item.id});
   };
 
-  let panesMarkup = "", localImpostsMarkup = "", sashMarkup = "", glassAnnotations = "";
-  sectionLayout().forEach((entry, index) => {
+  let panesMarkup = "", localImpostsMarkup = "", sashMarkup = "", glassMarkup = "";
+  sectionLayout().forEach((entry,index) => {
     const {pane,rect:physical} = entry;
-    const px = toX(physical.x), py = toY(physical.y);
-    const paneWidth = physical.width*sx, paneHeight = physical.height*sy;
+    const px=X(physical.x), py=Y(physical.y), paneWidth=physical.width*sx, paneHeight=physical.height*sy;
     paneRects[index] = { x: px, y: py, width: paneWidth, height: paneHeight, physicalWidth: physical.width, physicalHeight: physical.height };
     const glass = materialGlass()[pane.glass];
     const selected = index === state.selectedPane || multiSections.has(index);
@@ -1364,25 +1353,19 @@ function renderCanvas() {
 
     localImpostsMarkup += innerImpostsMarkup;
     if (pane.split) return;
-    const {fields,sashBox,opening} = paneGlassGeometry(entry,tech);
-    if (sashBox) {
-      const [l,t,r,b]=sashBox;
-      const [il,it,ir,ib]=opening;
-      if (ir>il && ib>it) {
-        sashMarkup += `<path d="M ${toX(l)} ${toY(t)} H ${toX(r)} V ${toY(b)} H ${toX(l)} Z
-          M ${toX(il)} ${toY(it)} H ${toX(ir)} V ${toY(ib)} H ${toX(il)} Z"
-          fill="${profileColor}" fill-rule="evenodd" stroke="${material.edge}" stroke-width="0.8" />`;
-        sashMarkup += openingSymbol(pane.opening,toX(il),toY(it),(ir-il)*sx,(ib-it)*sy,pane.hingeSide);
-      }
+    const {opening,sashBox,fields} = glassGeometry(entry,tech);
+    const path = ([l,t,r,b]) => `M ${X(l)} ${Y(t)} H ${X(r)} V ${Y(b)} H ${X(l)} Z`;
+    if (sashBox && opening[2]>opening[0] && opening[3]>opening[1]) {
+      sashMarkup += `<path d="${path(sashBox)} ${path(opening)}" fill="${profileColor}" fill-rule="evenodd" stroke="${material.edge}" stroke-width=".8" />`;
+      sashMarkup += openingSymbol(pane.opening,X(opening[0]),Y(opening[1]),(opening[2]-opening[0])*sx,(opening[3]-opening[1])*sy,pane.hingeSide);
     }
-    for(const field of fields) {
-      if (field.clearWidth<=0 || field.clearHeight<=0) continue;
-      const fx=toX(field.x), fy=toY(field.y), fw=field.width*sx, fh=field.height*sy;
-      const fs=Math.min(10,fw/7,fh/4);
-      if (selected) glassAnnotations += `<rect class="pane-selected" x="${fx}" y="${fy}" width="${fw}" height="${fh}" fill="none"/>`;
-      if(fs>=4) glassAnnotations += `<text x="${fx+fw/2}" y="${fy+fh/2+Math.min(26,fh/3)}"
-        text-anchor="middle" font-size="${fs}" fill="#20384c" paint-order="stroke"
-        stroke="#edf6fa" stroke-width="2">${state.shape === "rect" ? "" : "≈ "}${glassDimensionText(field)} мм</text>`;
+    for (const f of fields) {
+      if (f.clearW<=0 || f.clearH<=0) continue;
+      const w=f.w*sx,h=f.h*sy;
+      if (selected) glassMarkup += `<rect class="pane-selected" x="${X(f.x)}" y="${Y(f.y)}" width="${w}" height="${h}" fill="none" />`;
+      const font=Math.min(10,w/8,h/4);
+      if (font>=4) glassMarkup += `<text x="${X(f.x)+w/2}" y="${Y(f.y)+h/2+Math.min(26,h/3)}"
+        text-anchor="middle" font-size="${font}" fill="#20384c" paint-order="stroke" stroke="#edf6fa" stroke-width="2">${state.shape === "rect" ? "" : "≈ "}${glassSizeLabel(f)}</text>`;
     }
     panesMarkup += `
       <g class="pane" data-index="${index}" clip-path="url(#innerClip)">
@@ -1457,7 +1440,7 @@ function renderCanvas() {
         <stop offset="1" stop-color="#5da3bf" stop-opacity="0.24" />
       </linearGradient>
       <clipPath id="innerClip">${paths.inner}</clipPath>
-      <clipPath id="glassOuterClip">${paths.outer}</clipPath>
+      <clipPath id="glassCutClip">${paths.outer}</clipPath>
       <marker id="dimArrow" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto-start-reverse">
         <path d="M 8 1 L 1 4 L 8 7" fill="none" stroke="#8996a8" stroke-width="1.2" />
       </marker>
@@ -1465,7 +1448,7 @@ function renderCanvas() {
     <g filter="url(#windowShadow)" fill="${profileColor}" stroke="${material.edge}" stroke-width="2.2">${paths.outer}</g>
     <g fill="#bfe3ef" stroke="${material.edge}" stroke-width="1.6">${paths.inner}</g>
     <g clip-path="url(#innerClip)">${panesMarkup}${localImpostsMarkup}${rootImpostsMarkup}</g>
-    <g clip-path="url(#glassOuterClip)" pointer-events="none">${sashMarkup}${glassAnnotations}</g>
+    <g clip-path="url(#glassCutClip)" pointer-events="none">${sashMarkup}${glassMarkup}</g>
     <g class="dimensions">${axisMarkup}
       <line class="dimension-line" x1="${x}" y1="${y + height + 6}" x2="${x}" y2="${bottomDimensionY + 7}" opacity=".45" />
       <line class="dimension-line" x1="${x + width}" y1="${y + height + 6}" x2="${x + width}" y2="${bottomDimensionY + 7}" opacity=".45" />
@@ -1755,18 +1738,11 @@ function renderInspector() {
   $("#hingeSideField").hidden = !canTurn;
   $("#hingeSideField").style.display = canTurn ? "" : "none";
   $("#hingeSide").value = pane.hingeSide === "right" ? "right" : "left";
-  const glassSelect = $("#paneGlass");
-  glassSelect.value = pane.glass;
-  let glassSize = $("#paneGlassSize");
-  if (!glassSize) {
-    glassSize = document.createElement("small");
-    glassSize.id = "paneGlassSize";
-    glassSelect.after(glassSize);
-  }
-  const sizes = paneGlassGeometry(sectionLayout()[state.selectedPane]).fields.map(glassDimensionText);
-  const distinct = [...new Set(sizes)];
-  glassSize.textContent = `${state.shape === "rect" ? "Размер" : "Размер ориентировочно"}: ${distinct.join("; ")} мм`;
-
+  const select = $("#paneGlass");
+  select.value = pane.glass;
+  let note = $("#paneGlassSize");
+  if (!note) { note = document.createElement("small"); note.id = "paneGlassSize"; select.after(note); }
+  note.textContent = `${state.shape === "rect" ? "Размер" : "Размер ориентировочно"}: ${[...new Set(glassGeometry(sectionLayout()[state.selectedPane]).fields.map(glassSizeLabel))].join("; ")}`;
   const innerCount = pane.innerImposts.length;
   const paneKind = pane.opening === "fixed" ? "глухой секции" : "створке";
   $("#innerImpostHint").textContent = innerCount
@@ -2362,10 +2338,11 @@ function renderTechnologyCatalog() {
             <span>Импост, мм</span>
             <input type="number" data-profile-field="impostWidth" value="${clamp(profile.impostWidth, 20, 250)}" min="20" max="250" />
           </label>
-          <label class="catalog-field">
-            <span>Заход стеклопакета, мм на сторону</span>
-            <input type="number" data-profile-field="glassBite" value="${clamp(profile.glassBite ?? DEFAULT_GLASS_BITE_MM, 0, 100)}" min="0" max="100" step="any" />
-          </label>
+          ${GLASS_BITE_FIELDS.map(([field, part]) => `<label class="catalog-field">
+            <span>Заход стеклопакета: ${part}, мм</span>
+            <input type="number" data-profile-field="${field}" min="0" max="100" step="any"
+              value="${clamp(profile[field] ?? profile.glassBite ?? 14, 0, 100)}" />
+          </label>`).join("")}
           <label class="catalog-field">
             <span>Коэффициент цены</span>
             <input type="number" data-profile-field="factor" value="${Number(profile.factor) || 1}" min="0.1" max="5" step="0.01" />
@@ -2426,7 +2403,10 @@ function readCatalogDraftFromEditor() {
     const profile = material.profiles.find((item) => item.id === row.dataset.profileId);
     if (!profile) return;
     profile.name = row.querySelector('[data-profile-field="name"]').value.trim() || "Новая профильная система";
-    profile.glassBite = clamp(row.querySelector('[data-profile-field="glassBite"]').value || DEFAULT_GLASS_BITE_MM, 0, 100);
+    for (const [field] of GLASS_BITE_FIELDS) {
+      const value = row.querySelector(`[data-profile-field="${field}"]`).value;
+      profile[field] = clamp(value === "" ? 14 : value, 0, 100);
+    }
     profile.frameWidth = clamp(row.querySelector('[data-profile-field="frameWidth"]').value, 20, 250);
     profile.sashWidth = clamp(row.querySelector('[data-profile-field="sashWidth"]').value, 20, 250);
     profile.impostWidth = clamp(row.querySelector('[data-profile-field="impostWidth"]').value, 20, 250);
@@ -2456,7 +2436,6 @@ function handleCatalogAction(event) {
       factor: 1,
       seals: defaults.seals,
       frameWidth: defaults.frameWidth,
-      glassBite: DEFAULT_GLASS_BITE_MM,
       sashWidth: defaults.sashWidth,
       impostWidth: defaults.impostWidth,
     });
