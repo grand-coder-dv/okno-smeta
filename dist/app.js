@@ -1343,16 +1343,19 @@ function refreshProfileEdit() {
 function editPolygon(selection) {
   if(state.frameArcs && Object.values(state.frameArcs).some(Boolean)) {showToast("Сначала верните дуги рамы в прямые стороны");return;}
   const points=polygonPoints()||rectPoints([0,0,state.width,state.height]);
-  const i=selection.side, vertex=selection.type==="vertex";
+  const i=selection.side, vertex=selection.type==="vertex", lengthMode=selection.type==="length";
+  if (!points[i]) return;
+  const next=(i+1)%points.length;
+  const originalLength=Math.hypot(points[next][0]-points[i][0],points[next][1]-points[i][1]);
   let dialog=$("#polygonEditDialog");
   if(!dialog){dialog=document.createElement("dialog");dialog.id="polygonEditDialog";document.body.append(dialog);}
   dialog.innerHTML=`<form method="dialog" class="control-group" style="display:grid;gap:12px;padding:16px;min-width:min(290px,80vw)">
-    <strong>${vertex?"Изменить угол рамы":"Изменить сторону рамы"}</strong>
-    ${vertex?`<label class="field">X от левого края, мм<input type="number" name="x" step="any" required value="${Number(points[i][0].toFixed(3))}"></label>
+    <strong>${vertex?"Изменить угол рамы":lengthMode?"Изменить длину стороны":"Изменить сторону рамы"}</strong>
+    ${lengthMode?`<label class="field">Длина между углами, мм<input type="number" name="length" min="5" step="any" required value="${Math.round(originalLength)}"></label><p>Первый угол останется на месте.</p>`:vertex?`<label class="field">X от левого края, мм<input type="number" name="x" step="any" required value="${Number(points[i][0].toFixed(3))}"></label>
     <label class="field">Y от нижнего края, мм<input type="number" name="y" step="any" required value="${Number((state.height-points[i][1]).toFixed(3))}"></label>`:"<p>Разбивка добавит новую вершину посередине стороны. Затем её можно переместить.</p>"}
     <span data-poly-error role="alert"></span><div style="display:flex;flex-wrap:wrap;gap:8px">
     <button class="button ghost" type="submit" value="cancel" formnovalidate>Отмена</button>
-    ${vertex?`<button class="button ghost" type="submit" value="remove" ${points.length<=3?"disabled":""}>Удалить вершину</button><button class="button primary" type="submit" value="move">Применить</button>`:
+    ${lengthMode?`<button class="button primary" type="submit" value="length">Применить</button>`:vertex?`<button class="button ghost" type="submit" value="remove" ${points.length<=3?"disabled":""}>Удалить вершину</button><button class="button primary" type="submit" value="move">Применить</button>`:
       '<button class="button primary" type="submit" value="split">Разбить сторону</button>'}
     </div></form>`;
   dialog.querySelector("form").onsubmit=event=>{
@@ -1362,6 +1365,13 @@ function editPolygon(selection) {
     if(op==="split"){const p=points[i],q=points[(i+1)%points.length];points.splice(i+1,0,[(p[0]+q[0])/2,(p[1]+q[1])/2]);picked=i+1;}
     if(op==="move"){
       const f=event.currentTarget.elements; points[i]=[f.x.valueAsNumber,state.height-f.y.valueAsNumber];
+    }
+    if(op==="length"){
+      const value=event.currentTarget.elements.namedItem("length").valueAsNumber;
+      if(!Number.isFinite(value)||value<5||originalLength<=0){event.preventDefault();return;}
+      const p=points[i], q=points[next];
+      points[next]=p.map((v,k)=>v+(q[k]-v)*value/originalLength);
+      picked=next;
     }
     const good=points.every((p,k)=>p.every(Number.isFinite)&&Math.hypot(p[0]-points[(k+1)%points.length][0],p[1]-points[(k+1)%points.length][1])>=5&&points.every(q=>cross2(p,points[(k+1)%points.length],q)>=-1e-5));
     if(!good || polygonClip(points,points,getTechnology().frame).length<3){event.preventDefault();dialog.querySelector('[data-poly-error]').textContent="Оставьте замкнутый выпуклый контур без пересечений и с местом для профиля.";return;}
@@ -1759,21 +1769,39 @@ function renderCanvas() {
   canvasLayout = { x, y, width, height, box, xBounds, yBounds, paneRects };
   const [gL,gT,gR,gB]=windowOuterBounds();
   const bx0=X(gL),by0=Y(gT),bx1=X(gR),by1=Y(gB);
-  const leftDimensionX=bx0-39,bottomDimensionY=by1+39;
+  const archedFrame=!poly && state.shape==="rect" && Object.values(state.frameArcs||{}).some(Boolean);
+  const leftDimensionX=bx0-(archedFrame?70:39),bottomDimensionY=by1+(archedFrame?70:39);
   const actualWidth=gR-gL,actualHeight=gB-gT;
+  const extraView=[];
+  const shoulderDimension=(a,b,c,d,text,attr,title,angle=0)=>{
+    const [mx,my]=[(c[0]+d[0])/2,(c[1]+d[1])/2];
+    extraView.push(c,d,[mx-61,my-61],[mx+61,my+61]);
+    const line=(p,q,arrows=false)=>`<line class="dimension-line" x1="${p[0]}" y1="${p[1]}" x2="${q[0]}" y2="${q[1]}" ${arrows?'marker-start="url(#dimArrow)" marker-end="url(#dimArrow)"':'opacity=".45"'}/>`;
+    return `${line(a,c)}${line(b,d)}${line(c,d,true)}
+      <g transform="translate(${mx} ${my}) rotate(${angle})" ${attr} tabindex="0" role="button" aria-label="${title}" style="cursor:pointer">
+        <title>${title}</title><rect x="-56" y="-13" width="112" height="24" rx="6" fill="#eef2f6"/>
+        <text class="dimension-text" x="0" y="5">${text}</text></g>`;
+  };
   let shoulderMarkup="";
-  if(customProfileArcs() && (poly || Object.values(state.frameArcs||{}).some(Boolean))) {
-    const points=poly||rectPoints([0,0,state.width,state.height]);
-    const cx=points.reduce((sum,p)=>sum+p[0],0)/points.length,cy=points.reduce((sum,p)=>sum+p[1],0)/points.length;
-    shoulderMarkup=points.map((a,i)=>{
-      const b=points[(i+1)%points.length];
-      if(!poly && !state.frameArcs?.[i] && !state.frameArcs?.[(i+2)%4]) return "";
-      const mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2;
-      const label=`${Math.round(Math.hypot(b[0]-a[0],b[1]-a[1]))} мм`;
-      return `<line x1="${X(a[0])}" y1="${Y(a[1])}" x2="${X(b[0])}" y2="${Y(b[1])}" stroke="#748399" opacity=".6" stroke-dasharray="3 3"/>
-      <text x="${X(mx+(cx-mx)*.13)}" y="${Y(my+(cy-my)*.13)}" text-anchor="middle" fill="#48586a" font-size="10" stroke="white" stroke-width="2" paint-order="stroke"><title>Между угловыми точками</title>${label}</text>`;
-    }).join("");
-    if(!poly) shoulderMarkup+=`<text x="${bx0+12}" y="${by1-10}" fill="#48586a" font-size="10" stroke="white" stroke-width="2" paint-order="stroke">По плечам: ${Math.round(state.width)} × ${Math.round(state.height)} мм</text>`;
+  const mm=v=>`${numberFormatter.format(Math.round(v))} мм`;
+  if(archedFrame){
+    shoulderMarkup+=shoulderDimension([x,y+height],[x+width,y+height],[x,by1+37],[x+width,by1+37],mm(state.width),'data-window-dimension="width"',"Ширина по плечам. Нажмите для изменения");
+    shoulderMarkup+=shoulderDimension([x,y],[x,y+height],[bx0-37,y],[bx0-37,y+height],mm(state.height),'data-window-dimension="height"',"Высота по плечам. Нажмите для изменения",-90);
+  } else if(poly && activeProfileEdge?.owner===state && activeProfileEdge.type==="polygon") {
+    const i=activeProfileEdge.side;
+    const a=poly[i],b=poly[(i+1)%poly.length];
+    if(a&&b){
+      const p=[X(a[0]),Y(a[1])],q=[X(b[0]),Y(b[1])];
+      const dx=q[0]-p[0],dy=q[1]-p[1],length=Math.hypot(dx,dy);
+      if(length>0){
+        const normal=[dy/length,-dx/length];
+        const offset=76+Math.max(0,...poly.map(([u,v])=>(X(u)-p[0])*normal[0]+(Y(v)-p[1])*normal[1]));
+        const shift=pt=>pt.map((v,k)=>v+offset*normal[k]);
+        let angle=Math.atan2(dy,dx)*180/Math.PI;
+        if(angle>90)angle-=180;else if(angle< -90)angle+=180;
+        shoulderMarkup=shoulderDimension(p,q,shift(p),shift(q),mm(Math.hypot(b[0]-a[0],b[1]-a[1])),`data-profile-length="${i}"`,"Длина стороны. Нажмите для изменения",angle);
+      }
+    }
   }
   const axisGroups = [...dimensionGroups.values()];
   const tracks = [[], []];
@@ -1797,10 +1825,11 @@ function renderCanvas() {
       <text class="dimension-text" x="0" y="5" pointer-events="none">${text}</text></g></g>`;
   }).join("");
   canvasLayout.axisGroups = axisGroups;
-  const viewTop=Math.min(0,by0-46-Math.max(0,tracks[0].length-1)*29);
-  const viewRight=Math.max(640,bx1+46+Math.max(0,tracks[1].length-1)*29);
-  const viewLeft=Math.min(0,leftDimensionX-21);
-  svg.setAttribute("viewBox",`${viewLeft} ${viewTop} ${viewRight-viewLeft} ${Math.max(500,bottomDimensionY+21)-viewTop}`);
+  const viewTop=Math.min(0,by0-46-Math.max(0,tracks[0].length-1)*29,...extraView.map(p=>p[1]));
+  const viewRight=Math.max(640,bx1+46+Math.max(0,tracks[1].length-1)*29,...extraView.map(p=>p[0]));
+  const viewLeft=Math.min(0,leftDimensionX-21,...extraView.map(p=>p[0]));
+  const viewBottom=Math.max(500,bottomDimensionY+21,...extraView.map(p=>p[1]));
+  svg.setAttribute("viewBox",`${viewLeft} ${viewTop} ${viewRight-viewLeft} ${viewBottom-viewTop}`);
   svg.innerHTML = `
     <defs>
       <filter id="windowShadow" x="-30%" y="-30%" width="160%" height="170%">
@@ -1822,7 +1851,7 @@ function renderCanvas() {
     <g clip-path="url(#innerClip)">${panesMarkup}${localImpostsMarkup}${rootImpostsMarkup}</g>
     <g clip-path="url(#glassCutClip)" pointer-events="none">${sashMarkup}${glassMarkup}</g>
     <g>${profileTargets}${vertices}</g>
-    <g pointer-events="none">${shoulderMarkup}</g>
+    <g class="dimensions">${shoulderMarkup}</g>
     <g class="dimensions">${axisMarkup}
       <line class="dimension-line" x1="${bx0}" y1="${by1 + 6}" x2="${bx0}" y2="${bottomDimensionY + 7}" opacity=".45" />
       <line class="dimension-line" x1="${bx1}" y1="${by1 + 6}" x2="${bx1}" y2="${bottomDimensionY + 7}" opacity=".45" />
@@ -1948,14 +1977,18 @@ function bindCanvasDragging() {
       state.selectedPane=null;state.selectedImpost=null;multiSections.clear();sharedAxis=null;
       renderAll();
     }
-    else if(activeProfileEdge){activeProfileEdge=null; if(event.target===svg)renderAll();}
+    else if(activeProfileEdge && !event.target.closest?.("[data-profile-length]")){activeProfileEdge=null; if(event.target===svg)renderAll();}
   };
   svg.addEventListener("click",openProfile);
   svg.addEventListener("keydown",event=>{if(event.key==="Enter" || event.key===" ")openProfile(event);});
   const editDimension = event => {
-    const target = event.target.closest?.("[data-axis-group], [data-window-dimension]");
+    const target = event.target.closest?.("[data-axis-group], [data-window-dimension], [data-profile-length]");
     if (!target) return;
     event.preventDefault();
+    if(target.hasAttribute("data-profile-length")){
+      editPolygon({type:"length",side:Number(target.dataset.profileLength)});
+      return;
+    }
     let field = target.dataset.windowDimension;
     if (!field) {
       const group = canvasLayout.axisGroups[Number(target.dataset.axisGroup)];
