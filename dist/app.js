@@ -1502,16 +1502,16 @@ function renderCanvas() {
   const axisMarkup = axisGroups.map((group, i) => {
     const first = group[0], {vertical, end} = first;
     const common = group.length > 1;
-    const start = common ? (vertical ? y : x) : first.start;
+    const start = vertical ? y + height : x;
     const mid = (start + end) / 2;
     const rows = tracks[Number(vertical)];
-    const range = [Math.min(start,mid-45), Math.max(end,mid+45)];
+    const range = [Math.min(start,end,mid-45), Math.max(start,end,mid+45)];
     let level = rows.findIndex(row => row.every(([a,b])=>b<range[0]||a>range[1]));
     if(level<0){level=rows.length;rows.push([]);} rows[level].push(range);
     const edge = vertical ? x+width+5 : y-5;
     const track = edge+(vertical?1:-1)*(25+level*29);
     const line=(a,b,c,d,arrows=false)=>`<line class="dimension-line" x1="${vertical?b:a}" y1="${vertical?a:b}" x2="${vertical?d:c}" y2="${vertical?c:d}" ${arrows?'marker-start="url(#dimArrow)" marker-end="url(#dimArrow)"':'opacity=".45"'}/>`;
-    const text=`${Math.round(common?first.absolute:first.local)} мм`;
+    const text=`${Math.round(vertical ? state.height-first.absolute : first.absolute)} мм`;
     return `<g>${line(start,edge,start,track)}${line(end,edge,end,track)}${line(start,track,end,track,true)}
       <g transform="translate(${vertical?track:mid} ${vertical?mid:track}) ${vertical?'rotate(-90)':''}"
       data-axis-group="${i}" tabindex="0" role="button" aria-label="Изменить ${common?'общий ':''}осевой размер ${text}" style="cursor:pointer">
@@ -1679,7 +1679,7 @@ function bindCanvasDragging() {
       const first = group[0];
       selectImpostFromNode({dataset:{scope:first.index == null ? "root" : "pane", pane:first.index,
         orientation:first.item.orientation, id:first.id}});
-      if (group.length > 1) sharedAxis = group;
+      sharedAxis = group;
       renderAll();
       field = "impostPosition";
     }
@@ -1810,11 +1810,12 @@ function renderInspector() {
       const group = sharedImpostLimits(sharedAxis, record.selected.orientation);
       const first = group.members[0];
       if (first) {
-        position = first.start + first.item.position * first.size;
-        min = group.min;
-        max = group.max;
+        const axis = first.start + first.item.position * first.size;
+        position = vertical ? axis : state.height - axis;
+        min = vertical ? group.min : state.height - group.max;
+        max = vertical ? group.max : state.height - group.min;
       }
-      $("#impostPositionLabel").textContent = `Общая ось от ${vertical ? "левого" : "верхнего"} края рамы, мм`;
+      $("#impostPositionLabel").textContent = vertical ? "Координата X от левого края рамы, мм" : "Координата Y от нижнего края рамы, мм";
     }
     positionInput.min = Math.ceil(min);
     positionInput.max = Math.floor(max);
@@ -2093,7 +2094,8 @@ function bindEvents() {
     if (sharedAxis) {
       const group = sharedImpostLimits(sharedAxis, record.selected.orientation);
       if (!group.members.length || group.min > group.max) { renderAll(); return; }
-      const position = clamp(value, group.min, group.max);
+      const axis = record.selected.orientation === "horizontal" ? state.height - value : value;
+      const position = clamp(axis, group.min, group.max);
       const old = group.members.map(m => m.item.position);
       group.members.forEach(m => { m.item.position = (position - m.start) / m.size; });
       const issue = validateCurrentProduct();
