@@ -14,7 +14,8 @@
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2315253d'/%3E%3Cpath d='M14 15h36v34H14z' fill='%23d9eff8' stroke='%23fff' stroke-width='5'/%3E%3Cpath d='M32 16v32M15 32h34' stroke='%23f28a2e' stroke-width='4'/%3E%3C/svg%3E"
     />
     <link rel="stylesheet" href="./styles.css" />
-      <style>
+    <style>
+      #technologyCatalogEditor { max-height: none; overflow: visible; }
       #glassCatalogEditor .glass-catalog-card {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(min(100%, 145px), 1fr));
@@ -148,7 +149,7 @@
             </label>
           </fieldset>
 
-          <fieldset class="control-group" hidden style="display: none">
+          <fieldset class="control-group" hidden style="display:none">
             <legend>Разбивка</legend>
             <div class="split-presets" id="splitPresets" aria-label="Шаблоны разбивки">
               <button class="active" type="button" data-cols="2" data-rows="1" aria-label="Две вертикальные секции"><i class="preset two-v"></i></button>
@@ -462,16 +463,14 @@
             <button type="button" data-catalog-material="wood" aria-selected="false">Дерево</button>
           </div>
           <div id="technologyCatalogEditor" class="technology-catalog-editor"></div>
-          <div class="technology-catalog-editor">
-            <section class="catalog-section">
-              <div class="catalog-section-header">
-                <div><h3>Стеклопакеты материала</h3><span id="glassCatalogCount"></span></div>
-                <button type="button" class="button ghost catalog-add-button" id="addGlassCatalog">+ Добавить стеклопакет</button>
-              </div>
-              <div id="glassCatalogEditor" class="catalog-profile-list"></div>
-              <p class="technology-note">Если цена стандартного стеклопакета не указана, используется тариф из вкладки «Цены».</p>
-            </section>
-          </div>
+          <section class="catalog-section" id="glassCatalogSection">
+            <div class="catalog-section-header">
+              <div><h3>Стеклопакеты материала</h3><span id="glassCatalogCount"></span></div>
+              <button type="button" class="button ghost catalog-add-button" id="addGlassCatalog">+ Добавить стеклопакет</button>
+            </div>
+            <div id="glassCatalogEditor" class="catalog-profile-list"></div>
+            <p class="technology-note">Если цена стандартного стеклопакета не указана, используется тариф из вкладки «Цены».</p>
+          </section>
           <p class="technology-note">Нельзя удалить последнюю систему или последний цвет материала. Изменения сохраняются на этом устройстве.</p>
           <div class="dialog-actions">
             <button class="button ghost" id="resetTechnology" type="button">Вернуть стандартные</button>
