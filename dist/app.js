@@ -980,7 +980,7 @@ function glassGeometry({pane, rect, edges}, tech = getTechnology()) {
   const ys=intervals("horizontal",opening[1],opening[3],rect.y,rect.height,bites[2],bites[3]);
   return {opening,sashBox,fields:ys.flatMap(y=>xs.map(x=>({x:x.start,y:y.start,w:x.size,h:y.size,clearW:x.clear,clearH:y.clear})))};
 }
-function glassSizeLabel(f) { return f.clearW>0 && f.clearH>0 ? `${Math.round(f.w)} × ${Math.round(f.h)} мм` : "—"; }
+function glassSizeLabel(f) { return f.clearW>0 && f.clearH>0 && f.w>0 && f.h>0 ? `${Math.round(f.w)} × ${Math.round(f.h)} мм` : "—"; }
 function paneGlazingArea(index, pane, shapeFactor = 1) {
   return glassGeometry(sectionLayout()[index]).fields.reduce((sum,f)=>sum+(f.clearW>0 && f.clearH>0 ? f.w*f.h : 0),0)*shapeFactor/1e6;
 }
@@ -1279,10 +1279,102 @@ function isSelectedImpost(scope, orientation, id, paneIndex = null) {
   return Boolean(selected && selected.scope === scope && selected.orientation === orientation && selected.id === id && (scope === "root" || selected.paneIndex === paneIndex));
 }
 
+function polygonPoints() {
+  return state.shape === "rect" && state.framePolygon?.map(([x,y])=>[x*state.width,y*state.height]);
+}
+const cross2=(a,b,c)=>(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
+function polygonClip(subject, boundary, inset=0) {
+  let out=subject;
+  boundary.forEach((a,i)=>{
+    const b=boundary[(i+1)%boundary.length], gap=inset*Math.hypot(b[0]-a[0],b[1]-a[1]);
+    const distance=p=>cross2(a,b,p)-gap;
+    const input=out; out=[];
+    input.forEach((p,j)=>{
+      const q=input[(j+1)%input.length], d=distance(p), e=distance(q);
+      if(d>=-1e-7) out.push(p);
+      if((d>1e-7&&e< -1e-7)||(d< -1e-7&&e>1e-7)) out.push(p.map((v,k)=>v+(q[k]-v)*d/(d-e)));
+    });
+  });
+  return out;
+}
+function rectPoints([l,t,r,b]) { return [[l,t],[r,t],[r,b],[l,b]]; }
+function polyPath(points,X,Y) { return points.length>=3 ? `M ${points.map(([x,y])=>`${X(x)} ${Y(y)}`).join(' L ')} Z` : ""; }
+function polyBounds(p) { return [Math.min(...p.map(v=>v[0])),Math.min(...p.map(v=>v[1])),Math.max(...p.map(v=>v[0])),Math.max(...p.map(v=>v[1]))]; }
+function polygonGlass(poly, geometry, f, tech) {
+  const bite=tech.bite[geometry.sashBox?"створка":"рама"];
+  const depth=tech.frame+(geometry.sashBox?tech.sash-SASH_LAP:0)-bite;
+  return polygonClip(rectPoints([f.x,f.y,f.x+f.w,f.y+f.h]),poly,depth);
+}
+function polyOpeningSymbol(p,type,side,X,Y) {
+  if(p.length<3 || type==="fixed") return "";
+  const [l,t,r,b]=polyBounds(p), at=(vertical,u)=>{
+    const k=vertical?0:1, values=[];
+    p.forEach((a,i)=>{const q=p[(i+1)%p.length]; if((a[k]<=u&&q[k]>u)||(q[k]<=u&&a[k]>u)) values.push(a[1-k]+(q[1-k]-a[1-k])*(u-a[k])/(q[k]-a[k]));});
+    if(!values.length) return [(l+r)/2,(t+b)/2];
+    return [Math.min(...values),Math.max(...values)];
+  };
+  const y1=t+(b-t)*.13, ym=(t+b)/2, y2=b-(b-t)*.13, idx=side==="right"?1:0;
+  const pt=(x,y)=>`${X(x)} ${Y(y)}`;
+  const line=points=>`<path d="M ${points.join(' L ')}" fill="none" stroke="#4d7085" stroke-width="1.7" stroke-dasharray="5 4"/>`;
+  let markup="";
+  if(type==="turn"||type==="tiltturn") markup+=line([pt(at(false,y1)[idx],y1),pt(at(false,ym)[1-idx],ym),pt(at(false,y2)[idx],y2)]);
+  if(type==="tilt"||type==="tiltturn") {const mid=(l+r)/2, ends=at(false,y2);markup+=line([pt(ends[0],y2),pt(mid,at(true,mid)[0]),pt(ends[1],y2)]);}
+  const [left,right]=at(false,ym), handle=idx?left+(right-left)*.1:right-(right-left)*.1;
+  return markup+`<path d="M ${pt(handle,ym-(b-t)*.04)} L ${pt(handle,ym+(b-t)*.04)}" stroke="#20384c" stroke-width="3" stroke-linecap="round"/>`;
+}
+function refreshProfileEdit() {
+  let button=$("#editProfileGeometry");
+  const host=$("#editorHistory");
+  if(!button){
+    button=document.createElement("button"); button.id="editProfileGeometry"; button.type="button";button.className="button ghost";
+    button.innerHTML='<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20l4-1 12-12-3-3L5 16zM14 7l3 3"/></svg> Изменить';
+    button.addEventListener("click",()=>{
+      const a=activeProfileEdge;if(!a||a.owner!==state)return;
+      if(a.type==="vertex"||a.type==="polygon") editPolygon(a);
+      else editProfileSide({dataset:{profileEdge:a.type,edgeIndex:a.index,edgeSide:a.side}});
+    });
+    if(host) host.append(button);
+    else {const row=document.createElement("div");row.style.cssText="display:flex;margin:0 0 8px";row.append(button);$("#canvasWrap").before(row);}
+  }
+  if(host && button.parentElement!==host) host.append(button);
+  button.disabled=!activeProfileEdge||activeProfileEdge.owner!==state;
+  button.style.color=button.disabled?"#68778a":"white";button.style.background=button.disabled?"#edf1f5":"#24384f";
+}
+function editPolygon(selection) {
+  if(state.frameArcs && Object.values(state.frameArcs).some(Boolean)) {showToast("Сначала верните дуги рамы в прямые стороны");return;}
+  const points=polygonPoints()||rectPoints([0,0,state.width,state.height]);
+  const i=selection.side, vertex=selection.type==="vertex";
+  let dialog=$("#polygonEditDialog");
+  if(!dialog){dialog=document.createElement("dialog");dialog.id="polygonEditDialog";document.body.append(dialog);}
+  dialog.innerHTML=`<form method="dialog" class="control-group" style="display:grid;gap:12px;padding:16px;min-width:min(290px,80vw)">
+    <strong>${vertex?"Изменить угол рамы":"Изменить сторону рамы"}</strong>
+    ${vertex?`<label class="field">X от левого края, мм<input type="number" name="x" step="any" required value="${Number(points[i][0].toFixed(3))}"></label>
+    <label class="field">Y от нижнего края, мм<input type="number" name="y" step="any" required value="${Number((state.height-points[i][1]).toFixed(3))}"></label>`:"<p>Разбивка добавит новую вершину посередине стороны. Затем её можно переместить.</p>"}
+    <span data-poly-error role="alert"></span><div style="display:flex;flex-wrap:wrap;gap:8px">
+    <button class="button ghost" type="submit" value="cancel" formnovalidate>Отмена</button>
+    ${vertex?`<button class="button ghost" type="submit" value="remove" ${points.length<=3?"disabled":""}>Удалить вершину</button><button class="button primary" type="submit" value="move">Применить</button>`:
+      '<button class="button primary" type="submit" value="split">Разбить сторону</button>'}
+    </div></form>`;
+  dialog.querySelector("form").onsubmit=event=>{
+    const op=event.submitter?.value;if(op==="cancel")return;
+    let picked=i;
+    if(op==="remove"){if(points.length<=3)return;points.splice(i,1);picked=Math.min(i,points.length-1);}
+    if(op==="split"){const p=points[i],q=points[(i+1)%points.length];points.splice(i+1,0,[(p[0]+q[0])/2,(p[1]+q[1])/2]);picked=i+1;}
+    if(op==="move"){
+      const f=event.currentTarget.elements; points[i]=[f.x.valueAsNumber,state.height-f.y.valueAsNumber];
+    }
+    const good=points.every((p,k)=>p.every(Number.isFinite)&&Math.hypot(p[0]-points[(k+1)%points.length][0],p[1]-points[(k+1)%points.length][1])>=5&&points.every(q=>cross2(p,points[(k+1)%points.length],q)>=-1e-5));
+    if(!good || polygonClip(points,points,getTechnology().frame).length<3){event.preventDefault();dialog.querySelector('[data-poly-error]').textContent="Оставьте замкнутый выпуклый контур без пересечений и с местом для профиля.";return;}
+    state.framePolygon=points.map(([x,y])=>[x/state.width,y/state.height]);
+    activeProfileEdge={owner:state,type:"vertex",index:null,side:picked};renderAll();
+  };
+  dialog.showModal();
+}
+
 const PROFILE_SIDES = ["верхняя поперечина", "правая стойка", "нижняя поперечина", "левая стойка"];
 let activeProfileEdge = null;
 function customProfileArcs() {
-  return state.shape === "rect" && (Object.values(state.frameArcs || {}).some(Boolean) ||
+  return state.shape === "rect" && (polygonPoints() || Object.values(state.frameArcs || {}).some(Boolean) ||
     sectionPanes().some(p => !p.split && p.opening !== "fixed" && Object.values(p.sashArcs || {}).some(Boolean)));
 }
 function profileOutline(bounds, arcs, X, Y, sx, sy) {
@@ -1311,6 +1403,7 @@ function arcRise(chord,radius) {
   return half*half/(R+Math.sqrt(Math.max(0,R*R-half*half)));
 }
 function windowOuterBounds() {
+  const poly=polygonPoints(); if(poly)return polyBounds(poly);
   const rise=(side,span)=> {
     const arc=state.shape === "rect" && state.frameArcs?.[side];
     return arc && arc.direction !== "in" ? arcRise(span,arc.radius) : 0;
@@ -1344,7 +1437,7 @@ function fittedOutline(bounds, offsets, arcs, X, Y, sx, sy) {
   });
   const screen=pts.map(([x,y])=>[X(x),Y(y)]);
   const toScreen=([x,y])=>`${X(x)} ${Y(y)}`;
-  const extrema=[...pts];
+  const extrema=[...pts], boundary=[];
   const edges=pts.map((p,i)=>{
     const q=pts[(i+1)%4], vertical=i%2===1, k=Number(vertical), curve=curves[i];
     if (!curve && arcs?.[i]) {
@@ -1361,13 +1454,13 @@ function fittedOutline(bounds, offsets, arcs, X, Y, sx, sy) {
       positions.sort((a,b)=>(p[k]<q[k]?1:-1)*(a-b));
       for(const u of positions) pieces.push(vertical?[curve(u),u]:[u,curve(u)]);
     }
-    extrema.push(...pieces);
+    extrema.push(...pieces); boundary.push(...pieces);
     pieces.push(q);
     const angle=(a,b)=>Math.atan2(b[1]-a[1],b[0]-a[0]);
     return {cmd:pieces.slice(1).map(pt=>`L ${toScreen(pt)}`).join(' '),reverse:pieces.slice(0,-1).reverse().map(pt=>`L ${toScreen(pt)}`).join(' '),
       startAngle:angle(p,pieces[1]),endAngle:angle(pieces.at(-2),q)};
   });
-  return {pts,screen,edges,extrema,path:`M ${screen[0].join(' ')} ${edges.map(e=>e.cmd).join(' ')} Z`};
+  return {pts,screen,edges,extrema,boundary,path:`M ${screen[0].join(' ')} ${edges.map(e=>e.cmd).join(' ')} Z`};
 }
 
 function fittedGlass(entry,geometry,f,tech,X=mm=>mm,Y=mm=>mm,sx=1,sy=1) {
@@ -1378,6 +1471,13 @@ function fittedGlass(entry,geometry,f,tech,X=mm=>mm,Y=mm=>mm,sx=1,sy=1) {
     Math.abs(fbox[3]-opening[3]-bite),Math.abs(fbox[0]-opening[0]+bite)];
   const sides=[entry.edges[2],entry.edges[1],entry.edges[3],entry.edges[0]];
   const depth=tech.frame+(sashBox?tech.sash-SASH_LAP:0)-bite;
+  const poly=polygonPoints();
+  if(poly){
+    const points=polygonGlass(poly,geometry,f,tech);
+    if(points.length<3)return {path:"",w:0,h:0};
+    const [l,t,r,b]=polyBounds(points);
+    return {path:polyPath(points,X,Y),w:r-l,h:b-t};
+  }
   const depths=sides.map((touch,i)=>touch&&contact[i]<1e-5?depth:null);
   const outline=fittedOutline(fbox,depths,null,X,Y,sx,sy);
   const points=outline.extrema || outline.pts;
@@ -1434,9 +1534,11 @@ function editProfileSide(node) {
       <label>Радиус, мм <input name="radius" type="number" step="any"></label>
       <label>Высота дуги, мм <input name="rise" type="number" step="any"></label>
       <label>Направление <select name="direction"><option value="out">Наружу</option><option value="in">Внутрь</option></select></label>
-      <small data-arc-hint></small><div><button type="submit" value="cancel" formnovalidate>Отмена</button> <button type="submit" value="apply">Применить</button></div></form>`;
+      <small data-arc-hint></small><div><button type="submit" value="cancel" formnovalidate>Отмена</button> <button type="submit" value="split" formnovalidate>Разбить сторону</button> <button type="submit" value="apply">Применить</button></div></form>`;
     document.body.append(dialog);
   }
+  const splitButton=dialog.querySelector('[value="split"]');
+  if(splitButton) splitButton.hidden=type!=="frame";
   const form=dialog.querySelector("form"), {shape,radius,rise,direction}=Object.fromEntries([...form.elements].filter(e=>e.name).map(e=>[e.name,e]));
   dialog.querySelector('[data-arc-title]').textContent=`${pane?'Створка':'Рама'}: ${PROFILE_SIDES[side]}`;
   const half=chord/2;
@@ -1459,6 +1561,9 @@ function editProfileSide(node) {
   direction.onchange=()=>radius.setCustomValidity("");
   radius.setCustomValidity("");
   form.onsubmit=event=>{
+    if(event.submitter?.value==="split"){
+      event.preventDefault();dialog.close();editPolygon({type:"polygon",side});return;
+    }
     if(event.submitter?.value!=="apply") return;
     const R=radius.valueAsNumber;
     if(shape.value==='arc'){
@@ -1499,7 +1604,16 @@ function renderCanvas() {
   const profileColor = getFinish().color || material.frame;
   const paths = shapePaths(x, y, width, height, frame);
   let profileTargets = "";
-  if (state.shape === "rect") {
+  const poly=polygonPoints();
+  if(poly){
+    paths.outer=`<path d="${polyPath(poly,X,Y)}"/>`;
+    paths.inner=`<path d="${polyPath(polygonClip(poly,poly,tech.frame),X,Y)}"/>`;
+    profileTargets=poly.map((p,i)=>{
+      const q=poly[(i+1)%poly.length];
+      const sel=activeProfileEdge?.owner===state&&activeProfileEdge.type==="polygon"&&activeProfileEdge.side===i;
+      return `<path d="M ${X(p[0])} ${Y(p[1])} L ${X(q[0])} ${Y(q[1])}" stroke="${sel?'#ef8b25':'transparent'}" stroke-width="${sel?5:14}" pointer-events="stroke" data-profile-edge="polygon" data-edge-side="${i}" tabindex="0" role="button" aria-label="Сторона ${i+1}"/>`;
+    }).join("");
+  } else if (state.shape === "rect") {
     const outer=profileOutline([0,0,state.width,state.height],state.frameArcs,X,Y,sx,sy);
     const inset=getTechnology().frame;
     const inner=fittedOutline([inset,inset,state.width-inset,state.height-inset],[inset,inset,inset,inset],null,X,Y,sx,sy);
@@ -1510,6 +1624,7 @@ function renderCanvas() {
     }
   }
   const box = paths.innerBox;
+  const vertices=state.shape==="rect" ? (poly||rectPoints([0,0,state.width,state.height])).map(([vx,vy],i)=>`<circle cx="${X(vx)}" cy="${Y(vy)}" r="6" fill="${activeProfileEdge?.owner===state&&activeProfileEdge.type==='vertex'&&activeProfileEdge.side===i?'#ef8b25':'#fff'}" stroke="#506176" data-profile-edge="vertex" data-edge-side="${i}" tabindex="0" role="button" aria-label="Угол ${i+1}" style="cursor:pointer"/>`).join("") : "";
   const rootVerticalX = state.vImposts.map((item) => x + (item.position / state.width) * width);
   const rootHorizontalY = state.hImposts.map((item) => y + (item.position / state.height) * height);
   const xBounds = [box.x, ...rootVerticalX, box.x + box.width];
@@ -1572,24 +1687,33 @@ function renderCanvas() {
     const {opening,sashBox,fields} = glassGeometry(entry,tech);
     const sashArcs=state.shape==="rect" ? pane.sashArcs : null;
     const outerDepth=tech.frame-SASH_LAP, innerDepth=outerDepth+tech.sash;
-    const outerSash=sashBox && fit(sashBox,outerDepth,sashArcs);
-    const innerSash=sashBox && fit(opening,innerDepth,sashArcs);
+    const sashOutline=(bounds,depth)=>{
+      if(!poly)return fit(bounds,depth,sashArcs);
+      const boundary=polygonClip(rectPoints(bounds),poly,depth);
+      return {path:polyPath(boundary,X,Y),boundary};
+    };
+    const outerSash=sashBox && sashOutline(sashBox,outerDepth);
+    const innerSash=sashBox && sashOutline(opening,innerDepth);
     if (innerSash) {
       const id=`sashImpostClip-${index}`;
       localImpostsMarkup += `<clipPath id="${id}"><path d="${innerSash.path}"/></clipPath><g clip-path="url(#${id})">${innerImpostsMarkup}</g>`;
     } else localImpostsMarkup += innerImpostsMarkup;
-    if (sashBox && state.shape==="rect" && opening[2]>opening[0] && opening[3]>opening[1]) {
+    if (sashBox && !poly && state.shape==="rect" && opening[2]>opening[0] && opening[3]>opening[1]) {
       profileTargets+=profileEdgeTargets(outerSash,innerSash,"sash",index);
     }
     if (sashBox && opening[2]>opening[0] && opening[3]>opening[1]) {
       sashMarkup += `<path d="${outerSash.path} ${innerSash.path}" fill="${profileColor}" fill-rule="evenodd" stroke="${material.edge}" stroke-width=".8" />`;
-      sashMarkup += openingSymbol(pane.opening,X(opening[0]),Y(opening[1]),(opening[2]-opening[0])*sx,(opening[3]-opening[1])*sy,pane.hingeSide);
+      const symbol=innerSash.boundary ? polyOpeningSymbol(innerSash.boundary,pane.opening,pane.hingeSide,X,Y)
+        : openingSymbol(pane.opening,X(opening[0]),Y(opening[1]),(opening[2]-opening[0])*sx,(opening[3]-opening[1])*sy,pane.hingeSide);
+      const symbolClip=`opening-symbol-${index}`;
+      sashMarkup+=`<clipPath id="${symbolClip}"><path d="${innerSash.path}"/></clipPath><g clip-path="url(#${symbolClip})">${symbol}</g>`;
     }
     for (const f of fields) {
       if (f.clearW<=0 || f.clearH<=0) continue;
       const w=f.w*sx,h=f.h*sy;
       const fitted=fittedGlass(entry,{sashBox,opening},f,tech,X,Y,sx,sy);
       const glassPath=fitted.path;
+      if(!glassPath) continue;
       if (selected) glassMarkup += `<path class="pane-selected" d="${glassPath}" fill="none" />`;
       const font=Math.min(10,w/8,h/4);
       if (font>=4) glassMarkup += `<text x="${X(f.x)+w/2}" y="${Y(f.y)+h/2+Math.min(26,h/3)}"
@@ -1637,6 +1761,20 @@ function renderCanvas() {
   const bx0=X(gL),by0=Y(gT),bx1=X(gR),by1=Y(gB);
   const leftDimensionX=bx0-39,bottomDimensionY=by1+39;
   const actualWidth=gR-gL,actualHeight=gB-gT;
+  let shoulderMarkup="";
+  if(customProfileArcs() && (poly || Object.values(state.frameArcs||{}).some(Boolean))) {
+    const points=poly||rectPoints([0,0,state.width,state.height]);
+    const cx=points.reduce((sum,p)=>sum+p[0],0)/points.length,cy=points.reduce((sum,p)=>sum+p[1],0)/points.length;
+    shoulderMarkup=points.map((a,i)=>{
+      const b=points[(i+1)%points.length];
+      if(!poly && !state.frameArcs?.[i] && !state.frameArcs?.[(i+2)%4]) return "";
+      const mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2;
+      const label=`${Math.round(Math.hypot(b[0]-a[0],b[1]-a[1]))} мм`;
+      return `<line x1="${X(a[0])}" y1="${Y(a[1])}" x2="${X(b[0])}" y2="${Y(b[1])}" stroke="#748399" opacity=".6" stroke-dasharray="3 3"/>
+      <text x="${X(mx+(cx-mx)*.13)}" y="${Y(my+(cy-my)*.13)}" text-anchor="middle" fill="#48586a" font-size="10" stroke="white" stroke-width="2" paint-order="stroke"><title>Между угловыми точками</title>${label}</text>`;
+    }).join("");
+    if(!poly) shoulderMarkup+=`<text x="${bx0+12}" y="${by1-10}" fill="#48586a" font-size="10" stroke="white" stroke-width="2" paint-order="stroke">По плечам: ${Math.round(state.width)} × ${Math.round(state.height)} мм</text>`;
+  }
   const axisGroups = [...dimensionGroups.values()];
   const tracks = [[], []];
   const axisMarkup = axisGroups.map((group, i) => {
@@ -1683,7 +1821,8 @@ function renderCanvas() {
     <g fill="#bfe3ef" stroke="${material.edge}" stroke-width="1.6">${paths.inner}</g>
     <g clip-path="url(#innerClip)">${panesMarkup}${localImpostsMarkup}${rootImpostsMarkup}</g>
     <g clip-path="url(#glassCutClip)" pointer-events="none">${sashMarkup}${glassMarkup}</g>
-    <g>${profileTargets}</g>
+    <g>${profileTargets}${vertices}</g>
+    <g pointer-events="none">${shoulderMarkup}</g>
     <g class="dimensions">${axisMarkup}
       <line class="dimension-line" x1="${bx0}" y1="${by1 + 6}" x2="${bx0}" y2="${bottomDimensionY + 7}" opacity=".45" />
       <line class="dimension-line" x1="${bx1}" y1="${by1 + 6}" x2="${bx1}" y2="${bottomDimensionY + 7}" opacity=".45" />
@@ -1802,7 +1941,13 @@ function bindCanvasDragging() {
   const svg = $("#windowCanvas");
   const openProfile = event => {
     const hit=event.target.closest?.("[data-profile-edge]");
-    if(hit){event.preventDefault();editProfileSide(hit);}
+    if(hit){
+      event.preventDefault();
+      const type=hit.dataset.profileEdge;
+      activeProfileEdge={owner:state,type,index:type==="sash"?Number(hit.dataset.edgeIndex):null,side:Number(hit.dataset.edgeSide)};
+      state.selectedPane=null;state.selectedImpost=null;multiSections.clear();sharedAxis=null;
+      renderAll();
+    }
     else if(activeProfileEdge){activeProfileEdge=null; if(event.target===svg)renderAll();}
   };
   svg.addEventListener("click",openProfile);
@@ -2074,6 +2219,7 @@ function renderAll() {
   syncGlassChoices();
   const calculation = buildSpecification();
   renderCanvas();
+  refreshProfileEdit();
   renderInspector();
   renderSummary(calculation);
   renderSpecification(calculation);
