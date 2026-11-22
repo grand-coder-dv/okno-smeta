@@ -211,7 +211,13 @@ function loadGlassCatalog() {
 }
 let glassCatalog = loadGlassCatalog();
 let glassDraft;
-function materialGlass() { return glassCatalog[state.material]; }
+function fitsGlassProfile(item, profile) {
+  return !Array.isArray(item.profileIds) || item.profileIds.includes(profile);
+}
+function materialGlass() {
+  return Object.fromEntries(Object.entries(glassCatalog[state.material])
+    .filter(([, item]) => fitsGlassProfile(item, state.profile)));
+}
 function syncGlassChoices() {
   const catalog = materialGlass();
   if (!Object.hasOwn(catalog, state.defaultGlass)) state.defaultGlass = Object.hasOwn(catalog, "double") ? "double" : Object.keys(catalog)[0];
@@ -228,6 +234,7 @@ function syncGlassChoices() {
   $("#defaultGlass").value = state.defaultGlass;
 }
 function renderGlassCatalog() {
+  const profiles = catalogDraft[catalogMaterial].profiles;
   const items = Object.entries(glassDraft[catalogMaterial]);
   $("#glassCatalogCount").textContent = `${items.length} шт.`;
   $("#glassCatalogEditor").innerHTML = items.map(([id, item]) => `
@@ -236,6 +243,10 @@ function renderGlassCatalog() {
       <label class="catalog-field"><span>Толщина и описание</span><input data-glass-detail value="${escapeHtml(item.detail)}"></label>
       <label class="catalog-field"><span>Цена за м²</span><input data-glass-rate type="number" min="0" step="any" value="${item.rate ?? ""}" ${Object.hasOwn(GLASS,id) ? `placeholder="${rates.glass[id]}"` : ""}></label>
       <button type="button" class="catalog-remove-button" data-remove-glass>Удалить</button>
+      <fieldset class="glass-profile-options">
+        <legend>Подходит для профильных систем</legend>
+        ${profiles.map(profile => `<label><input type="checkbox" data-glass-profile value="${escapeHtml(profile.id)}" ${fitsGlassProfile(item, profile.id) ? "checked" : ""}><span>${escapeHtml(profile.name)}</span></label>`).join("")}
+      </fieldset>
     </article>`).join("");
 }
 function captureGlassDraft() {
@@ -245,6 +256,9 @@ function captureGlassDraft() {
     item.detail = row.querySelector("[data-glass-detail]").value.trim();
     const raw = row.querySelector("[data-glass-rate]").value;
     item.rate = raw === "" ? null : Number(raw);
+    const boxes = [...row.querySelectorAll("[data-glass-profile]")];
+    const checked = boxes.filter(box => box.checked).map(box => box.value);
+    if (Array.isArray(item.profileIds) || checked.length !== boxes.length) item.profileIds = checked;
   });
 }
 
@@ -1988,6 +2002,14 @@ function bindEvents() {
     });
   });
   $("#technologyCatalogEditor").addEventListener("click", handleCatalogAction);
+  $("#technologyCatalogEditor").addEventListener("input", event => {
+    const input = event.target.closest('[data-profile-field="name"]');
+    if (!input) return;
+    const id = input.closest("[data-profile-id]").dataset.profileId;
+    $$("#glassCatalogEditor [data-glass-profile]").forEach(box => {
+      if (box.value === id) box.nextElementSibling.textContent = input.value.trim();
+    });
+  });
   $("#addGlassCatalog").addEventListener("click", () => {
     captureGlassDraft();
     const id = `glass-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -2006,7 +2028,17 @@ function bindEvents() {
   });
   $("#saveTechnology").addEventListener("click", () => {
     captureGlassDraft();
+    readCatalogDraftFromEditor();
     for (const [material, catalog] of Object.entries(glassDraft)) {
+      const profiles = catalogDraft[material].profiles;
+      for (const item of Object.values(catalog)) {
+        if (Array.isArray(item.profileIds)) {
+          item.profileIds = item.profileIds.filter(id => profiles.some(profile => profile.id === id));
+          if (!item.profileIds.length) return showToast(`${MATERIALS[material].label}: выберите систему для «${item.name || "Новый стеклопакет"}»`);
+        }
+      }
+      const uncovered = profiles.find(profile => !Object.values(catalog).some(item => fitsGlassProfile(item, profile.id)));
+      if (uncovered) return showToast(`Добавьте хотя бы один стеклопакет для системы «${uncovered.name}»`);
       for (const [id, item] of Object.entries(catalog)) {
         if (!item.name || (item.rate == null ? !Object.hasOwn(GLASS, id) : !Number.isFinite(item.rate) || item.rate < 0)) {
           return showToast(`${MATERIALS[material].label}: укажите название и неотрицательную цену стеклопакета`);
@@ -2224,6 +2256,7 @@ function handleCatalogAction(event) {
   const button = event.target.closest("[data-catalog-action]");
   if (!button) return;
   readCatalogDraftFromEditor();
+  captureGlassDraft();
   const material = catalogDraft[catalogMaterial];
   if (button.dataset.catalogAction === "add-profile") {
     const defaults = DEFAULT_MATERIALS[catalogMaterial].profiles[0];
@@ -2254,6 +2287,7 @@ function handleCatalogAction(event) {
     material.finishes = material.finishes.filter((item) => item.id !== row.dataset.finishId);
   }
   renderTechnologyCatalog();
+  renderGlassCatalog();
 }
 
 function populateTechnologyForm() {
