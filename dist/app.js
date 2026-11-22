@@ -403,7 +403,7 @@ function currentProductIsDirty() {
 }
 
 function isPreliminaryShape(shape = state.shape) {
-  return shape === "arch" || shape === "circle";
+  return shape === "arch" || shape === "circle" || customProfileArcs();
 }
 
 function setConfigurationError(message = "") {
@@ -752,6 +752,7 @@ function startNewProject() {
 }
 
 function saveCurrentOrderItem() {
+  if(customProfileArcs()) return showToast("Дуги пока доступны для эскиза. Для добавления в заказ нужен расчёт криволинейного стеклопакета.");
   ensurePanes();
   const validationError = validateCurrentProduct();
   if (validationError) {
@@ -1278,6 +1279,84 @@ function isSelectedImpost(scope, orientation, id, paneIndex = null) {
   return Boolean(selected && selected.scope === scope && selected.orientation === orientation && selected.id === id && (scope === "root" || selected.paneIndex === paneIndex));
 }
 
+const PROFILE_SIDES = ["верхняя поперечина", "правая стойка", "нижняя поперечина", "левая стойка"];
+let activeProfileEdge = null;
+function customProfileArcs() {
+  return state.shape === "rect" && (Object.values(state.frameArcs || {}).some(Boolean) ||
+    sectionPanes().some(p => !p.split && p.opening !== "fixed" && Object.values(p.sashArcs || {}).some(Boolean)));
+}
+function profileOutline(bounds, arcs, X, Y, sx, sy) {
+  const [l,t,r,b] = bounds;
+  const pts = [[l,t],[r,t],[r,b],[l,b]];
+  const point = ([x,y]) => `${X(x)} ${Y(y)}`;
+  const edges = pts.map((p,i) => {
+    const q=pts[(i+1)%4], chord=Math.hypot(q[0]-p[0],q[1]-p[1]);
+    const a=arcs?.[i];
+    if (!a || !Number.isFinite(a.radius) || !chord) return {p, cmd:`L ${point(q)}`};
+    const radius=Math.max(chord/2,a.radius);
+    return {p,cmd:`A ${radius*sx} ${radius*sy} 0 0 ${a.direction === 'in' ? 0 : 1} ${point(q)}`};
+  });
+  return {path:`M ${point(pts[0])} ${edges.map(e=>e.cmd).join(' ')} Z`,
+    sides:edges.map(e=>`M ${point(e.p)} ${e.cmd}`)};
+}
+function profileEdgeTargets(outline, type, index = null) {
+  return outline.sides.map((d,side) => {
+    const selected=activeProfileEdge?.owner===state && activeProfileEdge.type===type && activeProfileEdge.index===index && activeProfileEdge.side===side;
+    return `<path d="${d}" fill="none" stroke="${selected?'#ef8b25':'transparent'}" stroke-width="${selected?4:11}"
+      pointer-events="stroke" style="cursor:pointer" data-profile-edge="${type}" data-edge-side="${side}"
+      data-edge-index="${index ?? ''}" role="button" tabindex="0" aria-label="${type==='frame'?'Рама':'Створка'}: ${PROFILE_SIDES[side]}" />`;
+  }).join('');
+}
+function editProfileSide(node) {
+  const {profileEdge:type,edgeIndex,edgeSide} = node.dataset;
+  const index=type==="frame"?null:Number(edgeIndex), side=Number(edgeSide);
+  const entry=index===null?null:sectionLayout()[index];
+  const pane=entry?.pane;
+  if(type==="sash" && (!pane || pane.split || pane.opening==="fixed")) return;
+  const box=index===null?[0,0,state.width,state.height]:glassGeometry(entry).sashBox;
+  const chord=side%2?box[3]-box[1]:box[2]-box[0];
+  const depth=side%2?box[2]-box[0]:box[3]-box[1];
+  if(chord<=0 || depth<=0) return;
+  activeProfileEdge={owner:state,type,index,side};
+  state.selectedPane=null; state.selectedImpost=null; multiSections.clear(); sharedAxis=null;
+  renderAll();
+  const current=(pane ? pane.sashArcs : state.frameArcs)?.[side];
+  let dialog=$("#profileArcDialog");
+  if(!dialog){
+    dialog=document.createElement("dialog"); dialog.id="profileArcDialog";
+    dialog.innerHTML=`<form method="dialog" style="display:grid;gap:12px;padding:16px">
+      <strong data-arc-title></strong>
+      <label>Форма <select name="shape"><option value="line">Прямая</option><option value="arc">Дуга</option></select></label>
+      <label>Радиус, мм <input name="radius" type="number" step="any"></label>
+      <label>Направление <select name="direction"><option value="out">Наружу</option><option value="in">Внутрь</option></select></label>
+      <small data-arc-hint></small><div><button type="submit" value="cancel" formnovalidate>Отмена</button> <button type="submit" value="apply">Применить</button></div></form>`;
+    document.body.append(dialog);
+  }
+  const form=dialog.querySelector("form"), {shape,radius,direction}=Object.fromEntries([...form.elements].filter(e=>e.name).map(e=>[e.name,e]));
+  dialog.querySelector('[data-arc-title]').textContent=`${pane?'Створка':'Рама'}: ${PROFILE_SIDES[side]}`;
+  radius.min=String(Math.ceil(chord/2)); radius.value=current?.radius ?? Math.ceil(chord);
+  shape.value=current?'arc':'line'; direction.value=current?.direction ?? 'out';
+  dialog.querySelector('[data-arc-hint]').textContent=`Минимальный радиус по длине стороны: ${radius.min} мм.`;
+  shape.onchange=()=>{radius.disabled=direction.disabled=shape.value!=="arc";radius.required=!radius.disabled;}; shape.onchange();
+  radius.oninput=direction.onchange=()=>radius.setCustomValidity("");
+  radius.setCustomValidity("");
+  form.onsubmit=event=>{
+    if(event.submitter?.value!=="apply") return;
+    const R=radius.valueAsNumber;
+    if(shape.value==='arc'){
+      const half=chord/2;
+      const sag=half*half/(R+Math.sqrt(Math.max(0,R*R-half*half)));
+      if(direction.value==='in' && sag>depth*0.4){event.preventDefault();radius.setCustomValidity("Для дуги внутрь увеличьте радиус.");radius.reportValidity();return;}
+    }
+    const host=pane||state, field=pane?'sashArcs':'frameArcs';
+    host[field] ||= {};
+    if(shape.value==='arc') host[field][side]={radius:R,direction:direction.value};
+    else delete host[field][side];
+    renderAll();
+  };
+  dialog.showModal();
+}
+
 function renderCanvas() {
   const svg = $("#windowCanvas");
   const maxWidth = 455;
@@ -1301,6 +1380,17 @@ function renderCanvas() {
   const material = MATERIALS[state.material];
   const profileColor = getFinish().color || material.frame;
   const paths = shapePaths(x, y, width, height, frame);
+  let profileTargets = "";
+  if (state.shape === "rect") {
+    const outer=profileOutline([0,0,state.width,state.height],state.frameArcs,X,Y,sx,sy);
+    const inset=getTechnology().frame;
+    const inner=profileOutline([inset,inset,state.width-inset,state.height-inset],state.frameArcs,X,Y,sx,sy);
+    profileTargets=profileEdgeTargets(outer,"frame");
+    if(Object.values(state.frameArcs||{}).some(Boolean)) {
+      paths.outer=`<path d="${outer.path}" />`;
+      paths.inner=`<path d="${inner.path}" />`;
+    }
+  }
   const box = paths.innerBox;
   const rootVerticalX = state.vImposts.map((item) => x + (item.position / state.width) * width);
   const rootHorizontalY = state.hImposts.map((item) => y + (item.position / state.height) * height);
@@ -1354,7 +1444,10 @@ function renderCanvas() {
     localImpostsMarkup += innerImpostsMarkup;
     if (pane.split) return;
     const {opening,sashBox,fields} = glassGeometry(entry,tech);
-    const path = ([l,t,r,b]) => `M ${X(l)} ${Y(t)} H ${X(r)} V ${Y(b)} H ${X(l)} Z`;
+    const sashArcs=state.shape==="rect" ? pane.sashArcs : null;
+    const outline=bounds=>profileOutline(bounds,sashArcs,X,Y,sx,sy);
+    if (sashBox && state.shape==="rect") profileTargets+=profileEdgeTargets(outline(sashBox),"sash",index);
+    const path = bounds => outline(bounds).path;
     if (sashBox && opening[2]>opening[0] && opening[3]>opening[1]) {
       sashMarkup += `<path d="${path(sashBox)} ${path(opening)}" fill="${profileColor}" fill-rule="evenodd" stroke="${material.edge}" stroke-width=".8" />`;
       sashMarkup += openingSymbol(pane.opening,X(opening[0]),Y(opening[1]),(opening[2]-opening[0])*sx,(opening[3]-opening[1])*sy,pane.hingeSide);
@@ -1426,9 +1519,11 @@ function renderCanvas() {
       <text class="dimension-text" x="0" y="5" pointer-events="none">${text}</text></g></g>`;
   }).join("");
   canvasLayout.axisGroups = axisGroups;
-  const viewTop=Math.min(0,y-46-Math.max(0,tracks[0].length-1)*29);
+  const pad=customProfileArcs()?Math.max(width,height)/2+16:0;
+  const viewTop=Math.min(0,y-46-Math.max(0,tracks[0].length-1)*29,y-pad);
   const viewRight=Math.max(640,x+width+46+Math.max(0,tracks[1].length-1)*29);
-  svg.setAttribute("viewBox",`0 ${viewTop} ${viewRight} ${500-viewTop}`);
+  const viewLeft=Math.min(0,x-pad);
+  svg.setAttribute("viewBox",`${viewLeft} ${viewTop} ${Math.max(viewRight,x+width+pad)-viewLeft} ${Math.max(500,y+height+pad)-viewTop}`);
   svg.innerHTML = `
     <defs>
       <filter id="windowShadow" x="-30%" y="-30%" width="160%" height="170%">
@@ -1449,6 +1544,7 @@ function renderCanvas() {
     <g fill="#bfe3ef" stroke="${material.edge}" stroke-width="1.6">${paths.inner}</g>
     <g clip-path="url(#innerClip)">${panesMarkup}${localImpostsMarkup}${rootImpostsMarkup}</g>
     <g clip-path="url(#glassCutClip)" pointer-events="none">${sashMarkup}${glassMarkup}</g>
+    <g>${profileTargets}</g>
     <g class="dimensions">${axisMarkup}
       <line class="dimension-line" x1="${x}" y1="${y + height + 6}" x2="${x}" y2="${bottomDimensionY + 7}" opacity=".45" />
       <line class="dimension-line" x1="${x + width}" y1="${y + height + 6}" x2="${x + width}" y2="${bottomDimensionY + 7}" opacity=".45" />
@@ -1565,6 +1661,13 @@ function getCanvasPoint(event) {
 
 function bindCanvasDragging() {
   const svg = $("#windowCanvas");
+  const openProfile = event => {
+    const hit=event.target.closest?.("[data-profile-edge]");
+    if(hit){event.preventDefault();editProfileSide(hit);}
+    else if(activeProfileEdge){activeProfileEdge=null; if(event.target===svg)renderAll();}
+  };
+  svg.addEventListener("click",openProfile);
+  svg.addEventListener("keydown",event=>{if(event.key==="Enter" || event.key===" ")openProfile(event);});
   const editDimension = event => {
     const target = event.target.closest?.("[data-axis-group], [data-window-dimension]");
     if (!target) return;
@@ -1831,6 +1934,10 @@ function renderAll() {
   renderInspector();
   renderSummary(calculation);
   renderSpecification(calculation);
+  if(customProfileArcs()) {
+    $("#currentEstimateStatus").textContent="Эскиз с дугами";
+    $("#currentEstimateHint").textContent="Размеры и цена относятся к прямоугольной основе, а не к контуру с дугами. Не используйте их для изготовления.";
+  }
   updateActiveControls();
   renderProjectToolbar();
 }
