@@ -260,18 +260,17 @@ function createDefaultState() {
     profile: "pvc70",
     finish: "white",
     shape: "rect",
-    width: 1400,
+    width: 1300,
     height: 1300,
     quantity: 1,
-    cols: 2,
+    cols: 1,
     rows: 1,
-    vImposts: [{ id: createImpostId("root", "vertical"), position: 700 }],
+    vImposts: [],
     hImposts: [],
     defaultGlass: "double",
     selectedPane: 0,
     selectedImpost: null,
     panes: [
-      { opening: "tiltturn", glass: "double", innerImposts: [] },
       { opening: "fixed", glass: "double", innerImposts: [] },
     ],
   };
@@ -1725,6 +1724,12 @@ function showToast(message) {
 }
 
 function bindEvents() {
+  const splitGroup = $("#splitPresets")?.closest("fieldset");
+  if (splitGroup) {
+    splitGroup.hidden = true;
+    splitGroup.style.display = "none";
+  }
+
   $$('input[name="material"]').forEach((input) => {
     input.addEventListener("change", () => {
       state.material = input.value;
