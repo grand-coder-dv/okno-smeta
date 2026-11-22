@@ -1006,10 +1006,10 @@ function glassGeometry({pane, rect, edges}, tech = getTechnology()) {
 }
 function glassSizeLabel(f) { return f.clearW>0 && f.clearH>0 && f.w>0 && f.h>0 ? `${Math.round(f.w)} × ${Math.round(f.h)} мм` : "—"; }
 function paneGlazingArea(index, pane, shapeFactor = 1) {
-  const entry=sectionLayout()[index], tech=getTechnology(), geometry=glassGeometry(entry,tech);
-  return geometry.fields.reduce((sum,f)=>{
+  const entry=sectionLayout()[index], tech=getTechnology(), geo=glassGeometry(entry,tech);
+  return geo.fields.reduce((sum,f)=>{
     if(f.clearW<=0 || f.clearH<=0 || f.w<=0 || f.h<=0) return sum;
-    return sum+(state.shape === "circle" ? fittedGlass(entry,geometry,f,tech).area : f.w*f.h*shapeFactor);
+    return sum+(state.shape === "circle" ? fittedGlass(entry,geo,f,tech).area : f.w*f.h*shapeFactor);
   },0)/1e6;
 }
 
@@ -1569,15 +1569,12 @@ function fittedOutline(bounds, offsets, arcs, X, Y, sx, sy) {
 }
 
 function circularOutline(bounds,depth,X,Y) {
-  const [l,t,r,b]=bounds, cx=state.width/2, cy=state.height/2;
-  const radius=cx-depth;
+  const [l,t,r,b]=bounds, cx=state.width/2, cy=state.height/2, radius=cx-depth;
   const empty={path:"",boundary:[],w:0,h:0,area:0};
   if(radius<=0 || r<=l || b<=t) return empty;
-  // Clip a densely sampled circular contour against the section or glazing field.
-  const count=720;
-  const ring=Array.from({length:count},(_,i)=>{
-    const theta=2*Math.PI*i/count;
-    return [cx+radius*Math.cos(theta),cy+radius*Math.sin(theta)];
+  const ring=Array.from({length:720},(_,i)=>{
+    const a=2*Math.PI*i/720;
+    return [cx+radius*Math.cos(a),cy+radius*Math.sin(a)];
   });
   const boundary=polygonClip(ring,rectPoints(bounds));
   if(boundary.length<3) return empty;
@@ -2282,6 +2279,9 @@ function renderInspector() {
     ? `Выбрано секций: ${multiSections.size}` : `№ ${sectionNumber(state.selectedPane)}`;
   const openingSelect = $("#openingType");
   openingSelect.disabled = circleSashesBlocked();
+  const openingField = openingSelect.closest("label") || openingSelect;
+  if (openingSelect.disabled) openingField.style.setProperty("display", "none", "important");
+  else openingField.style.removeProperty("display");
   openingSelect.title = openingSelect.disabled ? "Створки для круглой формы отключены в выбранной профильной системе" : "";
   openingSelect.querySelector('[data-mixed-opening]')?.remove();
   const mixed = selectedSections().some(entry => entry.pane.opening !== pane.opening);
