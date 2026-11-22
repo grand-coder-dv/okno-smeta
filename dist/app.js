@@ -228,13 +228,15 @@ function syncGlassChoices() {
   $("#defaultGlass").value = state.defaultGlass;
 }
 function renderGlassCatalog() {
-  $("#glassCatalogEditor").innerHTML = Object.entries(glassDraft[catalogMaterial]).map(([id, item]) => `
-    <fieldset data-glass-id="${escapeHtml(id)}">
-      <label class="field"><span>Название</span><input data-glass-name value="${escapeHtml(item.name)}"></label>
-      <label class="field"><span>Толщина и описание</span><input data-glass-detail value="${escapeHtml(item.detail)}"></label>
-      <label class="field"><span>Цена за м²</span><input data-glass-rate type="number" min="0" step="any" value="${item.rate ?? ""}" ${Object.hasOwn(GLASS,id) ? `placeholder="${rates.glass[id]}"` : ""}></label>
-      <button type="button" class="button ghost" data-remove-glass>Удалить</button>
-    </fieldset>`).join("");
+  const items = Object.entries(glassDraft[catalogMaterial]);
+  $("#glassCatalogCount").textContent = `${items.length} шт.`;
+  $("#glassCatalogEditor").innerHTML = items.map(([id, item]) => `
+    <article class="catalog-profile-card glass-catalog-card" data-glass-id="${escapeHtml(id)}">
+      <label class="catalog-field"><span>Название</span><input data-glass-name value="${escapeHtml(item.name)}"></label>
+      <label class="catalog-field"><span>Толщина и описание</span><input data-glass-detail value="${escapeHtml(item.detail)}"></label>
+      <label class="catalog-field"><span>Цена за м²</span><input data-glass-rate type="number" min="0" step="any" value="${item.rate ?? ""}" ${Object.hasOwn(GLASS,id) ? `placeholder="${rates.glass[id]}"` : ""}></label>
+      <button type="button" class="catalog-remove-button" data-remove-glass>Удалить</button>
+    </article>`).join("");
 }
 function captureGlassDraft() {
   $$("#glassCatalogEditor [data-glass-id]").forEach(row => {
@@ -1724,12 +1726,6 @@ function showToast(message) {
 }
 
 function bindEvents() {
-  const splitGroup = $("#splitPresets")?.closest("fieldset");
-  if (splitGroup) {
-    splitGroup.hidden = true;
-    splitGroup.style.display = "none";
-  }
-
   $$('input[name="material"]').forEach((input) => {
     input.addEventListener("change", () => {
       state.material = input.value;
@@ -1997,7 +1993,7 @@ function bindEvents() {
     const id = `glass-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     glassDraft[catalogMaterial][id] = { name: "", detail: "", rate: null, color: "#bfe3ef" };
     renderGlassCatalog();
-    $("#glassCatalogEditor fieldset:last-child [data-glass-name]").focus();
+    $("#glassCatalogEditor [data-glass-id]:last-child [data-glass-name]").focus();
   });
   $("#glassCatalogEditor").addEventListener("click", event => {
     const button = event.target.closest("[data-remove-glass]");
