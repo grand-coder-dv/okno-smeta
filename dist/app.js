@@ -293,6 +293,13 @@ function createDefaultState() {
 }
 
 let state = createDefaultState();
+let multiSections = new Set();
+let sharedAxis = null;
+function selectedSections() {
+  const entries = sectionLayout();
+  const indices = multiSections.size ? [...multiSections] : [state.selectedPane];
+  return indices.map(i => entries[i]).filter(entry => entry && !entry.pane.split);
+}
 let orderItems = [];
 let editingOrderItemId = null;
 let orderItemSequence = 0;
@@ -437,6 +444,8 @@ function validateCurrentProduct() {
 
 function restoreProductState(configuration) {
   state = cloneData(configuration);
+  multiSections.clear();
+  sharedAxis = null;
   state.selectedImpost = null;
   state.selectedPane = clamp(state.selectedPane ?? 0, 0, Math.max((sectionPanes().length || 1) - 1, 0));
   updateMaterialSelects();
@@ -450,6 +459,8 @@ function restoreProductState(configuration) {
 function resetCurrentProduct() {
   editingOrderItemId = null;
   state = createDefaultState();
+  multiSections.clear();
+  sharedAxis = null;
   syncFormFromState();
   markCurrentStateBaseline();
   setConfigurationError();
@@ -1249,23 +1260,20 @@ function openingSymbol(type, x, y, width, height, side) {
   return paths;
 }
 
-function axisDimension(vertical, start, end, edge, track, value, item, paneIndex) {
-  const line = (a, b, c, d, arrows = false) => `<line class="dimension-line"
-    x1="${vertical ? b : a}" y1="${vertical ? a : b}"
-    x2="${vertical ? d : c}" y2="${vertical ? c : d}"
-    ${arrows ? 'marker-start="url(#dimArrow)" marker-end="url(#dimArrow)"' : 'opacity=".45"'}/>`;
-  const mid = (start + end) / 2;
-  const text = `${Math.round(value)} мм`;
-  const inner = paneIndex != null;
-  return `<g>${line(start, edge, start, track)}${line(end, edge, end, track)}
-    ${line(start, track, end, track, true)}
-    <g transform="translate(${vertical ? track : mid} ${vertical ? mid : track}) ${vertical ? 'rotate(-90)' : ''}"
-       data-impost-dimension data-scope="${inner ? 'pane' : 'root'}" data-id="${escapeHtml(item.id)}"
-       data-orientation="${item.orientation}" ${inner ? `data-pane="${paneIndex}"` : ''}
-       tabindex="0" role="button" style="cursor:pointer" aria-label="Изменить осевой размер ${text}">
-      <rect x="-43" y="-12" width="86" height="24" rx="6" fill="#eef2f6"/>
-      <text class="dimension-text" x="0" y="5" pointer-events="none">${text}</text>
-    </g></g>`;
+function sharedImpostLimits(group, orientation) {
+  const v = orientation === "vertical";
+  const entries = sectionLayout();
+  const members = group.flatMap(({id,index}) => {
+    const entry = entries[index];
+    const item = index == null ? (v ? state.vImposts : state.hImposts).find(i => i.id === id)
+      : entry?.pane.innerImposts.find(i => i.id === id);
+    if (!item) return [];
+    const start = entry ? (v ? entry.rect.x : entry.rect.y) : 0;
+    const size = entry ? (v ? entry.rect.width : entry.rect.height) : 1;
+    const limits = entry ? nestedImpostLimits(item, entry.pane) : rootImpostLimits(item, orientation);
+    return [{item,start,size,min:start+limits.min*size,max:start+limits.max*size}];
+  });
+  return {members, min:Math.max(...members.map(m=>m.min)), max:Math.min(...members.map(m=>m.max))};
 }
 
 function isSelectedImpost(scope, orientation, id, paneIndex = null) {
@@ -1302,18 +1310,12 @@ function renderCanvas() {
   const xBounds = [box.x, ...rootVerticalX, box.x + box.width];
   const yBounds = [box.y, ...rootHorizontalY, box.y + box.height];
   const paneRects = [];
-  const axisDimensions = [];
-  const tracks = [[], []];
-  const addAxis = (vertical, start, end, value, item, index = null) => {
-    const rows = tracks[Number(vertical)];
-    const mid = (start + end) / 2;
-    const range = [Math.min(start, mid - 46), Math.max(end, mid + 46)];
-    let level = rows.findIndex(row => row.every(([a,b]) => b < range[0] || a > range[1]));
-    if (level < 0) { level = rows.length; rows.push([]); }
-    rows[level].push(range);
-    const edge = vertical ? x + width + 5 : y - 5;
-    const track = edge + (vertical ? 1 : -1) * (25 + level * 29);
-    axisDimensions.push(axisDimension(vertical, start, end, edge, track, value, item, index));
+  const dimensionGroups = new Map();
+  const addDimension = (vertical, start, end, physicalOrigin, local, item, index = null) => {
+    const absolute = physicalOrigin + local;
+    const key = `${item.orientation}:${Math.round(absolute * 1000)}`;
+    if (!dimensionGroups.has(key)) dimensionGroups.set(key, []);
+    dimensionGroups.get(key).push({vertical,start,end,absolute,local,item,index,id:item.id});
   };
 
   let panesMarkup = "", localImpostsMarkup = "";
@@ -1323,7 +1325,7 @@ function renderCanvas() {
     const physical = getPanePhysicalRect(index);
     paneRects[index] = { x: px, y: py, width: paneWidth, height: paneHeight, physicalWidth: physical.width, physicalHeight: physical.height };
     const glass = materialGlass()[pane.glass];
-    const selected = index === state.selectedPane;
+    const selected = index === state.selectedPane || multiSections.has(index);
     const paneKind = pane.opening === "fixed" ? "глухой секции" : "створке";
     const paneSashFace = Math.min(sashFace, paneWidth * 0.22, paneHeight * 0.22);
     const paneImpostFace = Math.min(impostFace, paneWidth * 0.2, paneHeight * 0.2);
@@ -1336,7 +1338,7 @@ function renderCanvas() {
       const lineY = py + item.position * paneHeight;
       const physicalPosition = item.position * (isVertical ? physical.width : physical.height);
       if (isVertical) {
-        addAxis(false, px, lineX, physicalPosition, item, index);
+        addDimension(false, px, lineX, physical.x, physicalPosition, item, index);
         innerImpostsMarkup += `
           <line class="impost-visible inner-impost-visible${active ? " selected" : ""}" x1="${lineX}" y1="${py}" x2="${lineX}" y2="${py + paneHeight}" stroke="${profileColor}" stroke-width="${paneImpostFace}" />
           <line x1="${lineX}" y1="${py}" x2="${lineX}" y2="${py + paneHeight}" stroke="${material.edge}" stroke-width="1.2" opacity=".55" pointer-events="none" />
@@ -1344,7 +1346,7 @@ function renderCanvas() {
           <line class="impost-hit" data-scope="pane" data-pane="${index}" data-orientation="vertical" data-id="${item.id}" x1="${lineX}" y1="${py}" x2="${lineX}" y2="${py + paneHeight}" tabindex="0" role="slider" aria-label="Вертикальный импост в ${paneKind} ${index + 1}" aria-valuenow="${Math.round(physicalPosition)}" />
           `;
       } else {
-        addAxis(true, py, lineY, physicalPosition, item, index);
+        addDimension(true, py, lineY, physical.y, physicalPosition, item, index);
         innerImpostsMarkup += `
           <line class="impost-visible inner-impost-visible${active ? " selected" : ""}" x1="${px}" y1="${lineY}" x2="${px + paneWidth}" y2="${lineY}" stroke="${profileColor}" stroke-width="${paneImpostFace}" />
           <line x1="${px}" y1="${lineY}" x2="${px + paneWidth}" y2="${lineY}" stroke="${material.edge}" stroke-width="1.2" opacity=".55" pointer-events="none" />
@@ -1373,7 +1375,7 @@ function renderCanvas() {
   state.vImposts.forEach((item, index) => {
     const lineX = rootVerticalX[index];
     const active = isSelectedImpost("root", "vertical", item.id);
-    addAxis(false, x, lineX, item.position, item);
+    addDimension(false, x, lineX, 0, item.position, item);
     rootImpostsMarkup += `
       <line class="impost-visible${active ? " selected" : ""}" x1="${lineX}" y1="${box.y - 2}" x2="${lineX}" y2="${box.y + box.height + 2}" stroke="${profileColor}" stroke-width="${impostFace}" />
       <line x1="${lineX}" y1="${box.y - 2}" x2="${lineX}" y2="${box.y + box.height + 2}" stroke="${material.edge}" stroke-width="1.4" opacity=".55" pointer-events="none" />
@@ -1384,7 +1386,7 @@ function renderCanvas() {
   state.hImposts.forEach((item, index) => {
     const lineY = rootHorizontalY[index];
     const active = isSelectedImpost("root", "horizontal", item.id);
-    addAxis(true, y, lineY, item.position, item);
+    addDimension(true, y, lineY, 0, item.position, item);
     rootImpostsMarkup += `
       <line class="impost-visible${active ? " selected" : ""}" x1="${box.x - 2}" y1="${lineY}" x2="${box.x + box.width + 2}" y2="${lineY}" stroke="${profileColor}" stroke-width="${impostFace}" />
       <line x1="${box.x - 2}" y1="${lineY}" x2="${box.x + box.width + 2}" y2="${lineY}" stroke="${material.edge}" stroke-width="1.4" opacity=".55" pointer-events="none" />
@@ -1396,9 +1398,31 @@ function renderCanvas() {
   canvasLayout = { x, y, width, height, box, xBounds, yBounds, paneRects };
   const leftDimensionX = Math.max(24, x - 39);
   const bottomDimensionY = Math.min(476, y + height + 39);
-  const viewTop = Math.min(0, y - 30 - Math.max(0, tracks[0].length - 1) * 29 - 16);
-  const viewRight = Math.max(640, x + width + 30 + Math.max(0, tracks[1].length - 1) * 29 + 16);
-  svg.setAttribute("viewBox", `0 ${viewTop} ${viewRight} ${500 - viewTop}`);
+  const axisGroups = [...dimensionGroups.values()];
+  const tracks = [[], []];
+  const axisMarkup = axisGroups.map((group, i) => {
+    const first = group[0], {vertical, end} = first;
+    const common = group.length > 1;
+    const start = common ? (vertical ? y : x) : first.start;
+    const mid = (start + end) / 2;
+    const rows = tracks[Number(vertical)];
+    const range = [Math.min(start,mid-45), Math.max(end,mid+45)];
+    let level = rows.findIndex(row => row.every(([a,b])=>b<range[0]||a>range[1]));
+    if(level<0){level=rows.length;rows.push([]);} rows[level].push(range);
+    const edge = vertical ? x+width+5 : y-5;
+    const track = edge+(vertical?1:-1)*(25+level*29);
+    const line=(a,b,c,d,arrows=false)=>`<line class="dimension-line" x1="${vertical?b:a}" y1="${vertical?a:b}" x2="${vertical?d:c}" y2="${vertical?c:d}" ${arrows?'marker-start="url(#dimArrow)" marker-end="url(#dimArrow)"':'opacity=".45"'}/>`;
+    const text=`${Math.round(common?first.absolute:first.local)} мм`;
+    return `<g>${line(start,edge,start,track)}${line(end,edge,end,track)}${line(start,track,end,track,true)}
+      <g transform="translate(${vertical?track:mid} ${vertical?mid:track}) ${vertical?'rotate(-90)':''}"
+      data-axis-group="${i}" tabindex="0" role="button" aria-label="Изменить ${common?'общий ':''}осевой размер ${text}" style="cursor:pointer">
+      <rect x="-43" y="-12" width="86" height="24" rx="6" fill="#eef2f6"/>
+      <text class="dimension-text" x="0" y="5" pointer-events="none">${text}</text></g></g>`;
+  }).join("");
+  canvasLayout.axisGroups = axisGroups;
+  const viewTop=Math.min(0,y-46-Math.max(0,tracks[0].length-1)*29);
+  const viewRight=Math.max(640,x+width+46+Math.max(0,tracks[1].length-1)*29);
+  svg.setAttribute("viewBox",`0 ${viewTop} ${viewRight} ${500-viewTop}`);
   svg.innerHTML = `
     <defs>
       <filter id="windowShadow" x="-30%" y="-30%" width="160%" height="170%">
@@ -1417,26 +1441,34 @@ function renderCanvas() {
     <g filter="url(#windowShadow)" fill="${profileColor}" stroke="${material.edge}" stroke-width="2.2">${paths.outer}</g>
     <g fill="#bfe3ef" stroke="${material.edge}" stroke-width="1.6">${paths.inner}</g>
     <g clip-path="url(#innerClip)">${panesMarkup}${localImpostsMarkup}${rootImpostsMarkup}</g>
-    <g class="dimensions">${axisDimensions.join("")}
+    <g class="dimensions">${axisMarkup}
       <line class="dimension-line" x1="${x}" y1="${y + height + 6}" x2="${x}" y2="${bottomDimensionY + 7}" opacity=".45" />
       <line class="dimension-line" x1="${x + width}" y1="${y + height + 6}" x2="${x + width}" y2="${bottomDimensionY + 7}" opacity=".45" />
       <line class="dimension-line" x1="${x + 4}" y1="${bottomDimensionY}" x2="${x + width - 4}" y2="${bottomDimensionY}" marker-start="url(#dimArrow)" marker-end="url(#dimArrow)" />
-      <g data-window-dimension="width" role="button" tabindex="0" style="cursor:pointer" aria-label="Изменить ${state.shape === 'circle' ? 'диаметр' : 'ширину'} окна">
-      <rect x="${x + width / 2 - 48}" y="${bottomDimensionY - 13}" width="96" height="24" rx="6" fill="#eef2f6" />
+      <g data-window-dimension="width" tabindex="0" role="button" aria-label="Изменить ширину или диаметр" style="cursor:pointer"><rect x="${x + width / 2 - 48}" y="${bottomDimensionY - 13}" width="96" height="24" rx="6" fill="#eef2f6" />
       <text class="dimension-text" x="${x + width / 2}" y="${bottomDimensionY + 5}">${state.shape === "circle" ? "Ø " : ""}${numberFormatter.format(state.width)} мм</text></g>
       <line class="dimension-line" x1="${x - 6}" y1="${y}" x2="${leftDimensionX - 7}" y2="${y}" opacity=".45" />
       <line class="dimension-line" x1="${x - 6}" y1="${y + height}" x2="${leftDimensionX - 7}" y2="${y + height}" opacity=".45" />
       <line class="dimension-line" x1="${leftDimensionX}" y1="${y + 4}" x2="${leftDimensionX}" y2="${y + height - 4}" marker-start="url(#dimArrow)" marker-end="url(#dimArrow)" />
-      <g transform="translate(${leftDimensionX - 1} ${y + height / 2}) rotate(-90)"
-         data-window-dimension="${state.shape === 'circle' ? 'width' : 'height'}" role="button" tabindex="0" style="cursor:pointer" aria-label="Изменить ${state.shape === 'circle' ? 'диаметр' : 'высоту'} окна">
+      <g transform="translate(${leftDimensionX - 1} ${y + height / 2}) rotate(-90)" data-window-dimension="${state.shape === "circle" ? "width" : "height"}" tabindex="0" role="button" aria-label="Изменить высоту или диаметр" style="cursor:pointer">
         <rect x="-48" y="-13" width="96" height="24" rx="6" fill="#eef2f6" />
         <text class="dimension-text" x="0" y="5">${numberFormatter.format(state.height)} мм</text>
       </g>
     </g>`;
 
   $$("#windowCanvas .pane-hit").forEach((node) => {
-    const choose = () => {
-      state.selectedPane = Number(node.dataset.pane);
+    const choose = event => {
+      const index = Number(node.dataset.pane);
+      if ((event.ctrlKey || event.metaKey) && !state.selectedImpost) {
+        if (!multiSections.size && state.selectedPane !== null) multiSections.add(state.selectedPane);
+        if (multiSections.has(index)) multiSections.delete(index);
+        else multiSections.add(index);
+        state.selectedPane = multiSections.has(index) ? index : ([...multiSections].at(-1) ?? null);
+      } else {
+        multiSections.clear();
+        state.selectedPane = index;
+      }
+      sharedAxis = null;
       state.selectedImpost = null;
       renderAll();
     };
@@ -1444,7 +1476,7 @@ function renderCanvas() {
     node.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
-        choose();
+        choose(event);
       }
     });
   });
@@ -1464,6 +1496,8 @@ function renderCanvas() {
 }
 
 function selectImpostFromNode(node) {
+  multiSections.clear();
+  sharedAxis = null;
   const scope = node.dataset.scope;
   const paneIndex = scope === "pane" ? Number(node.dataset.pane) : null;
   state.selectedImpost = {
@@ -1518,31 +1552,36 @@ function moveSelectedImpostToPoint(point) {
 function getCanvasPoint(event) {
   const svg = $("#windowCanvas");
   const matrix = svg.getScreenCTM();
-  if (!matrix) return { x: 0, y: 0 };
-  return new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix.inverse());
+  return matrix ? new DOMPoint(event.clientX,event.clientY).matrixTransform(matrix.inverse()) : {x:0,y:0};
 }
 
 function bindCanvasDragging() {
   const svg = $("#windowCanvas");
-  function editDimension(event) {
-    const badge = event.target.closest?.("[data-impost-dimension], [data-window-dimension]");
-    if (!badge) return;
+  const editDimension = event => {
+    const target = event.target.closest?.("[data-axis-group], [data-window-dimension]");
+    if (!target) return;
     event.preventDefault();
-    const field = badge.dataset.windowDimension;
+    let field = target.dataset.windowDimension;
     if (!field) {
-      selectImpostFromNode(badge);
+      const group = canvasLayout.axisGroups[Number(target.dataset.axisGroup)];
+      if (!group?.length) return;
+      const first = group[0];
+      selectImpostFromNode({dataset:{scope:first.index == null ? "root" : "pane", pane:first.index,
+        orientation:first.item.orientation, id:first.id}});
+      if (group.length > 1) sharedAxis = group;
       renderAll();
+      field = "impostPosition";
     }
-    const input = $(field ? `#${field}` : "#impostPosition");
+    const input = $(`#${field}`);
     input.focus();
     try { input.select(); } catch {}
-  }
+  };
   svg.addEventListener("click", editDimension);
-  svg.addEventListener("keydown", event => {
-    if (event.key === "Enter" || event.key === " ") editDimension(event);
-  });
+  svg.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === " ") editDimension(event); });
   svg.addEventListener("click", event => {
     if (event.target !== svg || (state.selectedPane === null && !state.selectedImpost)) return;
+    multiSections.clear();
+    sharedAxis = null;
     state.selectedPane = null;
     state.selectedImpost = null;
     renderAll();
@@ -1588,29 +1627,39 @@ function largestGapPosition(items) {
 }
 
 function addInnerImpost(orientation) {
-  const index = state.selectedPane;
-  const pane = sectionPanes()[index];
-  if (!pane || pane.split) return;
-  const old = pane.innerImposts;
-  const item = {id:createImpostId("pane", orientation), orientation, position:0.5};
-  pane.split = item;
-  pane.innerImposts = [item];
-  pane.children = [
-    {opening:pane.opening, hingeSide:pane.hingeSide, glass:pane.glass, innerImposts:[]},
-    {opening:"fixed", glass:pane.glass, innerImposts:[]},
-  ];
+  const targets = selectedSections();
+  if (!targets.length) return;
+  const vertical = orientation === "vertical";
+  const start = rect => vertical ? rect.x : rect.y;
+  const size = rect => vertical ? rect.width : rect.height;
+  const commonStart = Math.max(...targets.map(({rect}) => start(rect)));
+  const commonEnd = Math.min(...targets.map(({rect}) => start(rect) + size(rect)));
+  const axis = (commonStart + commonEnd) / 2;
+  const changed = targets.map(({pane, rect}) => {
+    const old = pane.innerImposts;
+    const item = {id:createImpostId("pane", orientation), orientation,
+      position:commonEnd > commonStart ? (axis - start(rect)) / size(rect) : 0.5};
+    pane.split = item;
+    pane.innerImposts = [item];
+    pane.children = [
+      {opening:pane.opening, hingeSide:pane.hingeSide, glass:pane.glass, innerImposts:[]},
+      {opening:"fixed", glass:pane.glass, innerImposts:[]},
+    ];
+    return {pane, old};
+  });
   const issue = validateCurrentProduct();
   if (issue) {
-    delete pane.split;
-    delete pane.children;
-    pane.innerImposts = old;
+    changed.forEach(({pane,old}) => { delete pane.split; delete pane.children; pane.innerImposts = old; });
     showToast(issue);
     return;
   }
-  state.selectedPane = index + 1;
+  const panes = sectionPanes();
+  multiSections = new Set(changed.map(({pane}) => panes.indexOf(pane.children[0])));
+  state.selectedPane = [...multiSections][0];
   state.selectedImpost = null;
+  sharedAxis = null;
   renderAll();
-  showToast("Секция разделена на две");
+  showToast(`Импостов добавлено: ${changed.length}`);
 }
 
 function renderInspector() {
@@ -1646,6 +1695,16 @@ function renderInspector() {
     $("#impostPositionLabel").textContent = vertical
       ? `От левого края ${isRoot ? "рамы" : record.pane?.opening === "fixed" ? "глухой секции" : "створки"}, мм`
       : `От верхнего края ${isRoot ? "рамы" : record.pane?.opening === "fixed" ? "глухой секции" : "створки"}, мм`;
+    if (sharedAxis) {
+      const group = sharedImpostLimits(sharedAxis, record.selected.orientation);
+      const first = group.members[0];
+      if (first) {
+        position = first.start + first.item.position * first.size;
+        min = group.min;
+        max = group.max;
+      }
+      $("#impostPositionLabel").textContent = `Общая ось от ${vertical ? "левого" : "верхнего"} края рамы, мм`;
+    }
     positionInput.min = Math.ceil(min);
     positionInput.max = Math.floor(max);
     positionInput.value = Math.round(position);
@@ -1655,8 +1714,18 @@ function renderInspector() {
   if (!pane) { $("#paneInspector").hidden = true; $("#impostInspector").hidden = true; return; }
   $("#paneInspector").hidden = false;
   $("#impostInspector").hidden = true;
-  $("#selectedPaneName").textContent = `№ ${sectionNumber(state.selectedPane)}`;
-  $("#openingType").value = pane.opening;
+  $("#selectedPaneName").textContent = multiSections.size > 1
+    ? `Выбрано секций: ${multiSections.size}` : `№ ${sectionNumber(state.selectedPane)}`;
+  const openingSelect = $("#openingType");
+  openingSelect.querySelector('[data-mixed-opening]')?.remove();
+  const mixed = selectedSections().some(entry => entry.pane.opening !== pane.opening);
+  if (mixed) {
+    const option = new Option("Разные типы открывания", "");
+    option.disabled = true;
+    option.dataset.mixedOpening = "";
+    openingSelect.prepend(option);
+  }
+  openingSelect.value = mixed ? "" : pane.opening;
   const canTurn = ["turn", "tiltturn"].includes(pane.opening);
   $("#hingeSideField").hidden = !canTurn;
   $("#hingeSideField").style.display = canTurn ? "" : "none";
@@ -1755,6 +1824,8 @@ function renderAll() {
 }
 
 function setSplit(cols, rows) {
+  multiSections.clear();
+  sharedAxis = null;
   const nextCols = clamp(cols, 1, 4);
   const nextRows = clamp(rows, 1, 3);
   if (nextCols === state.cols && nextRows === state.rows) return;
@@ -1815,9 +1886,7 @@ function bindEvents() {
     });
   });
 
-  $("#width").addEventListener("keydown", event => {
-    if (event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); }
-  });
+  $("#width").addEventListener("keydown", event => { if(event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); } });
   $("#width").addEventListener("change", (event) => {
     if (event.target.value === "") { event.target.value = state.width; return; }
     state.width = clamp(event.target.value, 400, 5000);
@@ -1829,9 +1898,7 @@ function bindEvents() {
   });
   $("#width").addEventListener("change", (event) => (event.target.value = state.width));
 
-  $("#height").addEventListener("keydown", event => {
-    if (event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); }
-  });
+  $("#height").addEventListener("keydown", event => { if(event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); } });
   $("#height").addEventListener("change", (event) => {
     if (event.target.value === "") { event.target.value = state.height; return; }
     state.height = clamp(event.target.value, 400, 4000);
@@ -1865,7 +1932,16 @@ function bindEvents() {
   });
 
   $("#openingType").addEventListener("change", (event) => {
-    sectionPanes()[state.selectedPane].opening = event.target.value;
+    const targets = selectedSections();
+    const old = targets.map(({pane}) => pane.opening);
+    targets.forEach(({pane}) => { pane.opening = event.target.value; });
+    const issue = validateCurrentProduct();
+    if (issue) {
+      targets.forEach(({pane}, i) => { pane.opening = old[i]; });
+      renderAll();
+      showToast(issue);
+      return;
+    }
     renderAll();
   });
   $("#hingeSide").addEventListener("change", event => {
@@ -1895,6 +1971,20 @@ function bindEvents() {
     if (event.target.value === "") { renderAll(); return; }
     const value = Number(event.target.value);
     if (!Number.isFinite(value)) return;
+    if (sharedAxis) {
+      const group = sharedImpostLimits(sharedAxis, record.selected.orientation);
+      if (!group.members.length || group.min > group.max) { renderAll(); return; }
+      const position = clamp(value, group.min, group.max);
+      const old = group.members.map(m => m.item.position);
+      group.members.forEach(m => { m.item.position = (position - m.start) / m.size; });
+      const issue = validateCurrentProduct();
+      if (issue) {
+        group.members.forEach((m,i) => { m.item.position = old[i]; });
+        showToast(issue);
+      }
+      renderAll();
+      return;
+    }
     if (record.selected.scope === "root") {
       const limits = rootImpostLimits(record.item, record.selected.orientation);
       record.item.position = Math.min(Math.max(value, limits.min), limits.max);
@@ -1912,6 +2002,8 @@ function bindEvents() {
     event.currentTarget.blur();
   });
   $("#centerImpost").addEventListener("click", () => {
+    sharedAxis = null;
+    multiSections.clear();
     const record = getSelectedImpostRecord();
     if (!record) return;
     if (record.selected.scope === "root") {
@@ -1931,6 +2023,8 @@ function bindEvents() {
     renderAll();
   });
   $("#removeImpost").addEventListener("click", () => {
+    sharedAxis = null;
+    multiSections.clear();
     const record = getSelectedImpostRecord();
     if (!record) return;
     if (record.selected.scope === "root") {
