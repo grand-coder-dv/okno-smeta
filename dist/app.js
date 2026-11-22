@@ -1303,22 +1303,40 @@ function polygonGlass(poly, geometry, f, tech) {
   const depth=tech.frame+(geometry.sashBox?tech.sash-SASH_LAP:0)-bite;
   return polygonClip(rectPoints([f.x,f.y,f.x+f.w,f.y+f.h]),poly,depth);
 }
-function polyOpeningSymbol(p,type,side,X,Y) {
-  if(p.length<3 || type==="fixed") return "";
-  const [l,t,r,b]=polyBounds(p), at=(vertical,u)=>{
-    const k=vertical?0:1, values=[];
-    p.forEach((a,i)=>{const q=p[(i+1)%p.length]; if((a[k]<=u&&q[k]>u)||(q[k]<=u&&a[k]>u)) values.push(a[1-k]+(q[1-k]-a[1-k])*(u-a[k])/(q[k]-a[k]));});
-    if(!values.length) return [(l+r)/2,(t+b)/2];
-    return [Math.min(...values),Math.max(...values)];
+function outlineRange(points, axis, at) {
+  const values=[];
+  points.forEach((p,i)=>{
+    const q=points[(i+1)%points.length], a=p[axis], b=q[axis];
+    if(Math.abs(a-b)<1e-8){if(Math.abs(at-a)<1e-6) values.push(p[1-axis],q[1-axis]);return;}
+    if(at>=Math.min(a,b)-1e-7 && at<=Math.max(a,b)+1e-7) values.push(p[1-axis]+(q[1-axis]-p[1-axis])*(at-a)/(b-a));
+  });
+  return values.length?[Math.min(...values),Math.max(...values)]:null;
+}
+function sashOpeningMark(glass, outer, inner, type, side, X, Y) {
+  if(glass.length<3 || type==="fixed")return {dashes:"",handle:""};
+  const [l,t,r,b]=polyBounds(glass);
+  const ym=(t+b)/2, xmid=(l+r)/2;
+  const yRow=(edge,fallback)=>{
+    const range=outlineRange(glass,1,edge);
+    const y=range && range[1]-range[0]>(r-l)*.12?edge:fallback;
+    return [y,outlineRange(glass,1,y)];
   };
-  const y1=t+(b-t)*.13, ym=(t+b)/2, y2=b-(b-t)*.13, idx=side==="right"?1:0;
+  const [top,upper]=yRow(t,t+(b-t)*.12), [bottom,lower]=yRow(b,b-(b-t)*.12);
+  const mid=outlineRange(glass,1,ym), summit=outlineRange(glass,0,xmid);
+  const hingesRight=side==="right" && (type==="turn"||type==="tiltturn");
+  const hinge=hingesRight?1:0, free=1-hinge;
   const pt=(x,y)=>`${X(x)} ${Y(y)}`;
   const line=points=>`<path d="M ${points.join(' L ')}" fill="none" stroke="#4d7085" stroke-width="1.7" stroke-dasharray="5 4"/>`;
-  let markup="";
-  if(type==="turn"||type==="tiltturn") markup+=line([pt(at(false,y1)[idx],y1),pt(at(false,ym)[1-idx],ym),pt(at(false,y2)[idx],y2)]);
-  if(type==="tilt"||type==="tiltturn") {const mid=(l+r)/2, ends=at(false,y2);markup+=line([pt(ends[0],y2),pt(mid,at(true,mid)[0]),pt(ends[1],y2)]);}
-  const [left,right]=at(false,ym), handle=idx?left+(right-left)*.1:right-(right-left)*.1;
-  return markup+`<path d="M ${pt(handle,ym-(b-t)*.04)} L ${pt(handle,ym+(b-t)*.04)}" stroke="#20384c" stroke-width="3" stroke-linecap="round"/>`;
+  let dashes="";
+  if((type==="turn"||type==="tiltturn")&&upper&&lower&&mid) dashes+=line([pt(upper[hinge],top),pt(mid[free],ym),pt(lower[hinge],bottom)]);
+  if((type==="tilt"||type==="tiltturn")&&lower&&summit) dashes+=line([pt(lower[0],bottom),pt(xmid,summit[0]),pt(lower[1],bottom)]);
+  const half=Math.min((b-t)*.05,9/Math.max(1e-8,Math.abs(Y(1)-Y(0))));
+  const handlePoints=[ym-half,ym+half].map(y=>{
+    const a=outlineRange(outer,1,y), b=outlineRange(inner,1,y);
+    return a&&b?pt((a[free]+b[free])/2,y):null;
+  });
+  const handle=handlePoints.every(Boolean)?`<path d="M ${handlePoints.join(' L ')}" stroke="#20384c" stroke-width="3" stroke-linecap="round"/>`:"";
+  return {dashes,handle};
 }
 function refreshProfileEdit() {
   let button=$("#editProfileGeometry");
@@ -1384,24 +1402,38 @@ function customProfileArcs() {
   return state.shape === "rect" && (polygonPoints() || Object.values(state.frameArcs || {}).some(Boolean) ||
     sectionPanes().some(p => !p.split && p.opening !== "fixed" && Object.values(p.sashArcs || {}).some(Boolean)));
 }
+function arcBoundaryPoints(p,q,radius,sweep) {
+  const dx=q[0]-p[0],dy=q[1]-p[1],chord=Math.hypot(dx,dy);
+  if(!chord)return [p];
+  const R=Math.max(chord/2,radius), half=chord/2;
+  const span=Math.asin(half/R), inset=Math.sqrt(Math.max(0,R*R-half*half));
+  const side=sweep?1:-1;
+  return Array.from({length:64},(_,i)=>{
+    const a=span*(2*i/64-1), tangent=half+R*Math.sin(a), sag=side*(R*Math.cos(a)-inset);
+    return [p[0]+(dx*tangent+dy*sag)/chord,p[1]+(dy*tangent-dx*sag)/chord];
+  });
+}
 function profileOutline(bounds, arcs, X, Y, sx, sy) {
   const [l,t,r,b] = bounds;
   const pts = [[l,t],[r,t],[r,b],[l,b]];
   const point = ([x,y]) => `${X(x)} ${Y(y)}`;
+  const boundary=[];
   const edges = pts.map((p,i) => {
     const q=pts[(i+1)%4], chord=Math.hypot(q[0]-p[0],q[1]-p[1]);
     const a=arcs?.[i];
     const angle=Math.atan2(q[1]-p[1],q[0]-p[0]);
-    if (!a || !Number.isFinite(a.radius) || !chord) return {
-      cmd:`L ${point(q)}`, reverse:`L ${point(p)}`, startAngle:angle,endAngle:angle,
-    };
+    if (!a || !Number.isFinite(a.radius) || !chord) {
+      boundary.push(p);
+      return {cmd:`L ${point(q)}`, reverse:`L ${point(p)}`, startAngle:angle,endAngle:angle};
+    }
     const radius=Math.max(chord/2,a.radius), sweep=a.direction === 'in' ? 0 : 1;
+    boundary.push(...arcBoundaryPoints(p,q,radius,sweep));
     const shift=Math.asin(chord/(2*radius))*(sweep?1:-1);
     return {cmd:`A ${radius*sx} ${radius*sy} 0 0 ${sweep} ${point(q)}`,
       reverse:`A ${radius*sx} ${radius*sy} 0 0 ${1-sweep} ${point(p)}`,
       startAngle:angle-shift,endAngle:angle+shift};
   });
-  return {path:`M ${point(pts[0])} ${edges.map(e=>e.cmd).join(' ')} Z`, edges, pts,
+  return {path:`M ${point(pts[0])} ${edges.map(e=>e.cmd).join(' ')} Z`, edges, pts,boundary,
     screen:pts.map(([x,y])=>[X(x),Y(y)])};
 }
 function arcRise(chord,radius) {
@@ -1503,6 +1535,7 @@ function fittedOutline(bounds, offsets, arcs, X, Y, sx, sy) {
       const dx=q[0]-p[0],dy=q[1]-p[1],chord=Math.hypot(dx,dy),angle=Math.atan2(dy,dx);
       const R=Math.max(chord/2,arcs[i].radius), sweep=arcs[i].direction==='in'?0:1;
       const d=Math.asin(chord/(2*R))*(sweep?1:-1);
+      const sample=arcBoundaryPoints(p,q,R,sweep); boundary.push(...sample);extrema.push(...sample);
       return {cmd:`A ${R*sx} ${R*sy} 0 0 ${sweep} ${toScreen(q)}`,reverse:`A ${R*sx} ${R*sy} 0 0 ${1-sweep} ${toScreen(p)}`,startAngle:angle-d,endAngle:angle+d};
     }
     const pieces=[p];
@@ -1535,13 +1568,15 @@ function fittedGlass(entry,geometry,f,tech,X=mm=>mm,Y=mm=>mm,sx=1,sy=1) {
     const points=polygonGlass(poly,geometry,f,tech);
     if(points.length<3)return {path:"",w:0,h:0};
     const [l,t,r,b]=polyBounds(points);
-    return {path:polyPath(points,X,Y),w:r-l,h:b-t};
+    return {path:polyPath(points,X,Y),boundary:points,w:r-l,h:b-t};
   }
   const depths=sides.map((touch,i)=>touch&&contact[i]<1e-5?depth:null);
-  const outline=fittedOutline(fbox,depths,null,X,Y,sx,sy);
-  const points=outline.extrema || outline.pts;
+  const sashArcs=sashBox && state.shape==="rect" ? entry.pane.sashArcs : null;
+  const glassArcs=sashArcs && Object.fromEntries(Object.entries(sashArcs).filter(([i])=>contact[i]<1e-5));
+  const outline=fittedOutline(fbox,depths,glassArcs,X,Y,sx,sy);
+  const points=outline.extrema || outline.boundary || outline.pts;
   const xs=points.map(p=>p[0]), ys=points.map(p=>p[1]);
-  return {path:outline.path,w:Math.max(...xs)-Math.min(...xs),h:Math.max(...ys)-Math.min(...ys)};
+  return {path:outline.path,boundary:outline.boundary||outline.pts,w:Math.max(...xs)-Math.min(...xs),h:Math.max(...ys)-Math.min(...ys)};
 }
 function profileEdgeTargets(outer, inner, type, index = null) {
   const label=type === 'frame' ? 'Рама' : 'Створка';
@@ -1762,10 +1797,15 @@ function renderCanvas() {
     }
     if (sashBox && opening[2]>opening[0] && opening[3]>opening[1]) {
       sashMarkup += `<path d="${outerSash.path} ${innerSash.path}" fill="${profileColor}" fill-rule="evenodd" stroke="${material.edge}" stroke-width=".8" />`;
-      const symbol=innerSash.boundary ? polyOpeningSymbol(innerSash.boundary,pane.opening,pane.hingeSide,X,Y)
-        : openingSymbol(pane.opening,X(opening[0]),Y(opening[1]),(opening[2]-opening[0])*sx,(opening[3]-opening[1])*sy,pane.hingeSide);
-      const symbolClip=`opening-symbol-${index}`;
-      sashMarkup+=`<clipPath id="${symbolClip}"><path d="${innerSash.path}"/></clipPath><g clip-path="url(#${symbolClip})">${symbol}</g>`;
+      const envelopeEntry={...entry,pane:{...pane,innerImposts:[]}};
+      const envelopeGeometry=glassGeometry(envelopeEntry,tech);
+      const envelope=fittedGlass(envelopeEntry,envelopeGeometry,envelopeGeometry.fields[0],tech,X,Y,sx,sy);
+      if(envelope.boundary?.length && innerSash.boundary?.length && outerSash.boundary?.length){
+        const mark=sashOpeningMark(envelope.boundary,outerSash.boundary,innerSash.boundary,pane.opening,pane.hingeSide,X,Y);
+        const clip=`opening-symbol-${index}`;
+        sashMarkup+=`<clipPath id="${clip}"><path d="${envelope.path}"/></clipPath>
+          <g clip-path="url(#${clip})">${mark.dashes}</g>${mark.handle}`;
+      }
     }
     for (const f of fields) {
       if (f.clearW<=0 || f.clearH<=0) continue;
