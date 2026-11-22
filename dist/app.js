@@ -351,7 +351,7 @@ function validateCurrentProduct() {
     const pane = sections[index];
     if (pane.split) continue;
     const rect = getPanePhysicalRect(index);
-    const [left, right, top, bottom] = sectionLayout()[index].edges.map(edge => edge ? tech.frame : tech.impost / 2);
+    const [left,right,top,bottom] = sectionLayout()[index].edges.map(edge => edge ? tech.frame : tech.impost / 2);
     const verticalProfiles = left + right;
     const horizontalProfiles = top + bottom;
     const sashReduction = pane.opening === "fixed" ? 0 : tech.sash * 2;
@@ -793,32 +793,31 @@ function primaryBoundaries(orientation) {
 
 function sectionLayout(x = primaryBoundaries("vertical"), y = primaryBoundaries("horizontal")) {
   const entries = [];
-  function visit(pane, rect, edges) {
-    entries.push({ pane, rect, edges });
-    const item = pane.split;
-    if (!item) return;
-    const [a, b] = pane.children;
-    if (item.orientation === "vertical") {
-      const d = rect.width * item.position;
-      visit(a, { ...rect, width: d }, [edges[0], false, edges[2], edges[3]]);
-      visit(b, { ...rect, x: rect.x + d, width: rect.width - d }, [false, edges[1], edges[2], edges[3]]);
+  function visit(pane, rect, [l,r,t,b]) {
+    entries.push({ pane, rect, edges: [l,r,t,b] });
+    if (!pane.split) return;
+    const [a,c] = pane.children;
+    const p = pane.split.position;
+    if (pane.split.orientation === "vertical") {
+      const d = rect.width*p;
+      visit(a,{...rect,width:d},[l,false,t,b]);
+      visit(c,{...rect,x:rect.x+d,width:rect.width-d},[false,r,t,b]);
     } else {
-      const d = rect.height * item.position;
-      visit(a, { ...rect, height: d }, [edges[0], edges[1], edges[2], false]);
-      visit(b, { ...rect, y: rect.y + d, height: rect.height - d }, [edges[0], edges[1], false, edges[3]]);
+      const d = rect.height*p;
+      visit(a,{...rect,height:d},[l,r,t,false]);
+      visit(c,{...rect,y:rect.y+d,height:rect.height-d},[l,r,false,b]);
     }
   }
-  state.panes.forEach((pane, i) => {
-    const c = i % state.cols, r = Math.floor(i / state.cols);
-    visit(pane, { x: x[c], y: y[r], width: x[c+1]-x[c], height: y[r+1]-y[r] },
-      [c === 0, c === state.cols-1, r === 0, r === state.rows-1]);
+  state.panes.forEach((pane,i) => {
+    const c=i%state.cols, r=Math.floor(i/state.cols);
+    visit(pane,{x:x[c],y:y[r],width:x[c+1]-x[c],height:y[r+1]-y[r]},
+      [c===0,c===state.cols-1,r===0,r===state.rows-1]);
   });
   return entries;
 }
-
-function sectionPanes() { return sectionLayout().map(entry => entry.pane); }
-function getPanePhysicalRect(index) { return sectionLayout()[index].rect; }
-function sectionNumber(index) { return sectionPanes().slice(0, index + 1).filter(pane => !pane.split).length; }
+function sectionPanes() { return sectionLayout().map(e => e.pane); }
+function getPanePhysicalRect(i) { return sectionLayout()[i].rect; }
+function sectionNumber(i) { return sectionPanes().slice(0,i+1).filter(p => !p.split).length; }
 
 function paneGlassUnits(pane) {
   const vertical = pane.innerImposts.filter((item) => item.orientation === "vertical").length;
@@ -833,13 +832,13 @@ function ensurePanes() {
     if (state.panes[index]) {
       return {
         ...state.panes[index],
-        innerImposts: state.panes[index].split ? [state.panes[index].split] : Array.isArray(state.panes[index].innerImposts) ? state.panes[index].innerImposts.map((item) => ({ ...item })) : [],
+        innerImposts: Array.isArray(state.panes[index].innerImposts) ? state.panes[index].innerImposts.map((item) => ({ ...item })) : [],
       };
     }
     return { opening: "fixed", glass: state.defaultGlass, innerImposts: [] };
   });
   state.panes = panes;
-  sectionPanes().forEach(pane => { if (pane.split) pane.innerImposts = [pane.split]; });
+  sectionPanes().forEach(p => { if (p.split) p.innerImposts = [p.split]; });
   state.selectedPane = clamp(state.selectedPane, 0, Math.max(sectionPanes().length - 1, 0));
   if (state.selectedImpost?.scope === "pane" && !sectionPanes()[state.selectedImpost.paneIndex]?.innerImposts.some(item => item.id === state.selectedImpost.id)) state.selectedImpost = null;
   if (!state.selectedImpost) while (sectionPanes()[state.selectedPane]?.split) state.selectedPane += 1;
@@ -895,7 +894,7 @@ function updateMaterialSelects(reset = false) {
 function paneGlazingArea(index, pane, shapeFactor = 1) {
   const rect = getPanePhysicalRect(index);
   const tech = getTechnology();
-  const [left, right, top, bottom] = sectionLayout()[index].edges;
+  const [left,right,top,bottom] = sectionLayout()[index].edges;
   const sideProfile = (atEdge) => (atEdge ? tech.frame : tech.impost / 2);
   const sashReduction = pane.opening === "fixed" ? 0 : tech.sash * 2;
   const verticalImposts = pane.innerImposts.filter((item) => item.orientation === "vertical").length;
@@ -1226,8 +1225,9 @@ function renderCanvas() {
   const paneRects = [];
 
   let panesMarkup = "", localImpostsMarkup = "";
-  sectionLayout(xBounds, yBounds).forEach(({ pane, rect }, index) => {
-    const { x: px, y: py, width: paneWidth, height: paneHeight } = rect;
+  sectionLayout(xBounds, yBounds).forEach(({pane,rect}, index) => {
+    const {x:px,y:py,width:paneWidth,height:paneHeight} = rect;
+
     const physical = getPanePhysicalRect(index);
     paneRects[index] = { x: px, y: py, width: paneWidth, height: paneHeight, physicalWidth: physical.width, physicalHeight: physical.height };
     const glass = GLASS[pane.glass];
@@ -1470,12 +1470,12 @@ function addInnerImpost(orientation) {
   const pane = sectionPanes()[index];
   if (!pane || pane.split) return;
   const old = pane.innerImposts;
-  const item = { id: createImpostId("pane", orientation), orientation, position: 0.5 };
+  const item = {id:createImpostId("pane", orientation), orientation, position:0.5};
   pane.split = item;
   pane.innerImposts = [item];
   pane.children = [
-    { opening: pane.opening, glass: pane.glass, innerImposts: [] },
-    { opening: "fixed", glass: pane.glass, innerImposts: [] },
+    {opening:pane.opening, glass:pane.glass, innerImposts:[]},
+    {opening:"fixed", glass:pane.glass, innerImposts:[]},
   ];
   const issue = validateCurrentProduct();
   if (issue) {
@@ -1747,9 +1747,10 @@ function bindEvents() {
 
   $("#addInnerVertical").addEventListener("click", () => addInnerImpost("vertical"));
   $("#addInnerHorizontal").addEventListener("click", () => addInnerImpost("horizontal"));
-  $("#impostPosition").addEventListener("input", (event) => {
+  $("#impostPosition").addEventListener("change", (event) => {
     const record = getSelectedImpostRecord();
-    if (!record || event.target.value === "") return;
+    if (!record) return;
+    if (event.target.value === "") { renderAll(); return; }
     const value = Number(event.target.value);
     if (!Number.isFinite(value)) return;
     if (record.selected.scope === "root") {
@@ -1763,7 +1764,11 @@ function bindEvents() {
     }
     renderAll();
   });
-  $("#impostPosition").addEventListener("change", () => renderAll());
+  $("#impostPosition").addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    event.currentTarget.blur();
+  });
   $("#centerImpost").addEventListener("click", () => {
     const record = getSelectedImpostRecord();
     if (!record) return;
