@@ -158,6 +158,7 @@ let state = {
   hImposts: [],
   defaultGlass: "double",
   selectedPane: 0,
+  selectedField: null,
   selectedImpost: null,
   panes: [
     { opening: "tiltturn", glass: "double", innerImposts: [] },
@@ -325,21 +326,46 @@ function updateMaterialSelects(reset = false) {
     .join("");
 }
 
+function getPaneFields(pane) {
+  const bounds = orientation => [
+    { id: "start", position: 0 },
+    ...pane.innerImposts.filter(item => item.orientation === orientation)
+      .sort((a, b) => a.position - b.position),
+    { id: "end", position: 1 },
+  ];
+  const xs = bounds("vertical"), ys = bounds("horizontal");
+  const fields = [];
+  for (let row = 0; row < ys.length - 1; row++) {
+    for (let col = 0; col < xs.length - 1; col++) {
+      const [left, right] = xs.slice(col, col + 2);
+      const [top, bottom] = ys.slice(row, row + 2);
+      const key = [left.id, right.id, top.id, bottom.id].join(":");
+      fields.push({ key, x: left.position, y: top.position,
+        width: right.position - left.position, height: bottom.position - top.position,
+        edges: [left.id === "start", right.id === "end", top.id === "start", bottom.id === "end"],
+        glass: pane.fieldGlass?.[key] ?? pane.glass });
+    }
+  }
+  return fields;
+}
+
 function paneGlazing(index, pane, shapeFactor = 1) {
   const rect = getPanePhysicalRect(index);
   const tech = getTechnology();
-  const col = index % state.cols;
-  const row = Math.floor(index / state.cols);
-  const sideProfile = (atEdge) => (atEdge ? tech.frame : tech.impost / 2);
-  const sashReduction = pane.opening === "fixed" ? 0 : tech.sash * 2;
-  const verticalImposts = pane.innerImposts.filter((item) => item.orientation === "vertical").length;
-  const horizontalImposts = pane.innerImposts.filter((item) => item.orientation === "horizontal").length;
-  const clearWidth = rect.width - sideProfile(col === 0) - sideProfile(col === state.cols - 1) - sashReduction - verticalImposts * tech.impost;
-  const clearHeight = rect.height - sideProfile(row === 0) - sideProfile(row === state.rows - 1) - sashReduction - horizontalImposts * tech.impost;
+  const col = index % state.cols, row = Math.floor(index / state.cols);
+  const outer = [col === 0, col === state.cols - 1, row === 0, row === state.rows - 1];
+  const sash = pane.opening === "fixed" ? 0 : tech.sash;
   const issues = [];
-  if (clearWidth < 20) issues.push("недостаточная ширина под стекло");
-  if (clearHeight < 20) issues.push("недостаточная высота под стекло");
-  return { area: issues.length ? 0 : clearWidth * clearHeight * shapeFactor / 1_000_000, issues };
+  const fields = getPaneFields(pane).map((field, i) => {
+    const cuts = field.edges.map((edge, side) =>
+      edge ? (outer[side] ? tech.frame : tech.impost / 2) + sash : tech.impost / 2);
+    const width = rect.width * field.width - cuts[0] - cuts[1];
+    const height = rect.height * field.height - cuts[2] - cuts[3];
+    const valid = width >= 20 && height >= 20;
+    if (!valid) issues.push(`поле ${i + 1}: недостаточно места под стекло`);
+    return { ...field, area: valid ? width * height * shapeFactor / 1_000_000 : 0 };
+  });
+  return { fields, issues, area: fields.reduce((sum, field) => sum + field.area, 0) };
 }
 
 function geometry() {
@@ -377,6 +403,7 @@ function geometry() {
   let nestedCount = 0;
   let glassUnits = 0;
   const paneGlazingAreas = [];
+  const paneGlazingFields = [];
   const issues = [];
   state.panes.forEach((pane, index) => {
     const paneRect = getPanePhysicalRect(index);
@@ -387,11 +414,12 @@ function geometry() {
     glassUnits += paneGlassUnits(pane);
     const glazing = paneGlazing(index, pane, shapeFactor);
     paneGlazingAreas[index] = glazing.area;
+    paneGlazingFields[index] = glazing.fields;
     if (glazing.issues.length) issues.push(`Секция ${index + 1}: ${glazing.issues.join(", ")}`);
   });
   const glazingArea = paneGlazingAreas.reduce((sum, value) => sum + value, 0);
   const impost = primaryImpost + nestedImpost;
-  return { issues, approximate: state.shape !== "rect", area, perimeter, glazingArea, paneGlazingAreas, impost, primaryImpost, nestedImpost, nestedCount, glassUnits };
+  return { issues, approximate: state.shape !== "rect", area, perimeter, glazingArea, paneGlazingAreas, paneGlazingFields, impost, primaryImpost, nestedImpost, nestedCount, glassUnits };
 }
 
 function buildSpecification() {
@@ -464,13 +492,13 @@ function buildSpecification() {
     rate: rates.bead[state.material],
   });
 
-  const glassGroups = state.panes.reduce((groups, pane, index) => {
-    const group = groups[pane.glass] || { fields: 0, area: 0 };
-    group.fields += paneGlassUnits(pane);
-    group.area += dimensions.paneGlazingAreas[index] || 0;
-    groups[pane.glass] = group;
-    return groups;
-  }, {});
+  const glassGroups = {};
+  for (const field of dimensions.paneGlazingFields.flat()) {
+    const group = glassGroups[field.glass] ??= { fields: 0, area: 0 };
+    group.fields += 1;
+    group.area += field.area;
+  }
+
   Object.entries(glassGroups).forEach(([glassKey, group]) => {
     const glass = GLASS[glassKey];
     addLine({
@@ -665,7 +693,6 @@ function renderCanvas() {
     const paneHeight = yBounds[row + 1] - py;
     const physical = getPanePhysicalRect(index);
     paneRects[index] = { x: px, y: py, width: paneWidth, height: paneHeight, physicalWidth: physical.width, physicalHeight: physical.height };
-    const glass = GLASS[pane.glass];
     const selected = index === state.selectedPane;
     const paneKind = pane.opening === "fixed" ? "глухой секции" : "створке";
     const paneSashFace = Math.min(sashFace, paneWidth * 0.22, paneHeight * 0.22);
@@ -695,16 +722,33 @@ function renderCanvas() {
       }
     });
 
+    const fields = getPaneFields(pane);
+    const activeField = fields.find(field => field.key === state.selectedField) ?? fields[0];
+    const marks = fields.map((field, fieldIndex) => {
+      const fx = px + field.x * paneWidth, fy = py + field.y * paneHeight;
+      const fw = field.width * paneWidth, fh = field.height * paneHeight;
+      const box = `x="${fx}" y="${fy}" width="${fw}" height="${fh}"`;
+      return {
+        fill: `<rect ${box} fill="${GLASS[field.glass].color}" />`,
+        hit: `<rect class="pane-hit" ${box} data-pane="${index}" data-field="${field.key}"
+          fill="transparent" tabindex="0" role="button"
+          aria-label="Секция ${index + 1}, поле ${fieldIndex + 1}" />`,
+        mark: selected && !state.selectedImpost && field === activeField
+          ? `<rect class="pane-selected" x="${fx + 3}" y="${fy + 3}"
+            width="${Math.max(0, fw - 6)}" height="${Math.max(0, fh - 6)}" />` : "",
+      };
+    });
+
     panesMarkup += `
       <g class="pane" data-index="${index}" clip-path="url(#innerClip)">
-        <rect x="${px}" y="${py}" width="${paneWidth}" height="${paneHeight}" fill="${glass.color}" />
+        ${marks.map(item => item.fill).join("")}
         <rect x="${px}" y="${py}" width="${paneWidth}" height="${paneHeight}" fill="url(#glassSheen)" opacity="0.55" />
         ${pane.opening !== "fixed" ? `<rect x="${px + paneSashFace / 2}" y="${py + paneSashFace / 2}" width="${Math.max(paneWidth - paneSashFace, 2)}" height="${Math.max(paneHeight - paneSashFace, 2)}" fill="none" stroke="${material.frame}" stroke-width="${paneSashFace}" pointer-events="none" />` : ""}
         ${openingSymbol(pane.opening, px, py, paneWidth, paneHeight)}
-        ${selected ? `<rect class="pane-selected" x="${px + 3}" y="${py + 3}" width="${Math.max(paneWidth - 6, 2)}" height="${Math.max(paneHeight - 6, 2)}" />` : ""}
+        ${marks.map(item => item.mark).join("")}
         <circle cx="${px + paneWidth / 2}" cy="${py + paneHeight / 2}" r="14" fill="rgba(255,255,255,.82)" stroke="rgba(53,80,105,.22)" />
         <text class="pane-number" x="${px + paneWidth / 2}" y="${py + paneHeight / 2 + 4}">${index + 1}</text>
-        <rect class="pane-hit" data-pane="${index}" x="${px}" y="${py}" width="${paneWidth}" height="${paneHeight}" fill="transparent" tabindex="0" role="button" aria-label="Настроить секцию ${index + 1}" />
+        ${marks.map(item => item.hit).join("")}
         ${innerImpostsMarkup}
       </g>`;
   });
@@ -770,6 +814,7 @@ function renderCanvas() {
   $$("#windowCanvas .pane-hit").forEach((node) => {
     const choose = () => {
       state.selectedPane = Number(node.dataset.pane);
+      state.selectedField = node.dataset.field;
       state.selectedImpost = null;
       renderAll();
     };
@@ -960,7 +1005,11 @@ function renderInspector() {
   $("#impostInspector").hidden = true;
   $("#selectedPaneName").textContent = `№ ${state.selectedPane + 1}`;
   $("#openingType").value = pane.opening;
-  $("#paneGlass").value = pane.glass;
+  const fields = getPaneFields(pane);
+  const field = fields.find(item => item.key === state.selectedField) ?? fields[0];
+  state.selectedField = field.key;
+  $("#paneGlass").value = field.glass;
+  if (fields.length > 1) $("#selectedPaneName").textContent += ` · поле ${fields.indexOf(field) + 1}`;
   const innerCount = pane.innerImposts.length;
   const paneKind = pane.opening === "fixed" ? "глухой секции" : "створке";
   $("#innerImpostHint").textContent = innerCount
@@ -1045,6 +1094,7 @@ function renderAll() {
 function resetPaneSettings() {
   state.panes = [];
   state.selectedPane = 0;
+  state.selectedField = null;
   state.selectedImpost = null;
 }
 
@@ -1146,7 +1196,7 @@ function bindEvents() {
 
   $("#defaultGlass").addEventListener("change", (event) => {
     state.defaultGlass = event.target.value;
-    state.panes = state.panes.map((pane) => ({ ...pane, glass: state.defaultGlass }));
+    state.panes = state.panes.map((pane) => ({ ...pane, glass: state.defaultGlass, fieldGlass: {} }));
     renderAll();
   });
 
@@ -1155,13 +1205,22 @@ function bindEvents() {
     renderAll();
   });
   $("#paneGlass").addEventListener("change", (event) => {
-    state.panes[state.selectedPane].glass = event.target.value;
+    const pane = state.panes[state.selectedPane];
+    const fields = getPaneFields(pane);
+    const field = fields.find(item => item.key === state.selectedField) ?? fields[0];
+    if (fields.length === 1) {
+      pane.glass = event.target.value;
+      pane.fieldGlass = {};
+    } else {
+      pane.fieldGlass ??= {};
+      pane.fieldGlass[field.key] = event.target.value;
+    }
     renderAll();
   });
   $("#applyGlassToAll").addEventListener("click", () => {
-    const glass = state.panes[state.selectedPane].glass;
+    const glass = $("#paneGlass").value;
     state.defaultGlass = glass;
-    state.panes = state.panes.map((pane) => ({ ...pane, glass }));
+    state.panes = state.panes.map((pane) => ({ ...pane, glass, fieldGlass: {} }));
     $("#defaultGlass").value = glass;
     renderAll();
     showToast("Стеклопакет применён ко всем секциям");
@@ -1250,6 +1309,7 @@ function bindEvents() {
       hImposts: [],
       defaultGlass: "double",
       selectedPane: 0,
+      selectedField: null,
       selectedImpost: null,
       panes: [
         { opening: "tiltturn", glass: "double", innerImposts: [] },
