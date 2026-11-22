@@ -17,13 +17,20 @@
   const buttons = [...group.querySelectorAll("button")];
   const refresh = () => {
     const hasSection = !state.selectedImpost && selectedSections().length > 0;
-    buttons.forEach(button => { button.disabled = !hasSection; });
+    buttons.forEach(button => {
+      const blocked = button.dataset.editorTool === "sash" && circleSashesBlocked();
+      button.hidden = blocked;
+      button.disabled = blocked || !hasSection;
+      if (blocked) button.style.setProperty("display", "none", "important");
+      else button.style.removeProperty("display");
+    });
   };
   group.addEventListener("click", event => {
     const button = event.target.closest("[data-editor-tool]");
     if (!button || button.disabled || state.selectedImpost || !selectedSections().length) return;
     const tool = button.dataset.editorTool;
     if (tool === "sash") {
+      if (circleSashesBlocked()) return;
       const select = document.querySelector("#openingType");
       select.value = "tiltturn";
       select.dispatchEvent(new Event("change", { bubbles: true }));
