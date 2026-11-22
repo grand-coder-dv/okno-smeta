@@ -1318,9 +1318,28 @@ function renderCanvas() {
     dimensionGroups.get(key).push({vertical,start,end,absolute,local,item,index,id:item.id});
   };
 
-  let panesMarkup = "", localImpostsMarkup = "";
-  let paneSelectionMarkup = "";
-  sectionLayout(xBounds, yBounds).forEach(({pane,rect}, index) => {
+  let panesMarkup = "", localImpostsMarkup = "", sashMarkup = "", paneSelectionMarkup = "";
+  const visualSections = sectionLayout(xBounds, yBounds);
+  const mullionEdges = [
+    ...rootVerticalX.map(axis => ({vertical:true, axis, from:box.y, to:box.y+box.height, face:impostFace})),
+    ...rootHorizontalY.map(axis => ({vertical:false, axis, from:box.x, to:box.x+box.width, face:impostFace})),
+  ];
+  for (const {pane, rect} of visualSections) {
+    for (const item of pane.innerImposts) {
+      const vertical = item.orientation === "vertical";
+      const from = vertical ? rect.y : rect.x;
+      mullionEdges.push({vertical, from, to:from+(vertical ? rect.height : rect.width),
+        axis:vertical ? rect.x+item.position*rect.width : rect.y+item.position*rect.height,
+        face:Math.min(impostFace, rect.width*0.2, rect.height*0.2)});
+    }
+  }
+  const halfFace = (vertical, axis, at) => {
+    const edge = mullionEdges.find(line => line.vertical === vertical && Math.abs(line.axis-axis)<1e-6 && at>=line.from-1e-6 && at<=line.to+1e-6);
+    return edge ? edge.face/2 : 0;
+  };
+  const overlapX = 24 * width / state.width;
+  const overlapY = 24 * height / state.height;
+  visualSections.forEach(({pane,rect,edges}, index) => {
     const {x:px,y:py,width:paneWidth,height:paneHeight} = rect;
 
     const physical = getPanePhysicalRect(index);
@@ -1359,18 +1378,27 @@ function renderCanvas() {
 
     localImpostsMarkup += innerImpostsMarkup;
     if (pane.split) return;
-    if (selected) {
-      paneSelectionMarkup += `<rect class="pane-selected"
-        x="${px + 3}" y="${py + 3}"
-        width="${Math.max(paneWidth - 6, 2)}" height="${Math.max(paneHeight - 6, 2)}"
-        fill="none" pointer-events="none" />`;
+    if (pane.opening !== "fixed") {
+      const mx = px+paneWidth/2, my = py+paneHeight/2;
+      const left = px + (edges[0] ? 0 : halfFace(true, px, my)) - overlapX;
+      const right = px+paneWidth - (edges[1] ? 0 : halfFace(true, px+paneWidth, my)) + overlapX;
+      const top = py + (edges[2] ? 0 : halfFace(false, py, mx)) - overlapY;
+      const bottom = py+paneHeight - (edges[3] ? 0 : halfFace(false, py+paneHeight, mx)) + overlapY;
+      const sw = Math.max(right-left, 2), sh = Math.max(bottom-top, 2);
+      const face = Math.min(paneSashFace, sw/3, sh/3);
+      sashMarkup += `<rect x="${left+face/2}" y="${top+face/2}"
+        width="${sw-face}" height="${sh-face}" fill="none"
+        stroke="${profileColor}" stroke-width="${face}" />`;
+      sashMarkup += `<rect x="${left+.5}" y="${top+.5}" width="${sw-1}" height="${sh-1}"
+        fill="none" stroke="${material.edge}" stroke-width="1" />`;
+      sashMarkup += openingSymbol(pane.opening, left+face, top+face, sw-2*face, sh-2*face, pane.hingeSide);
     }
+    if (selected) paneSelectionMarkup += `<rect class="pane-selected" x="${px+3}" y="${py+3}"
+      width="${Math.max(paneWidth-6,2)}" height="${Math.max(paneHeight-6,2)}" fill="none" />`;
     panesMarkup += `
       <g class="pane" data-index="${index}" clip-path="url(#innerClip)">
         <rect x="${px}" y="${py}" width="${paneWidth}" height="${paneHeight}" fill="${glass.color}" />
         <rect x="${px}" y="${py}" width="${paneWidth}" height="${paneHeight}" fill="url(#glassSheen)" opacity="0.55" />
-        ${pane.opening !== "fixed" ? `<rect x="${px + paneSashFace / 2}" y="${py + paneSashFace / 2}" width="${Math.max(paneWidth - paneSashFace, 2)}" height="${Math.max(paneHeight - paneSashFace, 2)}" fill="none" stroke="${profileColor}" stroke-width="${paneSashFace}" pointer-events="none" />` : ""}
-        ${openingSymbol(pane.opening, px, py, paneWidth, paneHeight, pane.hingeSide)}
         <circle cx="${px + paneWidth / 2}" cy="${py + paneHeight / 2}" r="14" fill="rgba(255,255,255,.82)" stroke="rgba(53,80,105,.22)" />
         <text class="pane-number" x="${px + paneWidth / 2}" y="${py + paneHeight / 2 + 4}">${sectionNumber(index)}</text>
         <rect class="pane-hit" data-pane="${index}" x="${px}" y="${py}" width="${paneWidth}" height="${paneHeight}" fill="transparent" tabindex="0" role="button" aria-label="Настроить секцию ${index + 1}" />
@@ -1440,13 +1468,16 @@ function renderCanvas() {
         <stop offset="1" stop-color="#5da3bf" stop-opacity="0.24" />
       </linearGradient>
       <clipPath id="innerClip">${paths.inner}</clipPath>
+      <clipPath id="sashOuterClip">${paths.outer}</clipPath>
       <marker id="dimArrow" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto-start-reverse">
         <path d="M 8 1 L 1 4 L 8 7" fill="none" stroke="#8996a8" stroke-width="1.2" />
       </marker>
     </defs>
     <g filter="url(#windowShadow)" fill="${profileColor}" stroke="${material.edge}" stroke-width="2.2">${paths.outer}</g>
     <g fill="#bfe3ef" stroke="${material.edge}" stroke-width="1.6">${paths.inner}</g>
-    <g clip-path="url(#innerClip)">${panesMarkup}${localImpostsMarkup}${rootImpostsMarkup}<g pointer-events="none">${paneSelectionMarkup}</g></g>
+    <g clip-path="url(#innerClip)">${panesMarkup}${localImpostsMarkup}${rootImpostsMarkup}</g>
+    <g clip-path="url(#sashOuterClip)" pointer-events="none">${sashMarkup}</g>
+    <g clip-path="url(#innerClip)" pointer-events="none">${paneSelectionMarkup}</g>
     <g class="dimensions">${axisMarkup}
       <line class="dimension-line" x1="${x}" y1="${y + height + 6}" x2="${x}" y2="${bottomDimensionY + 7}" opacity=".45" />
       <line class="dimension-line" x1="${x + width}" y1="${y + height + 6}" x2="${x + width}" y2="${bottomDimensionY + 7}" opacity=".45" />
