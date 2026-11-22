@@ -1704,12 +1704,13 @@ function renderCanvas() {
       const sel=activeProfileEdge?.owner===state&&activeProfileEdge.type==="polygon"&&activeProfileEdge.side===i;
       return `<path d="M ${X(p[0])} ${Y(p[1])} L ${X(q[0])} ${Y(q[1])}" stroke="${sel?'#ef8b25':'transparent'}" stroke-width="${sel?5:14}" pointer-events="stroke" data-profile-edge="polygon" data-edge-side="${i}" tabindex="0" role="button" aria-label="Сторона ${i+1}"/>`;
     }).join("");
-  } else if (state.shape === "arch") {
-    const outer=profileOutline([0,0,state.width,state.height],state.frameArcs,X,Y,sx,sy);
+  } else if (state.shape === "arch" || state.shape === "rect") {
+    const arcs=state.shape === "arch" ? state.frameArcs : null;
+    const outer=profileOutline([0,0,state.width,state.height],arcs,X,Y,sx,sy);
     const inset=getTechnology().frame;
     const inner=fittedOutline([inset,inset,state.width-inset,state.height-inset],[inset,inset,inset,inset],null,X,Y,sx,sy);
     if (state.width>2*inset && state.height>2*inset) profileTargets=profileEdgeTargets(outer,inner,"frame");
-    if(Object.values(state.frameArcs||{}).some(Boolean)) {
+    if(Object.values(arcs||{}).some(Boolean)) {
       paths.outer=`<path d="${outer.path}" />`;
       paths.inner=`<path d="${inner.path}" />`;
     }
@@ -1793,7 +1794,7 @@ function renderCanvas() {
       const id=`sashImpostClip-${index}`;
       localImpostsMarkup += `<clipPath id="${id}"><path d="${innerSash.path}"/></clipPath><g clip-path="url(#${id})">${innerImpostsMarkup}</g>`;
     } else localImpostsMarkup += innerImpostsMarkup;
-    if (sashBox && state.shape==="arch" && opening[2]>opening[0] && opening[3]>opening[1]) {
+    if (sashBox && (state.shape==="arch" || state.shape==="rect") && opening[2]>opening[0] && opening[3]>opening[1]) {
       profileTargets+=profileEdgeTargets(outerSash,innerSash,"sash",index);
     }
     if (sashBox && opening[2]>opening[0] && opening[3]>opening[1]) {
