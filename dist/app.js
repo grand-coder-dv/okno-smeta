@@ -1249,10 +1249,19 @@ function openingSymbol(type, x, y, width, height, side) {
   return paths;
 }
 
-function impostValueTag(x, y, value, inner = false) {
+function impostValueTag(x, y, value, item, paneIndex = null) {
+  const inner = paneIndex !== null;
+  const axis = item.orientation === "vertical" ? "от левого края" : "от верхнего края";
+  const origin = inner ? "секции" : "рамы";
   const text = `${Math.round(value)} мм`;
   const width = Math.max(58, text.length * 7 + 14);
-  return `<g class="impost-value-tag${inner ? " inner" : ""}">
+  return `<g class="impost-value-tag${inner ? " inner" : ""}"
+    data-impost-dimension data-scope="${inner ? "pane" : "root"}"
+    data-id="${escapeHtml(item.id)}" data-orientation="${item.orientation}"
+    ${inner ? `data-pane="${paneIndex}"` : ""}
+    tabindex="0" role="button" style="cursor:pointer"
+    aria-label="Изменить ${text} ${axis} ${origin}">
+    <title>Изменить ${text} ${axis} ${origin}</title>
     <rect x="${x - width / 2}" y="${y - 12}" width="${width}" height="24" rx="7" />
     <text x="${x}" y="${y + 4}">${text}</text>
   </g>`;
@@ -1292,6 +1301,7 @@ function renderCanvas() {
   const xBounds = [box.x, ...rootVerticalX, box.x + box.width];
   const yBounds = [box.y, ...rootHorizontalY, box.y + box.height];
   const paneRects = [];
+  const axisDimensions = [];
 
   let panesMarkup = "", localImpostsMarkup = "";
   sectionLayout(xBounds, yBounds).forEach(({pane,rect}, index) => {
@@ -1313,19 +1323,21 @@ function renderCanvas() {
       const lineY = py + item.position * paneHeight;
       const physicalPosition = item.position * (isVertical ? physical.width : physical.height);
       if (isVertical) {
+        axisDimensions.push(impostValueTag(lineX, py + 18, physicalPosition, item, index));
         innerImpostsMarkup += `
           <line class="impost-visible inner-impost-visible${active ? " selected" : ""}" x1="${lineX}" y1="${py}" x2="${lineX}" y2="${py + paneHeight}" stroke="${profileColor}" stroke-width="${paneImpostFace}" />
           <line x1="${lineX}" y1="${py}" x2="${lineX}" y2="${py + paneHeight}" stroke="${material.edge}" stroke-width="1.2" opacity=".55" pointer-events="none" />
           <rect class="impost-grip${active ? " selected" : ""}" x="${lineX - 7}" y="${py + paneHeight / 2 - 14}" width="14" height="28" rx="7" />
           <line class="impost-hit" data-scope="pane" data-pane="${index}" data-orientation="vertical" data-id="${item.id}" x1="${lineX}" y1="${py}" x2="${lineX}" y2="${py + paneHeight}" tabindex="0" role="slider" aria-label="Вертикальный импост в ${paneKind} ${index + 1}" aria-valuenow="${Math.round(physicalPosition)}" />
-          ${active ? impostValueTag(lineX, py + 18, physicalPosition, true) : ""}`;
+          `;
       } else {
+        axisDimensions.push(impostValueTag(px + 42, lineY, physicalPosition, item, index));
         innerImpostsMarkup += `
           <line class="impost-visible inner-impost-visible${active ? " selected" : ""}" x1="${px}" y1="${lineY}" x2="${px + paneWidth}" y2="${lineY}" stroke="${profileColor}" stroke-width="${paneImpostFace}" />
           <line x1="${px}" y1="${lineY}" x2="${px + paneWidth}" y2="${lineY}" stroke="${material.edge}" stroke-width="1.2" opacity=".55" pointer-events="none" />
           <rect class="impost-grip${active ? " selected" : ""}" x="${px + paneWidth / 2 - 14}" y="${lineY - 7}" width="28" height="14" rx="7" />
           <line class="impost-hit horizontal" data-scope="pane" data-pane="${index}" data-orientation="horizontal" data-id="${item.id}" x1="${px}" y1="${lineY}" x2="${px + paneWidth}" y2="${lineY}" tabindex="0" role="slider" aria-label="Горизонтальный импост в ${paneKind} ${index + 1}" aria-valuenow="${Math.round(physicalPosition)}" />
-          ${active ? impostValueTag(px + 42, lineY, physicalPosition, true) : ""}`;
+          `;
       }
     });
 
@@ -1348,22 +1360,24 @@ function renderCanvas() {
   state.vImposts.forEach((item, index) => {
     const lineX = rootVerticalX[index];
     const active = isSelectedImpost("root", "vertical", item.id);
+    axisDimensions.push(impostValueTag(lineX, box.y + 18, item.position, item));
     rootImpostsMarkup += `
       <line class="impost-visible${active ? " selected" : ""}" x1="${lineX}" y1="${box.y - 2}" x2="${lineX}" y2="${box.y + box.height + 2}" stroke="${profileColor}" stroke-width="${impostFace}" />
       <line x1="${lineX}" y1="${box.y - 2}" x2="${lineX}" y2="${box.y + box.height + 2}" stroke="${material.edge}" stroke-width="1.4" opacity=".55" pointer-events="none" />
       <rect class="impost-grip${active ? " selected" : ""}" x="${lineX - 8}" y="${box.y + box.height / 2 - 18}" width="16" height="36" rx="8" />
       <line class="impost-hit" data-scope="root" data-orientation="vertical" data-id="${item.id}" x1="${lineX}" y1="${box.y - 2}" x2="${lineX}" y2="${box.y + box.height + 2}" tabindex="0" role="slider" aria-label="Вертикальный импост рамы" aria-valuemin="0" aria-valuemax="${state.width}" aria-valuenow="${Math.round(item.position)}" />
-      ${active ? impostValueTag(lineX, box.y + 18, item.position) : ""}`;
+      `;
   });
   state.hImposts.forEach((item, index) => {
     const lineY = rootHorizontalY[index];
     const active = isSelectedImpost("root", "horizontal", item.id);
+    axisDimensions.push(impostValueTag(box.x + 42, lineY, item.position, item));
     rootImpostsMarkup += `
       <line class="impost-visible${active ? " selected" : ""}" x1="${box.x - 2}" y1="${lineY}" x2="${box.x + box.width + 2}" y2="${lineY}" stroke="${profileColor}" stroke-width="${impostFace}" />
       <line x1="${box.x - 2}" y1="${lineY}" x2="${box.x + box.width + 2}" y2="${lineY}" stroke="${material.edge}" stroke-width="1.4" opacity=".55" pointer-events="none" />
       <rect class="impost-grip${active ? " selected" : ""}" x="${box.x + box.width / 2 - 18}" y="${lineY - 8}" width="36" height="16" rx="8" />
       <line class="impost-hit horizontal" data-scope="root" data-orientation="horizontal" data-id="${item.id}" x1="${box.x - 2}" y1="${lineY}" x2="${box.x + box.width + 2}" y2="${lineY}" tabindex="0" role="slider" aria-label="Горизонтальный импост рамы" aria-valuemin="0" aria-valuemax="${state.height}" aria-valuenow="${Math.round(item.position)}" />
-      ${active ? impostValueTag(box.x + 42, lineY, item.position) : ""}`;
+      `;
   });
 
   canvasLayout = { x, y, width, height, box, xBounds, yBounds, paneRects };
@@ -1387,6 +1401,7 @@ function renderCanvas() {
     <g filter="url(#windowShadow)" fill="${profileColor}" stroke="${material.edge}" stroke-width="2.2">${paths.outer}</g>
     <g fill="#bfe3ef" stroke="${material.edge}" stroke-width="1.6">${paths.inner}</g>
     <g clip-path="url(#innerClip)">${panesMarkup}${localImpostsMarkup}${rootImpostsMarkup}</g>
+    <g class="impost-axis-dimensions">${axisDimensions.join("")}</g>
     <g class="dimensions">
       <line class="dimension-line" x1="${x}" y1="${y + height + 6}" x2="${x}" y2="${bottomDimensionY + 7}" opacity=".45" />
       <line class="dimension-line" x1="${x + width}" y1="${y + height + 6}" x2="${x + width}" y2="${bottomDimensionY + 7}" opacity=".45" />
@@ -1494,6 +1509,24 @@ function getCanvasPoint(event) {
 
 function bindCanvasDragging() {
   const svg = $("#windowCanvas");
+  const editAxisDimension = (badge) => {
+    selectImpostFromNode(badge);
+    renderAll();
+    const input = $("#impostPosition");
+    input.focus({ preventScroll: true });
+    try { input.select(); } catch { /* Some browsers do not select number inputs. */ }
+  };
+  svg.addEventListener("click", event => {
+    const badge = event.target.closest?.("[data-impost-dimension]");
+    if (badge) editAxisDimension(badge);
+  });
+  svg.addEventListener("keydown", event => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const badge = event.target.closest?.("[data-impost-dimension]");
+    if (!badge) return;
+    event.preventDefault();
+    editAxisDimension(badge);
+  });
   svg.addEventListener("click", event => {
     if (event.target !== svg || (state.selectedPane === null && !state.selectedImpost)) return;
     state.selectedPane = null;
