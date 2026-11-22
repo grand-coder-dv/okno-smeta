@@ -1006,7 +1006,11 @@ function glassGeometry({pane, rect, edges}, tech = getTechnology()) {
 }
 function glassSizeLabel(f) { return f.clearW>0 && f.clearH>0 && f.w>0 && f.h>0 ? `${Math.round(f.w)} × ${Math.round(f.h)} мм` : "—"; }
 function paneGlazingArea(index, pane, shapeFactor = 1) {
-  return glassGeometry(sectionLayout()[index]).fields.reduce((sum,f)=>sum+(f.clearW>0 && f.clearH>0 ? f.w*f.h : 0),0)*shapeFactor/1e6;
+  const entry=sectionLayout()[index], tech=getTechnology(), geometry=glassGeometry(entry,tech);
+  return geometry.fields.reduce((sum,f)=>{
+    if(f.clearW<=0 || f.clearH<=0 || f.w<=0 || f.h<=0) return sum;
+    return sum+(state.shape === "circle" ? fittedGlass(entry,geometry,f,tech).area : f.w*f.h*shapeFactor);
+  },0)/1e6;
 }
 
 function geometry() {
@@ -1564,6 +1568,27 @@ function fittedOutline(bounds, offsets, arcs, X, Y, sx, sy) {
   return {pts,screen,edges,extrema,boundary,path:`M ${screen[0].join(' ')} ${edges.map(e=>e.cmd).join(' ')} Z`};
 }
 
+function circularOutline(bounds,depth,X,Y) {
+  const [l,t,r,b]=bounds, cx=state.width/2, cy=state.height/2;
+  const radius=cx-depth;
+  const empty={path:"",boundary:[],w:0,h:0,area:0};
+  if(radius<=0 || r<=l || b<=t) return empty;
+  // Clip a densely sampled circular contour against the section or glazing field.
+  const count=720;
+  const ring=Array.from({length:count},(_,i)=>{
+    const theta=2*Math.PI*i/count;
+    return [cx+radius*Math.cos(theta),cy+radius*Math.sin(theta)];
+  });
+  const boundary=polygonClip(ring,rectPoints(bounds));
+  if(boundary.length<3) return empty;
+  const [left,top,right,bottom]=polyBounds(boundary);
+  const area=Math.abs(boundary.reduce((sum,p,i)=>{
+    const q=boundary[(i+1)%boundary.length];
+    return sum+(p[0]-cx)*(q[1]-cy)-(q[0]-cx)*(p[1]-cy);
+  },0))/2;
+  return area>1e-7 ? {path:polyPath(boundary,X,Y),boundary,w:right-left,h:bottom-top,area} : empty;
+}
+
 function fittedGlass(entry,geometry,f,tech,X=mm=>mm,Y=mm=>mm,sx=1,sy=1) {
   const {sashBox,opening}=geometry;
   const bite=tech.bite[sashBox ? "створка" : "рама"];
@@ -1572,6 +1597,7 @@ function fittedGlass(entry,geometry,f,tech,X=mm=>mm,Y=mm=>mm,sx=1,sy=1) {
     Math.abs(fbox[3]-opening[3]-bite),Math.abs(fbox[0]-opening[0]+bite)];
   const sides=[entry.edges[2],entry.edges[1],entry.edges[3],entry.edges[0]];
   const depth=tech.frame+(sashBox?tech.sash-SASH_LAP:0)-bite;
+  if(state.shape === "circle") return circularOutline(fbox,depth,X,Y);
   const poly=polygonPoints();
   if(poly){
     const points=polygonGlass(poly,geometry,f,tech);
@@ -1802,6 +1828,7 @@ function renderCanvas() {
     const sashArcs=state.shape==="arch" ? pane.sashArcs : null;
     const outerDepth=tech.frame-SASH_LAP, innerDepth=outerDepth+tech.sash;
     const sashOutline=(bounds,depth)=>{
+      if(state.shape === "circle") return circularOutline(bounds,depth,X,Y);
       if(!poly)return fit(bounds,depth,sashArcs);
       const boundary=polygonClip(rectPoints(bounds),poly,depth);
       return {path:polyPath(boundary,X,Y),boundary};
@@ -1815,7 +1842,7 @@ function renderCanvas() {
     if (sashBox && (state.shape==="arch" || state.shape==="rect") && opening[2]>opening[0] && opening[3]>opening[1]) {
       profileTargets+=profileEdgeTargets(outerSash,innerSash,"sash",index);
     }
-    if (sashBox && opening[2]>opening[0] && opening[3]>opening[1]) {
+    if (outerSash?.path && innerSash?.path && opening[2]>opening[0] && opening[3]>opening[1]) {
       sashMarkup += `<path d="${outerSash.path} ${innerSash.path}" fill="${profileColor}" fill-rule="evenodd" stroke="${material.edge}" stroke-width=".8" />`;
       const envelopeEntry={...entry,pane:{...pane,innerImposts:[]}};
       const envelopeGeometry=glassGeometry(envelopeEntry,tech);
