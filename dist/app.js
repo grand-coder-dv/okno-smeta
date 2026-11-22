@@ -1305,6 +1305,53 @@ function profileOutline(bounds, arcs, X, Y, sx, sy) {
   return {path:`M ${point(pts[0])} ${edges.map(e=>e.cmd).join(' ')} Z`, edges, pts,
     screen:pts.map(([x,y])=>[X(x),Y(y)])};
 }
+function frameCurve(side, offset) {
+  const arc = state.shape === "rect" && state.frameArcs?.[side];
+  if (!arc || !Number.isFinite(arc.radius)) return null;
+  const vertical = side % 2 === 1;
+  const span = vertical ? state.height : state.width;
+  const base = [0,state.width,state.height,0][side];
+  const outward = side === 0 || side === 3 ? -1 : 1;
+  const sign = outward * (arc.direction === "in" ? -1 : 1);
+  const radius = Math.max(span/2, arc.radius);
+  const center = base - sign*Math.sqrt(Math.max(0,radius*radius-span*span/4));
+  const signedRadius = radius - sign*outward*offset;
+  if (signedRadius <= 0) return null;
+  return t => center + sign*Math.sqrt(Math.max(0,signedRadius*signedRadius-(t-span/2)**2));
+}
+function fittedOutline(bounds, offsets, arcs, X, Y, sx, sy) {
+  const curves=offsets.map((offset,i)=>offset==null || arcs?.[i] ? null : frameCurve(i,offset));
+  if(!curves.some(Boolean)) return profileOutline(bounds,arcs,X,Y,sx,sy);
+  const [l,t,r,b]=bounds;
+  const fn=curves.map((f,i)=>f || (()=>[t,r,b,l][i]));
+  const pts=[[l,t],[r,t],[r,b],[l,b]].map(([x,y],i)=>{
+    const h=i<2?0:2, v=i===0||i===3?3:1;
+    for(let j=0;j<32;j++){ const xx=fn[v](y), yy=fn[h](xx); if(Math.abs(x-xx)+Math.abs(y-yy)<1e-6){x=xx;y=yy;break;} x=(x+xx)/2;y=(y+yy)/2; }
+    return [x,y];
+  });
+  const screen=pts.map(([x,y])=>[X(x),Y(y)]);
+  const toScreen=([x,y])=>`${X(x)} ${Y(y)}`;
+  const edges=pts.map((p,i)=>{
+    const q=pts[(i+1)%4], vertical=i%2===1, k=Number(vertical), curve=curves[i];
+    if (!curve && arcs?.[i]) {
+      const dx=q[0]-p[0],dy=q[1]-p[1],chord=Math.hypot(dx,dy),angle=Math.atan2(dy,dx);
+      const R=Math.max(chord/2,arcs[i].radius), sweep=arcs[i].direction==='in'?0:1;
+      const d=Math.asin(chord/(2*R))*(sweep?1:-1);
+      return {cmd:`A ${R*sx} ${R*sy} 0 0 ${sweep} ${toScreen(q)}`,reverse:`A ${R*sx} ${R*sy} 0 0 ${1-sweep} ${toScreen(p)}`,startAngle:angle-d,endAngle:angle+d};
+    }
+    const pieces=[p];
+    if(curve) for(let j=1;j<64;j++){
+      const u=p[k]+(q[k]-p[k])*j/64;
+      pieces.push(vertical?[curve(u),u]:[u,curve(u)]);
+    }
+    pieces.push(q);
+    const angle=(a,b)=>Math.atan2(b[1]-a[1],b[0]-a[0]);
+    return {cmd:pieces.slice(1).map(pt=>`L ${toScreen(pt)}`).join(' '),reverse:pieces.slice(0,-1).reverse().map(pt=>`L ${toScreen(pt)}`).join(' '),
+      startAngle:angle(p,pieces[1]),endAngle:angle(pieces.at(-2),q)};
+  });
+  return {pts,screen,edges,path:`M ${screen[0].join(' ')} ${edges.map(e=>e.cmd).join(' ')} Z`};
+}
+
 function profileEdgeTargets(outer, inner, type, index = null) {
   const label=type === 'frame' ? 'Рама' : 'Створка';
   const joints=outer.edges.map((edge,i)=>{
@@ -1409,7 +1456,7 @@ function renderCanvas() {
   if (state.shape === "rect") {
     const outer=profileOutline([0,0,state.width,state.height],state.frameArcs,X,Y,sx,sy);
     const inset=getTechnology().frame;
-    const inner=profileOutline([inset,inset,state.width-inset,state.height-inset],state.frameArcs,X,Y,sx,sy);
+    const inner=fittedOutline([inset,inset,state.width-inset,state.height-inset],[inset,inset,inset,inset],null,X,Y,sx,sy);
     if (state.width>2*inset && state.height>2*inset) profileTargets=profileEdgeTargets(outer,inner,"frame");
     if(Object.values(state.frameArcs||{}).some(Boolean)) {
       paths.outer=`<path d="${outer.path}" />`;
@@ -1439,6 +1486,11 @@ function renderCanvas() {
     const selected = index === state.selectedPane || multiSections.has(index);
     const paneKind = pane.opening === "fixed" ? "глухой секции" : "створке";
     const paneImpostFace = impostFace;
+    const sides=[entry.edges[2],entry.edges[1],entry.edges[3],entry.edges[0]];
+    const hasFrameArc=sides.some((touch,i)=>touch&&frameCurve(i,tech.frame));
+    const offsets=d=>sides.map(touch=>touch?d:null);
+    const fit=(bounds,depth,arcs=null)=>fittedOutline(bounds,offsets(depth),arcs,X,Y,sx,sy);
+    const border=(side,at,fallback)=>sides[side] ? (frameCurve(side,0)?.(at) ?? fallback) : fallback;
     let innerImpostsMarkup = "";
 
     pane.innerImposts.forEach((item) => {
@@ -1447,53 +1499,70 @@ function renderCanvas() {
       const lineX = px + item.position * paneWidth;
       const lineY = py + item.position * paneHeight;
       const physicalPosition = item.position * (isVertical ? physical.width : physical.height);
+      const y1=Y(border(0,physical.x+item.position*physical.width,physical.y));
+      const y2=Y(border(2,physical.x+item.position*physical.width,physical.y+physical.height));
+      const x1=X(border(3,physical.y+item.position*physical.height,physical.x));
+      const x2=X(border(1,physical.y+item.position*physical.height,physical.x+physical.width));
       if (isVertical) {
         addDimension(false, px, lineX, physical.x, physicalPosition, item, index);
         innerImpostsMarkup += `
-          <line class="impost-visible inner-impost-visible${active ? " selected" : ""}" x1="${lineX}" y1="${py}" x2="${lineX}" y2="${py + paneHeight}" stroke="${profileColor}" stroke-width="${paneImpostFace}" />
-          <line x1="${lineX}" y1="${py}" x2="${lineX}" y2="${py + paneHeight}" stroke="${material.edge}" stroke-width="1.2" opacity=".55" pointer-events="none" />
+          <line class="impost-visible inner-impost-visible${active ? " selected" : ""}" x1="${lineX}" y1="${y1}" x2="${lineX}" y2="${y2}" stroke="${profileColor}" stroke-width="${paneImpostFace}" />
+          <line x1="${lineX}" y1="${y1}" x2="${lineX}" y2="${y2}" stroke="${material.edge}" stroke-width="1.2" opacity=".55" pointer-events="none" />
           <rect class="impost-grip${active ? " selected" : ""}" x="${lineX - 7}" y="${py + paneHeight / 2 - 14}" width="14" height="28" rx="7" />
-          <line class="impost-hit" data-scope="pane" data-pane="${index}" data-orientation="vertical" data-id="${item.id}" x1="${lineX}" y1="${py}" x2="${lineX}" y2="${py + paneHeight}" tabindex="0" role="slider" aria-label="Вертикальный импост в ${paneKind} ${index + 1}" aria-valuenow="${Math.round(physicalPosition)}" />
+          <line class="impost-hit" data-scope="pane" data-pane="${index}" data-orientation="vertical" data-id="${item.id}" x1="${lineX}" y1="${y1}" x2="${lineX}" y2="${y2}" tabindex="0" role="slider" aria-label="Вертикальный импост в ${paneKind} ${index + 1}" aria-valuenow="${Math.round(physicalPosition)}" />
           `;
       } else {
         addDimension(true, py, lineY, physical.y, physicalPosition, item, index);
         innerImpostsMarkup += `
-          <line class="impost-visible inner-impost-visible${active ? " selected" : ""}" x1="${px}" y1="${lineY}" x2="${px + paneWidth}" y2="${lineY}" stroke="${profileColor}" stroke-width="${paneImpostFace}" />
-          <line x1="${px}" y1="${lineY}" x2="${px + paneWidth}" y2="${lineY}" stroke="${material.edge}" stroke-width="1.2" opacity=".55" pointer-events="none" />
+          <line class="impost-visible inner-impost-visible${active ? " selected" : ""}" x1="${x1}" y1="${lineY}" x2="${x2}" y2="${lineY}" stroke="${profileColor}" stroke-width="${paneImpostFace}" />
+          <line x1="${x1}" y1="${lineY}" x2="${x2}" y2="${lineY}" stroke="${material.edge}" stroke-width="1.2" opacity=".55" pointer-events="none" />
           <rect class="impost-grip${active ? " selected" : ""}" x="${px + paneWidth / 2 - 14}" y="${lineY - 7}" width="28" height="14" rx="7" />
-          <line class="impost-hit horizontal" data-scope="pane" data-pane="${index}" data-orientation="horizontal" data-id="${item.id}" x1="${px}" y1="${lineY}" x2="${px + paneWidth}" y2="${lineY}" tabindex="0" role="slider" aria-label="Горизонтальный импост в ${paneKind} ${index + 1}" aria-valuenow="${Math.round(physicalPosition)}" />
+          <line class="impost-hit horizontal" data-scope="pane" data-pane="${index}" data-orientation="horizontal" data-id="${item.id}" x1="${x1}" y1="${lineY}" x2="${x2}" y2="${lineY}" tabindex="0" role="slider" aria-label="Горизонтальный импост в ${paneKind} ${index + 1}" aria-valuenow="${Math.round(physicalPosition)}" />
           `;
       }
     });
 
-    localImpostsMarkup += innerImpostsMarkup;
-    if (pane.split) return;
+    if (pane.split) { localImpostsMarkup += innerImpostsMarkup; return; }
     const {opening,sashBox,fields} = glassGeometry(entry,tech);
     const sashArcs=state.shape==="rect" ? pane.sashArcs : null;
-    const outline=bounds=>profileOutline(bounds,sashArcs,X,Y,sx,sy);
+    const outerDepth=tech.frame-SASH_LAP, innerDepth=outerDepth+tech.sash;
+    const outerSash=sashBox && fit(sashBox,outerDepth,sashArcs);
+    const innerSash=sashBox && fit(opening,innerDepth,sashArcs);
+    if (innerSash) {
+      const id=`sashImpostClip-${index}`;
+      localImpostsMarkup += `<clipPath id="${id}"><path d="${innerSash.path}"/></clipPath><g clip-path="url(#${id})">${innerImpostsMarkup}</g>`;
+    } else localImpostsMarkup += innerImpostsMarkup;
     if (sashBox && state.shape==="rect" && opening[2]>opening[0] && opening[3]>opening[1]) {
-      profileTargets+=profileEdgeTargets(outline(sashBox),outline(opening),"sash",index);
+      profileTargets+=profileEdgeTargets(outerSash,innerSash,"sash",index);
     }
-    const path = bounds => outline(bounds).path;
     if (sashBox && opening[2]>opening[0] && opening[3]>opening[1]) {
-      sashMarkup += `<path d="${path(sashBox)} ${path(opening)}" fill="${profileColor}" fill-rule="evenodd" stroke="${material.edge}" stroke-width=".8" />`;
+      sashMarkup += `<path d="${outerSash.path} ${innerSash.path}" fill="${profileColor}" fill-rule="evenodd" stroke="${material.edge}" stroke-width=".8" />`;
       sashMarkup += openingSymbol(pane.opening,X(opening[0]),Y(opening[1]),(opening[2]-opening[0])*sx,(opening[3]-opening[1])*sy,pane.hingeSide);
     }
     for (const f of fields) {
       if (f.clearW<=0 || f.clearH<=0) continue;
       const w=f.w*sx,h=f.h*sy;
-      if (selected) glassMarkup += `<rect class="pane-selected" x="${X(f.x)}" y="${Y(f.y)}" width="${w}" height="${h}" fill="none" />`;
+      const bite=tech.bite[sashBox ? "створка" : "рама"];
+      const fbox=[f.x,f.y,f.x+f.w,f.y+f.h];
+      const contact=[Math.abs(fbox[1]-opening[1]+bite),Math.abs(fbox[2]-opening[2]-bite),
+        Math.abs(fbox[3]-opening[3]-bite),Math.abs(fbox[0]-opening[0]+bite)];
+      const depths=offsets((sashBox ? innerDepth : tech.frame)-bite).map((d,i)=>contact[i]<1e-5?d:null);
+      const glassPath=fittedOutline(fbox,depths,null,X,Y,sx,sy).path;
+      if (selected) glassMarkup += `<path class="pane-selected" d="${glassPath}" fill="none" />`;
       const font=Math.min(10,w/8,h/4);
       if (font>=4) glassMarkup += `<text x="${X(f.x)+w/2}" y="${Y(f.y)+h/2+Math.min(26,h/3)}"
-        text-anchor="middle" font-size="${font}" fill="#20384c" paint-order="stroke" stroke="#edf6fa" stroke-width="2">${state.shape === "rect" ? "" : "≈ "}${glassSizeLabel(f)}</text>`;
+        text-anchor="middle" font-size="${font}" fill="#20384c" paint-order="stroke" stroke="#edf6fa" stroke-width="2">${state.shape === "rect" && !customProfileArcs() ? "" : "≈ "}${glassSizeLabel(f)}</text>`;
     }
+    const paneOutline=hasFrameArc ? fit([physical.x,physical.y,physical.x+physical.width,physical.y+physical.height],0).path : null;
+    const areaAttrs=paneOutline?`d="${paneOutline}"`:`x="${px}" y="${py}" width="${paneWidth}" height="${paneHeight}"`;
+    const tag=paneOutline?"path":"rect";
     panesMarkup += `
       <g class="pane" data-index="${index}" clip-path="url(#innerClip)">
-        <rect x="${px}" y="${py}" width="${paneWidth}" height="${paneHeight}" fill="${glass.color}" />
-        <rect x="${px}" y="${py}" width="${paneWidth}" height="${paneHeight}" fill="url(#glassSheen)" opacity="0.55" />
+        <${tag} ${areaAttrs} fill="${glass.color}" />
+        <${tag} ${areaAttrs} fill="url(#glassSheen)" opacity="0.55" />
         <circle cx="${px + paneWidth / 2}" cy="${py + paneHeight / 2}" r="14" fill="rgba(255,255,255,.82)" stroke="rgba(53,80,105,.22)" />
         <text class="pane-number" x="${px + paneWidth / 2}" y="${py + paneHeight / 2 + 4}">${sectionNumber(index)}</text>
-        <rect class="pane-hit" data-pane="${index}" x="${px}" y="${py}" width="${paneWidth}" height="${paneHeight}" fill="transparent" tabindex="0" role="button" aria-label="Настроить секцию ${index + 1}" />
+        <${tag} class="pane-hit" data-pane="${index}" ${areaAttrs} fill="transparent" tabindex="0" role="button" aria-label="Настроить секцию ${index + 1}" />
       </g>`;
   });
 
@@ -1503,10 +1572,10 @@ function renderCanvas() {
     const active = isSelectedImpost("root", "vertical", item.id);
     addDimension(false, x, lineX, 0, item.position, item);
     rootImpostsMarkup += `
-      <line class="impost-visible${active ? " selected" : ""}" x1="${lineX}" y1="${box.y - 2}" x2="${lineX}" y2="${box.y + box.height + 2}" stroke="${profileColor}" stroke-width="${impostFace}" />
-      <line x1="${lineX}" y1="${box.y - 2}" x2="${lineX}" y2="${box.y + box.height + 2}" stroke="${material.edge}" stroke-width="1.4" opacity=".55" pointer-events="none" />
+      <line class="impost-visible${active ? " selected" : ""}" x1="${lineX}" y1="${state.frameArcs?.[0] ? Y(frameCurve(0,0)?.(item.position) ?? 0) : box.y - 2}" x2="${lineX}" y2="${state.frameArcs?.[2] ? Y(frameCurve(2,0)?.(item.position) ?? state.height) : box.y + box.height + 2}" stroke="${profileColor}" stroke-width="${impostFace}" />
+      <line x1="${lineX}" y1="${state.frameArcs?.[0] ? Y(frameCurve(0,0)?.(item.position) ?? 0) : box.y - 2}" x2="${lineX}" y2="${state.frameArcs?.[2] ? Y(frameCurve(2,0)?.(item.position) ?? state.height) : box.y + box.height + 2}" stroke="${material.edge}" stroke-width="1.4" opacity=".55" pointer-events="none" />
       <rect class="impost-grip${active ? " selected" : ""}" x="${lineX - 8}" y="${box.y + box.height / 2 - 18}" width="16" height="36" rx="8" />
-      <line class="impost-hit" data-scope="root" data-orientation="vertical" data-id="${item.id}" x1="${lineX}" y1="${box.y - 2}" x2="${lineX}" y2="${box.y + box.height + 2}" tabindex="0" role="slider" aria-label="Вертикальный импост рамы" aria-valuemin="0" aria-valuemax="${state.width}" aria-valuenow="${Math.round(item.position)}" />
+      <line class="impost-hit" data-scope="root" data-orientation="vertical" data-id="${item.id}" x1="${lineX}" y1="${state.frameArcs?.[0] ? Y(frameCurve(0,0)?.(item.position) ?? 0) : box.y - 2}" x2="${lineX}" y2="${state.frameArcs?.[2] ? Y(frameCurve(2,0)?.(item.position) ?? state.height) : box.y + box.height + 2}" tabindex="0" role="slider" aria-label="Вертикальный импост рамы" aria-valuemin="0" aria-valuemax="${state.width}" aria-valuenow="${Math.round(item.position)}" />
       `;
   });
   state.hImposts.forEach((item, index) => {
@@ -1514,10 +1583,10 @@ function renderCanvas() {
     const active = isSelectedImpost("root", "horizontal", item.id);
     addDimension(true, y, lineY, 0, item.position, item);
     rootImpostsMarkup += `
-      <line class="impost-visible${active ? " selected" : ""}" x1="${box.x - 2}" y1="${lineY}" x2="${box.x + box.width + 2}" y2="${lineY}" stroke="${profileColor}" stroke-width="${impostFace}" />
-      <line x1="${box.x - 2}" y1="${lineY}" x2="${box.x + box.width + 2}" y2="${lineY}" stroke="${material.edge}" stroke-width="1.4" opacity=".55" pointer-events="none" />
+      <line class="impost-visible${active ? " selected" : ""}" x1="${state.frameArcs?.[3] ? X(frameCurve(3,0)?.(item.position) ?? 0) : box.x - 2}" y1="${lineY}" x2="${state.frameArcs?.[1] ? X(frameCurve(1,0)?.(item.position) ?? state.width) : box.x + box.width + 2}" y2="${lineY}" stroke="${profileColor}" stroke-width="${impostFace}" />
+      <line x1="${state.frameArcs?.[3] ? X(frameCurve(3,0)?.(item.position) ?? 0) : box.x - 2}" y1="${lineY}" x2="${state.frameArcs?.[1] ? X(frameCurve(1,0)?.(item.position) ?? state.width) : box.x + box.width + 2}" y2="${lineY}" stroke="${material.edge}" stroke-width="1.4" opacity=".55" pointer-events="none" />
       <rect class="impost-grip${active ? " selected" : ""}" x="${box.x + box.width / 2 - 18}" y="${lineY - 8}" width="36" height="16" rx="8" />
-      <line class="impost-hit horizontal" data-scope="root" data-orientation="horizontal" data-id="${item.id}" x1="${box.x - 2}" y1="${lineY}" x2="${box.x + box.width + 2}" y2="${lineY}" tabindex="0" role="slider" aria-label="Горизонтальный импост рамы" aria-valuemin="0" aria-valuemax="${state.height}" aria-valuenow="${Math.round(item.position)}" />
+      <line class="impost-hit horizontal" data-scope="root" data-orientation="horizontal" data-id="${item.id}" x1="${state.frameArcs?.[3] ? X(frameCurve(3,0)?.(item.position) ?? 0) : box.x - 2}" y1="${lineY}" x2="${state.frameArcs?.[1] ? X(frameCurve(1,0)?.(item.position) ?? state.width) : box.x + box.width + 2}" y2="${lineY}" tabindex="0" role="slider" aria-label="Горизонтальный импост рамы" aria-valuemin="0" aria-valuemax="${state.height}" aria-valuenow="${Math.round(item.position)}" />
       `;
   });
 
@@ -1964,7 +2033,7 @@ function renderAll() {
   renderSpecification(calculation);
   if(customProfileArcs()) {
     $("#currentEstimateStatus").textContent="Эскиз с дугами";
-    $("#currentEstimateHint").textContent="Размеры и цена относятся к прямоугольной основе, а не к контуру с дугами. Не используйте их для изготовления.";
+    $("#currentEstimateHint").textContent="Контуры с дугами показаны схематически; числовые размеры и цена относятся к прямоугольной основе. Не используйте их для изготовления.";
   }
   updateActiveControls();
   renderProjectToolbar();
