@@ -130,6 +130,14 @@
               <span>Цвет / отделка</span>
               <select id="finish"></select>
             </label>
+            <label class="field">
+              <span>Тип изделия</span>
+              <select id="productType">
+                <option value="window">Окно</option>
+                <option value="entranceDoor">Входная дверь</option>
+                <option value="balconyDoor">Балконная дверь</option>
+              </select>
+            </label>
           </div>
 
           <fieldset class="control-group">
@@ -318,6 +326,7 @@
           </div>
 
           <dl class="summary-list">
+            <div><dt>Тип изделия</dt><dd id="summaryProductType">Окно</dd></div>
             <div><dt>Материал</dt><dd id="summaryMaterial">ПВХ</dd></div>
             <div><dt>Система</dt><dd id="summaryProfile">—</dd></div>
             <div><dt>Ширина профилей</dt><dd id="summaryTechnology">—</dd></div>
