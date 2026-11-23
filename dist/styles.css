@@ -215,7 +215,7 @@ summary:focus-visible,
 .project-current {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(0, auto) auto;
+  grid-template-columns: minmax(0, auto) auto auto;
   align-items: center;
   gap: 7px 10px;
 }
@@ -250,6 +250,17 @@ summary:focus-visible,
   color: #176248;
   background: #e6f5ee;
 }
+
+.order-name-edit {
+  padding: 4px 7px;
+  color: var(--accent);
+  background: #fff3e9;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+.order-name-edit:hover, .order-name-edit:focus-visible { background: #ffe6d1; }
 
 .project-actions {
   display: flex;
@@ -519,6 +530,10 @@ h3 {
 
 .segmented.three {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.segmented.four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .segmented button {
@@ -1093,6 +1108,8 @@ h3 {
 
 .order-panel {
   margin-top: 18px;
+  padding: 20px 22px;
+  min-width: 0;
 }
 
 .order-header {
@@ -1126,19 +1143,33 @@ h3 {
 .order-items {
   margin-top: 16px;
   display: grid;
-  gap: 10px;
+  gap: 8px;
+  min-width: 0;
 }
 
 .order-item {
-  padding: 14px 16px;
+  padding: 9px 12px;
   display: grid;
-  grid-template-columns: minmax(230px, 1.35fr) minmax(180px, 0.8fr) auto;
+  grid-template-columns: 78px minmax(0, 1fr) minmax(100px, auto) auto;
   align-items: center;
-  gap: 18px;
+  gap: 10px;
+  min-width: 0;
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 12px;
 }
+
+.order-item-preview {
+  width: 78px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  background: #f5f8fa;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+
+.order-sketch { width: 100%; height: 100%; display: block; }
 
 .order-item.editing {
   border-color: var(--accent);
@@ -1148,9 +1179,11 @@ h3 {
 .order-item-title {
   display: grid;
   gap: 5px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
-.order-item-title > div {
+.order-item-heading {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -1160,7 +1193,20 @@ h3 {
 .order-item-title strong {
   color: var(--navy);
   font-size: 0.94rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
+
+.order-rename {
+  padding: 3px 6px;
+  color: var(--accent);
+  background: #fff3e9;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1rem;
+}
+.order-rename:hover, .order-rename:focus-visible { background: #ffe6d1; }
 
 .order-item-title small {
   color: var(--muted);
@@ -1190,6 +1236,8 @@ h3 {
   display: grid;
   gap: 4px;
   text-align: right;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .order-item-price span {
@@ -1205,11 +1253,13 @@ h3 {
 .order-item-actions {
   display: flex;
   gap: 7px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .order-item-actions .button {
-  min-height: 38px;
-  padding: 0 12px;
+  min-height: 34px;
+  padding: 0 9px;
   font-size: 0.73rem;
 }
 
@@ -1217,7 +1267,7 @@ h3 {
   margin-top: 14px;
   padding: 14px 16px;
   display: grid;
-  grid-template-columns: 130px 150px minmax(210px, 1fr);
+  grid-template-columns: minmax(90px, 130px) minmax(95px, 150px) minmax(0, 1fr);
   align-items: center;
   gap: 14px;
   background: var(--navy);
@@ -1227,6 +1277,8 @@ h3 {
 .order-totals > div {
   display: grid;
   gap: 3px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .order-totals span {
@@ -1523,6 +1575,8 @@ tbody tr:hover {
 .project-card-actions {
   display: flex;
   gap: 7px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .project-card-actions .button {
@@ -1930,11 +1984,12 @@ tbody tr:hover {
   }
 
   .order-item {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 78px minmax(0, 1fr) auto;
   }
 
+  .order-item-price { grid-column: 3; text-align: right; }
   .order-item-actions {
-    grid-column: 1 / -1;
+    grid-column: 2 / -1;
     justify-content: flex-end;
   }
 
@@ -2021,15 +2076,20 @@ tbody tr:hover {
   }
 
   .order-item {
-    grid-template-columns: 1fr;
+    grid-template-columns: 70px minmax(0, 1fr);
   }
 
+  .order-panel { padding: 15px; }
+  .order-item-preview { width: 70px; height: 60px; }
+
   .order-item-price {
+    grid-column: 1 / -1;
     text-align: left;
   }
 
   .order-item-actions {
-    grid-column: auto;
+    grid-column: 1 / -1;
+    justify-content: stretch;
   }
 
   .order-item-actions .button {
