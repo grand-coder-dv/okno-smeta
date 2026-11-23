@@ -316,7 +316,7 @@ function createDefaultState() {
     shape: "rect",
     shapeModeVersion: 1,
     width: 1300,
-    height: 1300,
+    height: 1400,
     quantity: 1,
     cols: 1,
     rows: 1,
@@ -461,7 +461,7 @@ function currentProductIsDirty() {
 }
 
 function isPreliminaryShape(shape = state.shape) {
-  return shape === "circle" || customProfileArcs();
+  return shape === "circle";
 }
 function inferredShapeMode(config) {
   if(config.shapeModeVersion || config.shape!=="rect")return config.shape;
@@ -515,7 +515,7 @@ function validateCurrentProduct() {
     if (entry.pane.split) continue;
     if (!openingAllowed(entry.pane.opening)) return `Секция № ${sectionNumber(i)}: тип открывания недоступен для этой системы.`;
     const geo=glassGeometry(entry,tech);
-    if ((state.shape === "circle" || state.shape === "skew") && geo.fields.some(f=>f.clearW>1e-6 && f.clearH>1e-6 && (fittedGlass(entry,geo,f,tech).area ?? f.w*f.h)<=1e-7)) {
+    if ((state.shape === "circle" || state.shape === "skew" || hasSlantedImposts() || customProfileArcs()) && geo.fields.some(f=>f.clearW>1e-6 && f.clearH>1e-6 && (fittedGlass(entry,geo,f,tech).area ?? f.w*f.h)<=1e-7)) {
       return `Секция № ${sectionNumber(i)}: в этой части контура нет места для стеклопакета. Сместите или удалите импост.`;
     }
     if (geo.fields.some(f=>f.clearW< -1e-6 || f.clearH< -1e-6)) {
@@ -542,9 +542,18 @@ function restoreProductState(configuration) {
   renderAll();
 }
 
-function resetCurrentProduct() {
+function resetCurrentProduct(previous = null) {
   editingOrderItemId = null;
   state = createDefaultState();
+  if (previous) {
+    for (const key of ["material", "profile", "finish", "productType", "shape", "width", "height", "defaultGlass"]) {
+      if (previous[key] !== undefined) state[key] = previous[key];
+    }
+    if (state.shape === "skew" && previous.framePolygon) state.framePolygon = cloneData(previous.framePolygon);
+    if (state.shape === "arch" && previous.frameArcs) state.frameArcs = cloneData(previous.frameArcs);
+    state.panes = [{ opening: "fixed", glass: state.defaultGlass, innerImposts: [] }];
+  }
+  activeProfileEdge = null;
   multiSections.clear();
   sharedAxis = null;
   syncFormFromState();
@@ -940,7 +949,6 @@ function saveCurrentOrderItem() {
       return false;
     }
   }
-  if(customProfileArcs()) return showToast("Дуги пока доступны для эскиза. Для добавления в заказ нужен расчёт криволинейного стеклопакета.");
   ensurePanes();
   const validationError = validateCurrentProduct();
   if (validationError) {
@@ -981,7 +989,7 @@ function saveCurrentOrderItem() {
     showToast(`${nextItem.name} добавлено в заказ`);
   }
   projectDirty = true;
-  resetCurrentProduct();
+  resetCurrentProduct(nextItem.configuration);
   return true;
 }
 
@@ -1101,25 +1109,25 @@ function primaryBoundaries(orientation) {
 
 function sectionLayout(x = primaryBoundaries("vertical"), y = primaryBoundaries("horizontal")) {
   const entries = [];
-  function visit(pane, rect, [l,r,t,b]) {
-    entries.push({ pane, rect, edges: [l,r,t,b] });
+  function visit(pane, rect, [l,r,t,b], rootCol, rootRow) {
+    entries.push({ pane, rect, edges: [l,r,t,b], rootCol, rootRow });
     if (!pane.split) return;
     const [a,c] = pane.children;
     const p = pane.split.position;
     if (pane.split.orientation === "vertical") {
       const d = rect.width*p;
-      visit(a,{...rect,width:d},[l,false,t,b]);
-      visit(c,{...rect,x:rect.x+d,width:rect.width-d},[false,r,t,b]);
+      visit(a,{...rect,width:d},[l,false,t,b],rootCol,rootRow);
+      visit(c,{...rect,x:rect.x+d,width:rect.width-d},[false,r,t,b],rootCol,rootRow);
     } else {
       const d = rect.height*p;
-      visit(a,{...rect,height:d},[l,r,t,false]);
-      visit(c,{...rect,y:rect.y+d,height:rect.height-d},[l,r,false,b]);
+      visit(a,{...rect,height:d},[l,r,t,false],rootCol,rootRow);
+      visit(c,{...rect,y:rect.y+d,height:rect.height-d},[l,r,false,b],rootCol,rootRow);
     }
   }
   state.panes.forEach((pane,i) => {
     const c=i%state.cols, r=Math.floor(i/state.cols);
     visit(pane,{x:x[c],y:y[r],width:x[c+1]-x[c],height:y[r+1]-y[r]},
-      [c===0,c===state.cols-1,r===0,r===state.rows-1]);
+      [c===0,c===state.cols-1,r===0,r===state.rows-1],c,r);
   });
   return entries;
 }
@@ -1226,7 +1234,18 @@ function updateMaterialSelects(reset = false, preserveProfile = false) {
 
 function glassGeometry({pane, rect, edges}, tech = getTechnology()) {
   const [fl,fr,ft,fb] = edges.map(outer => outer ? tech.frame : tech.impost/2);
-  const [l,t,r,b] = [rect.x+fl,rect.y+ft,rect.x+rect.width-fr,rect.y+rect.height-fb];
+  const poly=constructionPolygon();
+  const outer=poly ? polygonClip(poly,rectPoints([
+    rect.x, edges[2] ? Math.min(rect.y,...poly.map(p=>p[1])) : rect.y,
+    rect.x+rect.width, edges[3] ? Math.max(rect.y+rect.height,...poly.map(p=>p[1])) : rect.y+rect.height
+  ])) : null;
+  const shapeBounds=outer?.length>=3 ? polyBounds(outer) : null;
+  const [l,t,r,b] = [
+    (edges[0] && shapeBounds ? Math.min(rect.x,shapeBounds[0]) : rect.x)+fl,
+    (edges[2] && shapeBounds ? Math.min(rect.y,shapeBounds[1]) : rect.y)+ft,
+    (edges[1] && shapeBounds ? Math.max(rect.x+rect.width,shapeBounds[2]) : rect.x+rect.width)-fr,
+    (edges[3] && shapeBounds ? Math.max(rect.y+rect.height,shapeBounds[3]) : rect.y+rect.height)-fb
+  ];
   const sash = pane.opening !== "fixed";
   const sashBox = sash ? [l-SASH_LAP,t-SASH_LAP,r+SASH_LAP,b+SASH_LAP] : null;
   const d = sash ? tech.sash-SASH_LAP : 0;
@@ -1244,14 +1263,14 @@ function glassGeometry({pane, rect, edges}, tech = getTechnology()) {
   };
   const xs=intervals("vertical",opening[0],opening[2],rect.x,rect.width,bites[0],bites[1]);
   const ys=intervals("horizontal",opening[1],opening[3],rect.y,rect.height,bites[2],bites[3]);
-  return {opening,sashBox,fields:ys.flatMap(y=>xs.map(x=>({x:x.start,y:y.start,w:x.size,h:y.size,clearW:x.clear,clearH:y.clear})))};
+  return {opening,sashBox,fields:ys.flatMap((y,row)=>xs.map((x,col)=>({x:x.start,y:y.start,w:x.size,h:y.size,clearW:x.clear,clearH:y.clear,row,col})))};
 }
 function glassSizeLabel(f) { return f.clearW>0 && f.clearH>0 && f.w>0 && f.h>0 ? `${Math.round(f.w)} × ${Math.round(f.h)} мм` : "—"; }
 function paneGlazingArea(index, pane, shapeFactor = 1) {
   const entry=sectionLayout()[index], tech=getTechnology(), geo=glassGeometry(entry,tech);
   return geo.fields.reduce((sum,f)=>{
     if(f.clearW<=1e-6 || f.clearH<=1e-6 || f.w<=0 || f.h<=0) return sum;
-    return sum+(state.shape === "circle" || state.shape === "skew" ? (fittedGlass(entry,geo,f,tech).area ?? f.w*f.h) : f.w*f.h*shapeFactor);
+    return sum+(state.shape === "circle" || state.shape === "skew" || hasSlantedImposts() || customProfileArcs() ? (fittedGlass(entry,geo,f,tech).area ?? f.w*f.h) : f.w*f.h*shapeFactor);
   },0)/1e6;
 }
 
@@ -1276,7 +1295,42 @@ function geometry() {
   const customFrame=customFrameMeasures();
   if(customFrame){area=customFrame.area;perimeter=customFrame.perimeter;}
   const shapeFactor = customFrame ? 1 : Math.min(1, area / Math.max(widthM * heightM, 0.001));
-  const primaryImpost = state.vImposts.length * heightM * verticalFactor + state.hImposts.length * widthM * horizontalFactor;
+  const curvedLength = (orientation, position, rect) => {
+    const poly=constructionPolygon();
+    if (poly) {
+      const range=outlineRange(poly,orientation === "vertical" ? 0 : 1,position);
+      if (!range) return 0;
+      const low=orientation === "vertical" ? rect.y : rect.x;
+      const high=low+(orientation === "vertical" ? rect.height : rect.width);
+      const bounds=polyBounds(poly);
+      const axis=orientation === "vertical" ? 1 : 0;
+      const clippedLow=low===0 ? Math.min(low,bounds[axis]) : low;
+      const clippedHigh=high===(orientation === "vertical" ? state.height : state.width) ? Math.max(high,bounds[axis+2]) : high;
+      return Math.max(0,Math.min(clippedHigh,range[1])-Math.max(clippedLow,range[0]))/1000;
+    }
+    if (!customProfileArcs()) return (orientation === "vertical" ? rect.height : rect.width) / 1000;
+    if (orientation === "vertical") {
+      const top = rect.y === 0 ? (frameCurve(0,0)?.(position) ?? rect.y) : rect.y;
+      const bottom = rect.y + rect.height === state.height ? (frameCurve(2,0)?.(position) ?? state.height) : rect.y + rect.height;
+      return Math.max(0, Math.min(rect.y+rect.height,bottom)-Math.max(rect.y,top))/1000;
+    }
+    const left = rect.x === 0 ? (frameCurve(3,0)?.(position) ?? rect.x) : rect.x;
+    const right = rect.x + rect.width === state.width ? (frameCurve(1,0)?.(position) ?? state.width) : rect.x+rect.width;
+    return Math.max(0,Math.min(rect.x+rect.width,right)-Math.max(rect.x,left))/1000;
+  };
+  const fullRect={x:0,y:0,width:state.width,height:state.height};
+  const rootLength=(item,orientation)=>{
+    if(constructionPolygon()){
+      const poly=constructionPolygon(),inner=polygonClip(poly,poly,getTechnology().frame);
+      const [a,b]=impostSegment(item,orientation,fullRect,inner,true);
+      return Math.hypot(b[0]-a[0],b[1]-a[1])/1000;
+    }
+    return curvedLength(orientation,item.position,fullRect);
+  };
+  const primaryImpost = customProfileArcs() || constructionPolygon()
+    ? state.vImposts.reduce((sum,item)=>sum+rootLength(item,"vertical"),0)
+      +state.hImposts.reduce((sum,item)=>sum+rootLength(item,"horizontal"),0)
+    : state.vImposts.length * heightM * verticalFactor + state.hImposts.length * widthM * horizontalFactor;
   let nestedImpost = 0;
   let nestedCount = 0;
   let glassUnits = 0;
@@ -1285,12 +1339,16 @@ function geometry() {
     const paneRect = getPanePhysicalRect(index);
     pane.innerImposts.forEach((item) => {
       nestedCount += 1;
-      nestedImpost += item.orientation === "vertical" ? (paneRect.height / 1000) * verticalFactor : (paneRect.width / 1000) * horizontalFactor;
+      nestedImpost += constructionPolygon()
+        ? (()=>{const [a,b]=impostSegment(item,item.orientation,paneRect,sectionContour(sectionLayout()[index],constructionPolygon(),getTechnology().frame));return Math.hypot(b[0]-a[0],b[1]-a[1])/1000;})()
+        : customProfileArcs()
+        ? curvedLength(item.orientation, item.orientation === "vertical" ? paneRect.x + paneRect.width*item.position : paneRect.y + paneRect.height*item.position, paneRect)
+        : item.orientation === "vertical" ? (paneRect.height / 1000) * verticalFactor : (paneRect.width / 1000) * horizontalFactor;
     });
     if (pane.split) return;
     const entry=sectionLayout()[index], tech=getTechnology(), geo=glassGeometry(entry,tech);
     paneGlassCounts[index] = geo.fields.filter(f=>f.clearW>1e-6 && f.clearH>1e-6 &&
-      ((state.shape === "circle" || state.shape === "skew") ? (fittedGlass(entry,geo,f,tech).area ?? f.w*f.h)>1e-7 : true)).length;
+      ((state.shape === "circle" || state.shape === "skew" || hasSlantedImposts() || customProfileArcs()) ? (fittedGlass(entry,geo,f,tech).area ?? f.w*f.h)>1e-7 : true)).length;
     glassUnits += paneGlassCounts[index];
     paneGlazingAreas[index] = paneGlazingArea(index, pane, shapeFactor);
   });
@@ -1535,6 +1593,14 @@ function isSelectedImpost(scope, orientation, id, paneIndex = null) {
 function polygonPoints() {
   return state.shape === "skew" && state.framePolygon?.map(([x,y])=>[x*state.width,y*state.height]);
 }
+function hasSlantedImposts() {
+  if(state.shape!=="skew")return false;
+  const nested=panes=>(panes||[]).some(p=>p.innerImposts?.some(i=>i.endOffsets?.some(Boolean)) || nested(p.children));
+  return state.vImposts.some(i=>i.endOffsets?.some(Boolean)) || state.hImposts.some(i=>i.endOffsets?.some(Boolean)) || nested(state.panes);
+}
+function constructionPolygon() {
+  return polygonPoints();
+}
 const cross2=(a,b,c)=>(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
 function polygonClip(subject, boundary, inset=0) {
   let out=subject;
@@ -1553,10 +1619,81 @@ function polygonClip(subject, boundary, inset=0) {
 function rectPoints([l,t,r,b]) { return [[l,t],[r,t],[r,b],[l,b]]; }
 function polyPath(points,X,Y) { return points.length>=3 ? `M ${points.map(([x,y])=>`${X(x)} ${Y(y)}`).join(' L ')} Z` : ""; }
 function polyBounds(p) { return [Math.min(...p.map(v=>v[0])),Math.min(...p.map(v=>v[1])),Math.max(...p.map(v=>v[0])),Math.max(...p.map(v=>v[1]))]; }
-function polygonGlass(poly, geometry, f, tech) {
+function clipSlantedSections(points,entry,inset=0) {
+  if(!points.length || !entry || !constructionPolygon())return points;
+  const full={x:0,y:0,width:state.width,height:state.height},outer=constructionPolygon();
+  const borders=[
+    [state.vImposts[entry.rootCol-1],"vertical",-1],
+    [state.vImposts[entry.rootCol],"vertical",1],
+    [state.hImposts[entry.rootRow-1],"horizontal",1],
+    [state.hImposts[entry.rootRow],"horizontal",-1]
+  ];
+  let result=points;
+  for(const [item,orientation,sign] of borders){
+    if(!item?.endOffsets?.some(Boolean))continue;
+    const [a,b]=impostSegment(item,orientation,full,outer,true);
+    const length=Math.hypot(b[0]-a[0],b[1]-a[1]);
+    if(length<1e-7)continue;
+    const input=result;result=[];
+    input.forEach((p,i)=>{
+      const q=input[(i+1)%input.length],v=cross2(a,b,p)*sign-inset*length,w=cross2(a,b,q)*sign-inset*length;
+      if(v>=-1e-7)result.push(p);
+      if((v>1e-7 && w< -1e-7)||(v< -1e-7 && w>1e-7))result.push(p.map((n,k)=>n+(q[k]-n)*v/(v-w)));
+    });
+  }
+  return result;
+}
+function slantedBounds(bounds,entry,field=null) {
+  if(!entry || !constructionPolygon())return bounds;
+  const [l,t,r,b]=bounds;
+  const tech=getTechnology(),margin=tech.frame+tech.sash+tech.impost;
+  const extent=item=>item?.endOffsets?.some(Boolean) ? margin+Math.max(...item.endOffsets.map(Math.abs)) : 0;
+  const vertical=entry.pane.innerImposts.filter(i=>i.orientation==="vertical").length;
+  const horizontal=entry.pane.innerImposts.filter(i=>i.orientation==="horizontal").length;
+  return [l-(field && field.col!==0?0:extent(state.vImposts[entry.rootCol-1])),
+    t-(field && field.row!==0?0:extent(state.hImposts[entry.rootRow-1])),
+    r+(field && field.col!==vertical?0:extent(state.vImposts[entry.rootCol])),
+    b+(field && field.row!==horizontal?0:extent(state.hImposts[entry.rootRow]))];
+}
+function sectionContour(entry,poly=constructionPolygon(),frameInset=0) {
+  if(!poly)return null;
+  const {rect,edges}=entry, limits=polyBounds(poly);
+  const bounds=[edges[0]?Math.min(rect.x,limits[0]):rect.x,
+    edges[2]?Math.min(rect.y,limits[1]):rect.y,
+    edges[1]?Math.max(rect.x+rect.width,limits[2]):rect.x+rect.width,
+    edges[3]?Math.max(rect.y+rect.height,limits[3]):rect.y+rect.height];
+  const insetPoly=frameInset ? polygonClip(poly,poly,frameInset) : poly;
+  return clipSlantedSections(polygonClip(insetPoly,rectPoints(slantedBounds(bounds,entry))),entry);
+}
+function polygonGlass(poly, geometry, f, tech, entry) {
   const bite=tech.bite[geometry.sashBox?"створка":"рама"];
   const depth=tech.frame+(geometry.sashBox?tech.sash-SASH_LAP:0)-bite;
-  return polygonClip(rectPoints([f.x,f.y,f.x+f.w,f.y+f.h]),poly,depth);
+  const vertical=entry.pane.innerImposts.filter(v=>v.orientation==="vertical").sort((a,b)=>a.position-b.position);
+  const horizontal=entry.pane.innerImposts.filter(v=>v.orientation==="horizontal").sort((a,b)=>a.position-b.position);
+  const adjacent=[vertical[f.col-1],vertical[f.col],horizontal[f.row-1],horizontal[f.row]];
+  const stretch=item=>Math.max(0,...(item?.endOffsets||[]).map(Math.abs));
+  let [l,t,r,b]=slantedBounds([f.x,f.y,f.x+f.w,f.y+f.h],entry,f);
+  l-=stretch(adjacent[0]);r+=stretch(adjacent[1]);t-=stretch(adjacent[2]);b+=stretch(adjacent[3]);
+  const rootGlassInset=geometry.sashBox
+    ? tech.impost/2+tech.sash-SASH_LAP-tech.bite["створка"]
+    : tech.impost/2-tech.bite["импост"];
+  let result=clipSlantedSections(polygonClip(rectPoints([l,t,r,b]),poly,depth),entry,rootGlassInset);
+  const frame=sectionContour(entry,poly,tech.frame);
+  for(const [item,orientation,sign] of [[adjacent[0],"vertical",-1],[adjacent[1],"vertical",1],
+    [adjacent[2],"horizontal",1],[adjacent[3],"horizontal",-1]]){
+    if(!item?.endOffsets?.some(Boolean))continue;
+    const [a,b]=impostSegment(item,orientation,entry.rect,frame);
+    const length=Math.hypot(b[0]-a[0],b[1]-a[1]);
+    if(length<1e-7)continue;
+    const face=(tech.impost/2-tech.bite["импост"])*length;
+    const input=result;result=[];
+    input.forEach((p,i)=>{
+      const q=input[(i+1)%input.length],v=cross2(a,b,p)*sign-face,w=cross2(a,b,q)*sign-face;
+      if(v>=-1e-7)result.push(p);
+      if((v>1e-7 && w< -1e-7)||(v< -1e-7 && w>1e-7))result.push(p.map((n,k)=>n+(q[k]-n)*v/(v-w)));
+    });
+  }
+  return result;
 }
 function outlineRange(points, axis, at) {
   const values=[];
@@ -1566,6 +1703,63 @@ function outlineRange(points, axis, at) {
     if(at>=Math.min(a,b)-1e-7 && at<=Math.max(a,b)+1e-7) values.push(p[1-axis]+(q[1-axis]-p[1-axis])*(at-a)/(b-a));
   });
   return values.length?[Math.min(...values),Math.max(...values)]:null;
+}
+function impostSegment(item, orientation, rect, outer = constructionPolygon(), root = false) {
+  const vertical=orientation === "vertical";
+  const base=root ? item.position : (vertical ? rect.x+rect.width*item.position : rect.y+rect.height*item.position);
+  const offsets=item.endOffsets || [0,0];
+  const from=base+(offsets[0]||0), to=base+(offsets[1]||0);
+  const lower=vertical ? rect.x : rect.y, upper=lower+(vertical ? rect.width : rect.height);
+  const a=clamp(from,lower,upper), b=clamp(to,lower,upper);
+  if (!outer) return vertical ? [[a,rect.y],[b,rect.y+rect.height]] : [[rect.x,a],[rect.x+rect.width,b]];
+  const first=outlineRange(outer,vertical ? 0 : 1,a);
+  const last=outlineRange(outer,vertical ? 0 : 1,b);
+  const segment=vertical
+    ? [[a,first ? first[0] : rect.y],[b,last ? last[1] : rect.y+rect.height]]
+    : [[first ? first[0] : rect.x,a],[last ? last[1] : rect.x+rect.width,b]];
+  if(item.endAnchors) for(let end=0;end<2;end++) {
+    const choices=root ? (vertical ? state.hImposts : state.vImposts)
+      : sectionPanes().find(p=>p.innerImposts?.includes(item))?.innerImposts || [];
+    const other=choices.find(candidate=>candidate.id===item.endAnchors[end] && candidate.orientation!==orientation);
+    if(!other || other.endAnchors?.some(Boolean))continue;
+    const line=impostSegment(other,vertical ? "horizontal" : "vertical",rect,outer,root);
+    const p=segment[0],q=segment[1],u=line[0],v=line[1];
+    const dx=q[0]-p[0],dy=q[1]-p[1],ex=v[0]-u[0],ey=v[1]-u[1];
+    const determinant=dx*ey-dy*ex;
+    if(Math.abs(determinant)<1e-8)continue;
+    const t=((u[0]-p[0])*ey-(u[1]-p[1])*ex)/determinant;
+    if(t>=0 && t<=1)segment[end]=[p[0]+t*dx,p[1]+t*dy];
+  }
+  return segment;
+}
+function impostRibbon(item, orientation, rect, boundary, face, root = false, outer = constructionPolygon()) {
+  const [a,b]=impostSegment(item,orientation,rect,outer,root);
+  const dx=b[0]-a[0],dy=b[1]-a[1],length=Math.hypot(dx,dy);
+  if(length<1e-7 || !boundary?.length)return [];
+  const ux=dx/length,uy=dy/length,nx=-uy*face/2,ny=ux*face/2;
+  const extra=Math.max(face,getTechnology().frame)*2;
+  const p=[a[0]-ux*extra,a[1]-uy*extra],q=[b[0]+ux*extra,b[1]+uy*extra];
+  let ribbon=[[p[0]+nx,p[1]+ny],[p[0]-nx,p[1]-ny],
+    [q[0]-nx,q[1]-ny],[q[0]+nx,q[1]+ny]];
+  ribbon=polygonClip(ribbon,boundary);
+  if(item.endAnchors?.some(Boolean)){
+    const choices=root ? (orientation==="vertical"?state.hImposts:state.vImposts)
+      : sectionPanes().find(pane=>pane.innerImposts?.includes(item))?.innerImposts||[];
+    for(let end=0;end<2;end++){
+      const target=choices.find(candidate=>candidate.id===item.endAnchors[end] && candidate.orientation!==orientation);
+      if(!target)continue;
+      const [u,v]=impostSegment(target,target.orientation,rect,outer,root);
+      const midpoint=end===0?b:a;
+      const sign=cross2(u,v,midpoint)>=0?1:-1;
+      const input=ribbon;ribbon=[];
+      input.forEach((point,i)=>{
+        const next=input[(i+1)%input.length],d=cross2(u,v,point)*sign,e=cross2(u,v,next)*sign;
+        if(d>=-1e-7)ribbon.push(point);
+        if((d>1e-7&&e< -1e-7)||(d< -1e-7&&e>1e-7))ribbon.push(point.map((n,k)=>n+(next[k]-n)*d/(d-e)));
+      });
+    }
+  }
+  return ribbon;
 }
 function sashOpeningMark(glass, outer, inner, type, side, X, Y) {
   if(glass.length<3 || type==="fixed")return {dashes:"",handle:""};
@@ -1597,6 +1791,47 @@ function sashOpeningMark(glass, outer, inner, type, side, X, Y) {
   const handle=handlePoints.every(Boolean)?`<path d="M ${handlePoints.join(' L ')}" stroke="#20384c" stroke-width="3" stroke-linecap="round"/>`:"";
   return {dashes,handle};
 }
+function editImpostEndpoint() {
+  if(state.shape!=="skew")return;
+  const selection=activeImpostEndpoint;
+  if(!selection || selection.owner!==state)return;
+  const vertical=selection.orientation==="vertical";
+  const nested=selection.scope==="pane";
+  const pane=nested ? sectionPanes()[selection.paneIndex] : null;
+  const rect=nested ? getPanePhysicalRect(selection.paneIndex) : null;
+  const item=(nested ? pane?.innerImposts : vertical ? state.vImposts : state.hImposts)?.find(v=>v.id===selection.id);
+  if(!item)return;
+  const base=nested ? item.position*(vertical ? rect.width : rect.height) : item.position;
+  const others=(nested ? pane.innerImposts.filter(v=>v.orientation!==selection.orientation)
+    : vertical ? state.hImposts : state.vImposts).filter(v=>!v.endAnchors?.some(Boolean));
+  const dialog=document.createElement("dialog");
+  dialog.innerHTML=`<form method="dialog" class="control-group" style="display:grid;gap:12px;padding:18px;min-width:min(340px,85vw)">
+    <strong>Размеры обоих концов импоста</strong>
+    ${[0,1].map(end=>`<fieldset style="border:1px solid #d8e0e9;border-radius:10px;padding:10px;display:grid;gap:8px">
+      <legend>${vertical ? end ? "Нижний" : "Верхний" : end ? "Правый" : "Левый"} конец</legend>
+      <label class="field">${vertical?"X от левого края":"Y от верхнего края"}, мм
+        <input name="coordinate${end}" type="number" step="1" min="0" max="${nested ? vertical ? rect.width : rect.height : vertical?state.width:state.height}" value="${Math.round(base+(item.endOffsets?.[end]||0))}" required></label>
+      <label class="field">Примыкание<select name="anchor${end}"><option value="">К внутреннему краю рамы</option>
+        ${others.map((v,i)=>`<option value="${escapeHtml(v.id)}" ${item.endAnchors?.[end]===v.id?"selected":""}>К ${vertical?"горизонтальному":"вертикальному"} импосту ${i+1}</option>`).join("")}
+      </select></label></fieldset>`).join("")}
+    <div style="display:flex;gap:8px"><button class="button ghost" value="cancel">Отмена</button><button class="button primary" value="save">Применить</button></div></form>`;
+  document.body.append(dialog);
+  dialog.addEventListener("close",()=>{
+    if(dialog.returnValue==="save"){
+      const form=dialog.querySelector("form"),values=[0,1].map(end=>Number(form.elements[`coordinate${end}`].value));
+      const raw=nested ? nestedImpostLimits(item,pane) : rootImpostLimits(item,selection.orientation);
+      const size=nested ? vertical ? rect.width : rect.height : 1;
+      const limits=nested ? {min:raw.min*size,max:raw.max*size} : raw;
+      if(values.every(value=>Number.isFinite(value) && value>=limits.min && value<=limits.max)){
+        item.endOffsets=values.map(value=>value-base);
+        item.endAnchors=values.map((_,end)=>form.elements[`anchor${end}`].value||null);
+        renderAll();
+      } else showToast(`Координата должна быть от ${Math.ceil(limits.min)} до ${Math.floor(limits.max)} мм.`);
+    }
+    dialog.remove();
+  });
+  dialog.showModal();
+}
 function refreshProfileEdit() {
   let button=$("#editProfileGeometry");
   const host=$("#editorHistory");
@@ -1604,6 +1839,7 @@ function refreshProfileEdit() {
     button=document.createElement("button"); button.id="editProfileGeometry"; button.type="button";button.className="button ghost";
     button.innerHTML='<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20l4-1 12-12-3-3L5 16zM14 7l3 3"/></svg> Изменить';
     button.addEventListener("click",()=>{
+      if(activeImpostEndpoint?.owner===state){editImpostEndpoint();return;}
       const a=activeProfileEdge;if(!a||a.owner!==state)return;
       if(a.type==="vertex"||a.type==="polygon") editPolygon(a);
       else editProfileSide({dataset:{profileEdge:a.type,edgeIndex:a.index,edgeSide:a.side}});
@@ -1614,7 +1850,7 @@ function refreshProfileEdit() {
   if(host && button.parentElement!==host) host.append(button);
   button.hidden=state.shape!=="arch" && state.shape!=="skew";
   button.style.display=button.hidden?"none":"";
-  button.disabled=button.hidden || !activeProfileEdge || activeProfileEdge.owner!==state || activeProfileEdge.type==="skew-sash";
+  button.disabled=button.hidden || !(activeImpostEndpoint?.owner===state || activeProfileEdge?.owner===state && activeProfileEdge.type!=="skew-sash");
   button.style.color=button.disabled?"#68778a":"white";button.style.background=button.disabled?"#edf1f5":"#24384f";
 }
 function editPolygon(selection) {
@@ -1659,6 +1895,7 @@ function editPolygon(selection) {
 
 const PROFILE_SIDES = ["верхняя поперечина", "правая стойка", "нижняя поперечина", "левая стойка"];
 let activeProfileEdge = null;
+let activeImpostEndpoint = null;
 function customProfileArcs() {
   return Boolean((state.shape === "arch" && (Object.values(state.frameArcs || {}).some(Boolean) ||
     sectionPanes().some(p => !p.split && p.opening !== "fixed" && Object.values(p.sashArcs || {}).some(Boolean)))));
@@ -1844,9 +2081,9 @@ function fittedGlass(entry,geometry,f,tech,X=mm=>mm,Y=mm=>mm,sx=1,sy=1) {
   const sides=[entry.edges[2],entry.edges[1],entry.edges[3],entry.edges[0]];
   const depth=tech.frame+(sashBox?tech.sash-SASH_LAP:0)-bite;
   if(state.shape === "circle") return circularOutline(fbox,depth,X,Y);
-  const poly=polygonPoints();
+  const poly=constructionPolygon();
   if(poly){
-    const points=polygonGlass(poly,geometry,f,tech);
+    const points=polygonGlass(poly,geometry,f,tech,entry);
     if(points.length<3)return {path:"",w:0,h:0,area:0};
     const [l,t,r,b]=polyBounds(points);
     return {path:polyPath(points,X,Y),boundary:points,w:r-l,h:b-t,area:Math.abs(closedArea(points))};
@@ -1857,7 +2094,8 @@ function fittedGlass(entry,geometry,f,tech,X=mm=>mm,Y=mm=>mm,sx=1,sy=1) {
   const outline=fittedOutline(fbox,depths,glassArcs,X,Y,sx,sy);
   const points=outline.extrema || outline.boundary || outline.pts;
   const xs=points.map(p=>p[0]), ys=points.map(p=>p[1]);
-  return {path:outline.path,boundary:outline.boundary||outline.pts,w:Math.max(...xs)-Math.min(...xs),h:Math.max(...ys)-Math.min(...ys)};
+  const boundary=outline.boundary||outline.pts;
+  return {path:outline.path,boundary,w:Math.max(...xs)-Math.min(...xs),h:Math.max(...ys)-Math.min(...ys),area:closedArea(boundary)};
 }
 function polygonProfileTargets(outer,inner,type,index,X,Y) {
   if(outer.length<3 || inner.length<3) return "";
@@ -2039,12 +2277,12 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
   const profileColor = getFinish().color || material.frame;
   const paths = shapePaths(x, y, width, height, frame);
   let profileTargets = state.shape === "circle" ? circleFrameTargets(x+width/2,y+height/2,width/2,height/2,frame) : "";
-  const poly=polygonPoints();
+  const poly=constructionPolygon();
   const polygonOpening=poly ? polygonClip(poly,poly,tech.frame) : null;
   if(poly){
     paths.outer=`<path d="${polyPath(poly,X,Y)}"/>`;
     paths.inner=`<path d="${polyPath(polygonOpening,X,Y)}"/>`;
-    profileTargets=polygonProfileTargets(poly,polygonOpening,"polygon",null,X,Y);
+    if(state.shape==="skew") profileTargets=polygonProfileTargets(poly,polygonOpening,"polygon",null,X,Y);
   } else if (state.shape === "arch" || state.shape === "rect") {
     const arcs=state.shape === "arch" ? state.frameArcs : null;
     const outer=profileOutline([0,0,state.width,state.height],arcs,X,Y,sx,sy);
@@ -2075,7 +2313,7 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
     dimensionGroups.get(key).push({vertical,start,end,absolute,local,item,index,id:item.id});
   };
 
-  let panesMarkup = "", localImpostsMarkup = "", sashMarkup = "", glassMarkup = "";
+  let panesMarkup = "", localImpostsMarkup = "", nestedEndpointMarkup = "", sashMarkup = "", glassMarkup = "", selectionMarkup = "";
   sectionLayout().forEach((entry,index) => {
     const {pane,rect:physical} = entry;
     const px=X(physical.x), py=Y(physical.y), paneWidth=physical.width*sx, paneHeight=physical.height*sy;
@@ -2090,7 +2328,7 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
     const fit=(bounds,depth,arcs=null)=>fittedOutline(bounds,offsets(depth),arcs,X,Y,sx,sy);
     const border=(side,at,fallback)=>sides[side] ? (frameCurve(side,0)?.(at) ?? fallback) : fallback;
     const bounds=[physical.x,physical.y,physical.x+physical.width,physical.y+physical.height];
-    const sectionPolygon=poly ? polygonClip(polygonOpening,rectPoints(bounds)) : null;
+    const sectionPolygon=poly ? sectionContour(entry,poly,tech.frame) : null;
     const clippedCenter=(axis,at,fallback)=>{
       const range=sectionPolygon && outlineRange(sectionPolygon,axis,at);
       return range ? (range[0]+range[1])/2 : fallback;
@@ -2103,6 +2341,11 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
       const lineX = px + item.position * paneWidth;
       const lineY = py + item.position * paneHeight;
       const physicalPosition = item.position * (isVertical ? physical.width : physical.height);
+      const segment=poly ? impostSegment(item,item.orientation,physical,sectionPolygon) : null;
+      const endA=segment ? [X(segment[0][0]),Y(segment[0][1])] : null;
+      const endB=segment ? [X(segment[1][0]),Y(segment[1][1])] : null;
+      const ribbon=segment && poly ? polyPath(impostRibbon(item,item.orientation,physical,sectionPolygon,tech.impost,false,sectionPolygon),X,Y) : "";
+      if(active && segment)nestedEndpointMarkup += segment.map((point,end)=>`<circle class="impost-endpoint" style="cursor:pointer" data-endpoint="${end}" data-scope="pane" data-pane="${index}" data-orientation="${item.orientation}" data-id="${item.id}" cx="${X(point[0])}" cy="${Y(point[1])}" r="5" fill="#fff" stroke="#ef8b25" stroke-width="2.5" role="button" tabindex="0" aria-label="Изменить ${end?'второй':'первый'} край импоста"/>`).join("");
       const y1=Y(border(0,physical.x+item.position*physical.width,physical.y));
       const y2=Y(border(2,physical.x+item.position*physical.width,physical.y+physical.height));
       const x1=X(border(3,physical.y+item.position*physical.height,physical.x));
@@ -2110,18 +2353,18 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
       if (isVertical) {
         addDimension(false, px, lineX, physical.x, physicalPosition, item, index);
         innerImpostsMarkup += `
-          <line class="impost-visible inner-impost-visible${active ? " selected" : ""}" x1="${lineX}" y1="${y1}" x2="${lineX}" y2="${y2}" stroke="${profileColor}" stroke-width="${paneImpostFace}" />
-          <line x1="${lineX}" y1="${y1}" x2="${lineX}" y2="${y2}" stroke="${material.edge}" stroke-width="1.2" opacity=".55" pointer-events="none" />
+          ${ribbon ? `<path class="impost-visible inner-impost-visible${active ? " selected" : ""}" d="${ribbon}" fill="${active ? "#ef8b25" : profileColor}" stroke="${material.edge}" stroke-width="1" />` : `<line class="impost-visible inner-impost-visible${active ? " selected" : ""}" x1="${endA?.[0]??lineX}" y1="${endA?.[1]??y1}" x2="${endB?.[0]??lineX}" y2="${endB?.[1]??y2}" stroke="${profileColor}" stroke-width="${paneImpostFace}" />`}
+          <line x1="${endA?.[0]??lineX}" y1="${endA?.[1]??y1}" x2="${endB?.[0]??lineX}" y2="${endB?.[1]??y2}" stroke="${material.edge}" stroke-width="1.2" opacity=".55" pointer-events="none" />
           <rect class="impost-grip${active ? " selected" : ""}" x="${lineX - 7}" y="${Y(clippedCenter(0,physical.x+physicalPosition,physical.y+physical.height/2)) - 14}" width="14" height="28" rx="7" />
-          <line class="impost-hit" data-scope="pane" data-pane="${index}" data-orientation="vertical" data-id="${item.id}" x1="${lineX}" y1="${y1}" x2="${lineX}" y2="${y2}" tabindex="0" role="slider" aria-label="Вертикальный импост в ${paneKind} ${index + 1}" aria-valuenow="${Math.round(physicalPosition)}" />
+          <line class="impost-hit" data-scope="pane" data-pane="${index}" data-orientation="vertical" data-id="${item.id}" x1="${endA?.[0]??lineX}" y1="${endA?.[1]??y1}" x2="${endB?.[0]??lineX}" y2="${endB?.[1]??y2}" tabindex="0" role="slider" aria-label="Вертикальный импост в ${paneKind} ${index + 1}" aria-valuenow="${Math.round(physicalPosition)}" />
           `;
       } else {
         addDimension(true, py, lineY, physical.y, physicalPosition, item, index);
         innerImpostsMarkup += `
-          <line class="impost-visible inner-impost-visible${active ? " selected" : ""}" x1="${x1}" y1="${lineY}" x2="${x2}" y2="${lineY}" stroke="${profileColor}" stroke-width="${paneImpostFace}" />
-          <line x1="${x1}" y1="${lineY}" x2="${x2}" y2="${lineY}" stroke="${material.edge}" stroke-width="1.2" opacity=".55" pointer-events="none" />
+          ${ribbon ? `<path class="impost-visible inner-impost-visible${active ? " selected" : ""}" d="${ribbon}" fill="${active ? "#ef8b25" : profileColor}" stroke="${material.edge}" stroke-width="1" />` : `<line class="impost-visible inner-impost-visible${active ? " selected" : ""}" x1="${endA?.[0]??x1}" y1="${endA?.[1]??lineY}" x2="${endB?.[0]??x2}" y2="${endB?.[1]??lineY}" stroke="${profileColor}" stroke-width="${paneImpostFace}" />`}
+          <line x1="${endA?.[0]??x1}" y1="${endA?.[1]??lineY}" x2="${endB?.[0]??x2}" y2="${endB?.[1]??lineY}" stroke="${material.edge}" stroke-width="1.2" opacity=".55" pointer-events="none" />
           <rect class="impost-grip${active ? " selected" : ""}" x="${X(clippedCenter(1,physical.y+physicalPosition,physical.x+physical.width/2)) - 14}" y="${lineY - 7}" width="28" height="14" rx="7" />
-          <line class="impost-hit horizontal" data-scope="pane" data-pane="${index}" data-orientation="horizontal" data-id="${item.id}" x1="${x1}" y1="${lineY}" x2="${x2}" y2="${lineY}" tabindex="0" role="slider" aria-label="Горизонтальный импост в ${paneKind} ${index + 1}" aria-valuenow="${Math.round(physicalPosition)}" />
+          <line class="impost-hit horizontal" data-scope="pane" data-pane="${index}" data-orientation="horizontal" data-id="${item.id}" x1="${endA?.[0]??x1}" y1="${endA?.[1]??lineY}" x2="${endB?.[0]??x2}" y2="${endB?.[1]??lineY}" tabindex="0" role="slider" aria-label="Горизонтальный импост в ${paneKind} ${index + 1}" aria-valuenow="${Math.round(physicalPosition)}" />
           `;
       }
     });
@@ -2133,7 +2376,8 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
     const sashOutline=(bounds,depth)=>{
       if(state.shape === "circle") return circularOutline(bounds,depth,X,Y);
       if(!poly)return fit(bounds,depth,sashArcs);
-      const boundary=polygonClip(rectPoints(bounds),poly,depth);
+      const boundary=clipSlantedSections(polygonClip(rectPoints(slantedBounds(bounds,entry)),poly,depth),entry,
+        Math.max(0,tech.impost/2-(depth===outerDepth?SASH_LAP:-tech.sash+SASH_LAP)));
       return {path:polyPath(boundary,X,Y),boundary};
     };
     const outerSash=sashBox && sashOutline(sashBox,outerDepth);
@@ -2142,7 +2386,7 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
       const id=`sashImpostClip-${index}`;
       localImpostsMarkup += `<clipPath id="${id}"><path d="${innerSash.path}"/></clipPath><g clip-path="url(#${id})">${innerImpostsMarkup}</g>`;
     } else localImpostsMarkup += innerImpostsMarkup;
-    if (sashBox && (state.shape==="arch" || state.shape==="rect") && opening[2]>opening[0] && opening[3]>opening[1]) {
+    if (!poly && sashBox && (state.shape==="arch" || state.shape==="rect") && opening[2]>opening[0] && opening[3]>opening[1]) {
       profileTargets+=profileEdgeTargets(outerSash,innerSash,"sash",index);
      } else if (state.shape === "skew" && outerSash && innerSash) {
       profileTargets+=poly ? polygonProfileTargets(outerSash.boundary,innerSash.boundary,"skew-sash",index,X,Y)
@@ -2168,7 +2412,7 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
       const fitted=fittedGlass(entry,{sashBox,opening},f,tech,X,Y,sx,sy);
       const glassPath=fitted.path;
       if(!glassPath) continue;
-      if (selected) glassMarkup += `<path class="pane-selected" d="${glassPath}" fill="none" />`;
+      if(selected) selectionMarkup += `<path class="pane-selected" d="${glassPath}" />`;
       const vertices=poly ? fitted.boundary : null;
       const center=vertices?.length ? vertices.reduce(([a,b],[u,v])=>[a+u/vertices.length,b+v/vertices.length],[0,0]) : null;
       const labelX=poly && fields.length===1 ? paneCx : center ? X(center[0]) : X(f.x)+w/2;
@@ -2196,27 +2440,44 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
     const range=polygonOpening && outlineRange(polygonOpening,axis,at);
     return range ? (axis===0?Y:X)((range[0]+range[1])/2) : fallback;
   };
-  let rootImpostsMarkup = "";
+  let rootImpostsMarkup = "", rootEndpointMarkup = "";
   state.vImposts.forEach((item, index) => {
     const lineX = rootVerticalX[index];
     const active = isSelectedImpost("root", "vertical", item.id);
+    const segment=impostSegment(item,"vertical",{x:0,y:0,width:state.width,height:state.height},poly||rectPoints([0,0,state.width,state.height]),true);
+    const ribbon=poly ? polyPath(impostRibbon(item,"vertical",{x:0,y:0,width:state.width,height:state.height},polygonOpening,tech.impost,true,poly),X,Y) : "";
+    let ax=X(segment[0][0]), ay=Y(segment[0][1]), bx=X(segment[1][0]), by=Y(segment[1][1]);
+    // Extend through the outer polygon; innerClip trims the visible face exactly at the frame's inner edge.
+    const skewRange=poly && outlineRange(poly,0,item.position);
+    const lineTop=skewRange ? Y(skewRange[0])-impostFace : state.shape==="arch" && state.frameArcs?.[0] ? Y(frameCurve(0,0)?.(item.position) ?? 0) : box.y-2;
+    const lineBottom=skewRange ? Y(skewRange[1])+impostFace : state.shape==="arch" && state.frameArcs?.[2] ? Y(frameCurve(2,0)?.(item.position) ?? state.height) : box.y+box.height+2;
+    if(!poly){ax=bx=lineX;ay=lineTop;by=lineBottom;}
     addDimension(false, x, lineX, 0, item.position, item);
+    if(active && poly) rootEndpointMarkup += segment.map((point,end)=>`<circle class="impost-endpoint" style="cursor:pointer" data-endpoint="${end}" data-scope="root" data-orientation="vertical" data-id="${item.id}" cx="${X(point[0])}" cy="${Y(point[1])}" r="5" fill="#fff" stroke="#ef8b25" stroke-width="2.5" role="button" tabindex="0" aria-label="Изменить ${end?'второй':'первый'} край импоста"/>`).join("");
     rootImpostsMarkup += `
-      <line class="impost-visible${active ? " selected" : ""}" x1="${lineX}" y1="${state.shape==="arch" && state.frameArcs?.[0] ? Y(frameCurve(0,0)?.(item.position) ?? 0) : box.y - 2}" x2="${lineX}" y2="${state.shape==="arch" && state.frameArcs?.[2] ? Y(frameCurve(2,0)?.(item.position) ?? state.height) : box.y + box.height + 2}" stroke="${profileColor}" stroke-width="${impostFace}" />
-      <line x1="${lineX}" y1="${state.shape==="arch" && state.frameArcs?.[0] ? Y(frameCurve(0,0)?.(item.position) ?? 0) : box.y - 2}" x2="${lineX}" y2="${state.shape==="arch" && state.frameArcs?.[2] ? Y(frameCurve(2,0)?.(item.position) ?? state.height) : box.y + box.height + 2}" stroke="${material.edge}" stroke-width="1.4" opacity=".55" pointer-events="none" />
+      ${ribbon ? `<path class="impost-visible${active ? " selected" : ""}" d="${ribbon}" fill="${active ? "#ef8b25" : profileColor}" stroke="${material.edge}" stroke-width="1" />` : `${ribbon ? `<path class="impost-visible${active ? " selected" : ""}" d="${ribbon}" fill="${active ? "#ef8b25" : profileColor}" stroke="${material.edge}" stroke-width="1" />` : `<line class="impost-visible${active ? " selected" : ""}" x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${profileColor}" stroke-width="${impostFace}" />`}`}
+      <line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${material.edge}" stroke-width="1.4" opacity=".55" pointer-events="none" />
       <rect class="impost-grip${active ? " selected" : ""}" x="${lineX - 8}" y="${rootGripCenter(0,item.position,box.y+box.height/2) - 18}" width="16" height="36" rx="8" />
-      <line class="impost-hit" data-scope="root" data-orientation="vertical" data-id="${item.id}" x1="${lineX}" y1="${state.shape==="arch" && state.frameArcs?.[0] ? Y(frameCurve(0,0)?.(item.position) ?? 0) : box.y - 2}" x2="${lineX}" y2="${state.shape==="arch" && state.frameArcs?.[2] ? Y(frameCurve(2,0)?.(item.position) ?? state.height) : box.y + box.height + 2}" tabindex="0" role="slider" aria-label="Вертикальный импост рамы" aria-valuemin="0" aria-valuemax="${state.width}" aria-valuenow="${Math.round(item.position)}" />
+      <line class="impost-hit" data-scope="root" data-orientation="vertical" data-id="${item.id}" x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" tabindex="0" role="slider" aria-label="Вертикальный импост рамы" aria-valuemin="0" aria-valuemax="${state.width}" aria-valuenow="${Math.round(item.position)}" />
       `;
   });
   state.hImposts.forEach((item, index) => {
     const lineY = rootHorizontalY[index];
     const active = isSelectedImpost("root", "horizontal", item.id);
+    const segment=impostSegment(item,"horizontal",{x:0,y:0,width:state.width,height:state.height},poly||rectPoints([0,0,state.width,state.height]),true);
+    const ribbon=poly ? polyPath(impostRibbon(item,"horizontal",{x:0,y:0,width:state.width,height:state.height},polygonOpening,tech.impost,true,poly),X,Y) : "";
+    let ax=X(segment[0][0]), ay=Y(segment[0][1]), bx=X(segment[1][0]), by=Y(segment[1][1]);
+    const skewRange=poly && outlineRange(poly,1,item.position);
+    const lineLeft=skewRange ? X(skewRange[0])-impostFace : state.shape==="arch" && state.frameArcs?.[3] ? X(frameCurve(3,0)?.(item.position) ?? 0) : box.x-2;
+    const lineRight=skewRange ? X(skewRange[1])+impostFace : state.shape==="arch" && state.frameArcs?.[1] ? X(frameCurve(1,0)?.(item.position) ?? state.width) : box.x+box.width+2;
+    if(!poly){ay=by=lineY;ax=lineLeft;bx=lineRight;}
     addDimension(true, y, lineY, 0, item.position, item);
+    if(active && poly) rootEndpointMarkup += segment.map((point,end)=>`<circle class="impost-endpoint" style="cursor:pointer" data-endpoint="${end}" data-scope="root" data-orientation="horizontal" data-id="${item.id}" cx="${X(point[0])}" cy="${Y(point[1])}" r="5" fill="#fff" stroke="#ef8b25" stroke-width="2.5" role="button" tabindex="0" aria-label="Изменить ${end?'второй':'первый'} край импоста"/>`).join("");
     rootImpostsMarkup += `
-      <line class="impost-visible${active ? " selected" : ""}" x1="${state.shape==="arch" && state.frameArcs?.[3] ? X(frameCurve(3,0)?.(item.position) ?? 0) : box.x - 2}" y1="${lineY}" x2="${state.shape==="arch" && state.frameArcs?.[1] ? X(frameCurve(1,0)?.(item.position) ?? state.width) : box.x + box.width + 2}" y2="${lineY}" stroke="${profileColor}" stroke-width="${impostFace}" />
-      <line x1="${state.shape==="arch" && state.frameArcs?.[3] ? X(frameCurve(3,0)?.(item.position) ?? 0) : box.x - 2}" y1="${lineY}" x2="${state.shape==="arch" && state.frameArcs?.[1] ? X(frameCurve(1,0)?.(item.position) ?? state.width) : box.x + box.width + 2}" y2="${lineY}" stroke="${material.edge}" stroke-width="1.4" opacity=".55" pointer-events="none" />
+      <line class="impost-visible${active ? " selected" : ""}" x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${profileColor}" stroke-width="${impostFace}" />
+      <line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${material.edge}" stroke-width="1.4" opacity=".55" pointer-events="none" />
       <rect class="impost-grip${active ? " selected" : ""}" x="${rootGripCenter(1,item.position,box.x+box.width/2) - 18}" y="${lineY - 8}" width="36" height="16" rx="8" />
-      <line class="impost-hit horizontal" data-scope="root" data-orientation="horizontal" data-id="${item.id}" x1="${state.shape==="arch" && state.frameArcs?.[3] ? X(frameCurve(3,0)?.(item.position) ?? 0) : box.x - 2}" y1="${lineY}" x2="${state.shape==="arch" && state.frameArcs?.[1] ? X(frameCurve(1,0)?.(item.position) ?? state.width) : box.x + box.width + 2}" y2="${lineY}" tabindex="0" role="slider" aria-label="Горизонтальный импост рамы" aria-valuemin="0" aria-valuemax="${state.height}" aria-valuenow="${Math.round(item.position)}" />
+      <line class="impost-hit horizontal" data-scope="root" data-orientation="horizontal" data-id="${item.id}" x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" tabindex="0" role="slider" aria-label="Горизонтальный импост рамы" aria-valuemin="0" aria-valuemax="${state.height}" aria-valuenow="${Math.round(item.position)}" />
       `;
   });
 
@@ -2310,8 +2571,12 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
     </defs>
     <g filter="url(#windowShadow)" fill="${profileColor}" stroke="${material.edge}" stroke-width="2.2">${paths.outer}</g>
     <g fill="#bfe3ef" stroke="${material.edge}" stroke-width="1.6">${paths.inner}</g>
-    <g clip-path="url(#innerClip)">${panesMarkup}${localImpostsMarkup}${rootImpostsMarkup}</g>
+    <g clip-path="url(#innerClip)">${panesMarkup}</g>
     <g clip-path="url(#glassCutClip)" pointer-events="none">${sashMarkup}${glassMarkup}</g>
+    <g clip-path="url(#innerClip)">${localImpostsMarkup}</g>
+    <g clip-path="url(#innerClip)">${rootImpostsMarkup}</g>
+    <g clip-path="url(#glassCutClip)" pointer-events="none">${selectionMarkup}</g>
+    <g>${rootEndpointMarkup}${nestedEndpointMarkup}</g>
     <g>${profileTargets}${vertices}</g>
     <g class="dimensions">${shoulderMarkup}</g>
     <g class="dimensions">${axisMarkup}
@@ -2336,7 +2601,10 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
       node.removeAttribute("tabindex");
       node.removeAttribute("role");
     });
-    svg.setAttribute("viewBox", `${x - 6} ${y - 6} ${width + 12} ${height + 12}`);
+    const contour=poly || (state.shape === "arch" ? profileOutline([0,0,state.width,state.height],state.frameArcs,X,Y,sx,sy).boundary : rectPoints([0,0,state.width,state.height]));
+    const [minX,minY,maxX,maxY]=polyBounds(contour);
+    const padding=Math.max(12,tech.frame*canvasScale*0.3);
+    svg.setAttribute("viewBox", `${X(minX)-padding} ${Y(minY)-padding} ${(maxX-minX)*sx+padding*2} ${(maxY-minY)*sy+padding*2}`);
     return;
   }
 
@@ -2380,6 +2648,7 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
 }
 
 function selectImpostFromNode(node) {
+  if(activeImpostEndpoint && (activeImpostEndpoint.id!==node.dataset.id || activeImpostEndpoint.scope!==node.dataset.scope)) activeImpostEndpoint=null;
   multiSections.clear();
   sharedAxis = null;
   const scope = node.dataset.scope;
@@ -2441,10 +2710,25 @@ function getCanvasPoint(event) {
 
 function bindCanvasDragging() {
   const svg = $("#windowCanvas");
+  svg.addEventListener("click", event=>{
+    const point=event.target.closest?.(".impost-endpoint");
+    if(!point)return;
+    event.preventDefault();
+    activeImpostEndpoint={owner:state,id:point.dataset.id,orientation:point.dataset.orientation,
+      scope:point.dataset.scope,paneIndex:Number(point.dataset.pane),end:Number(point.dataset.endpoint)};
+    activeProfileEdge=null;
+    refreshProfileEdit();
+  });
+  svg.addEventListener("keydown",event=>{
+    if(event.key!=="Enter" && event.key!==" ")return;
+    const point=event.target.closest?.(".impost-endpoint");
+    if(point){event.preventDefault();point.click();}
+  });
   const openProfile = event => {
     const hit=event.target.closest?.("[data-profile-edge]");
     if(hit){
       event.preventDefault();
+      activeImpostEndpoint=null;
       const type=hit.dataset.profileEdge;
       activeProfileEdge={owner:state,type,index:(type==="sash"||type==="skew-sash")?Number(hit.dataset.edgeIndex):null,side:Number(hit.dataset.edgeSide)};
       state.selectedPane=null;state.selectedImpost=null;multiSections.clear();sharedAxis=null;
@@ -2748,8 +3032,8 @@ function renderAll() {
   renderSummary(calculation);
   renderSpecification(calculation);
   if(customProfileArcs()) {
-    $("#currentEstimateStatus").textContent="Эскиз с дугами";
-    $("#currentEstimateHint").textContent="Габариты и наружный контур рамы учтены. Площадь стекла и длины импостов в смете остаются предварительными. Не используйте эскиз для изготовления.";
+    $("#currentEstimateStatus").textContent="Расчёт изделия с дугами";
+    $("#currentEstimateHint").textContent="Площадь стеклопакетов рассчитана по контуру дуг, длина импостов — по контуру рамы. Перед изготовлением проверьте технологические размеры.";
   }
   if (circleSashesBlocked() && sectionPanes().some(p => !p.split && p.opening !== "fixed")) {
     $("#currentEstimateStatus").textContent = "Створка не разрешена текущим профилем";
@@ -2814,6 +3098,16 @@ function bindEvents() {
   $("#productType").addEventListener("change", event => {
     state.productType = event.target.value;
     updateMaterialSelects();
+    const typeDimensions = {
+      window: { width: 1300, height: 1400 },
+      entranceDoor: { width: 950, height: 2250 },
+      balconyDoor: { width: 800, height: 2100 },
+    }[state.productType];
+    if (typeDimensions && state.shape === "circle") setWindowShapeMode("rect");
+    if (typeDimensions) {
+      state.width = typeDimensions.width;
+      state.height = typeDimensions.height;
+    }
     if (state.shape === "circle" && !getProfile().allowCircleShape) setWindowShapeMode("rect");
     normalizeUnsupportedOpenings();
     syncFormFromState();
