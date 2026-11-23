@@ -429,6 +429,7 @@
         <div class="settings-tabs" role="tablist" aria-label="Разделы настроек">
           <button class="active" type="button" role="tab" aria-selected="true" data-settings-tab="prices">Прайс</button>
           <button type="button" role="tab" aria-selected="false" data-settings-tab="technology">Технологические</button>
+          <button type="button" role="tab" aria-selected="false" data-settings-tab="profile">Настройки профиля</button>
         </div>
 
         <section class="settings-pane" id="settingsPricesPane" role="tabpanel">
@@ -486,7 +487,7 @@
         </section>
 
         <section class="settings-pane" id="settingsTechnologyPane" role="tabpanel" hidden>
-          <p class="dialog-intro">Создавайте и изменяйте профильные системы, их технологические размеры и доступные цвета. Каталог используется в основных списках конфигуратора.</p>
+          <p class="dialog-intro">Создавайте, переименовывайте и удаляйте профильные системы. Технические параметры каждой системы находятся во вкладке «Настройки профиля».</p>
           <div class="catalog-material-tabs" role="tablist" aria-label="Материал профильной системы">
             <button class="active" type="button" data-catalog-material="pvc" aria-selected="true">Пластик</button>
             <button type="button" data-catalog-material="aluminum" aria-selected="false">Алюминий</button>
@@ -505,6 +506,19 @@
           <div class="dialog-actions">
             <button class="button ghost" id="resetTechnology" type="button">Вернуть стандартные</button>
             <button class="button primary" id="saveTechnology" type="button">Сохранить каталог</button>
+          </div>
+        </section>
+
+        <section class="settings-pane" id="settingsProfilePane" role="tabpanel" hidden>
+          <p class="dialog-intro">Технические параметры созданных профильных систем. Изменения применяются после сохранения каталога.</p>
+          <div class="catalog-material-tabs" role="tablist" aria-label="Материал настройки профиля">
+            <button class="active" type="button" data-catalog-material="pvc" aria-selected="true">Пластик</button>
+            <button type="button" data-catalog-material="aluminum" aria-selected="false">Алюминий</button>
+            <button type="button" data-catalog-material="wood" aria-selected="false">Дерево</button>
+          </div>
+          <div id="profileSettingsEditor" class="technology-catalog-editor"></div>
+          <div class="dialog-actions">
+            <button class="button primary" id="saveProfileSettings" type="button">Сохранить каталог</button>
           </div>
         </section>
       </form>
