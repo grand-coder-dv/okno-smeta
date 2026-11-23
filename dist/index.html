@@ -23,7 +23,33 @@
       .glass-profile-options { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px 16px; min-width: 0; }
       .glass-profile-options label { display: inline-flex; align-items: center; gap: 6px; }
     </style>
-  </head>
+  <style>
+  dialog, dialog :is(input, select, textarea, button) { font-family: inherit; }
+  dialog, #polygonEditDialog, #profileArcDialog {
+    color: #17263a; background: #fff; border: 1px solid #dce3eb;
+    border-radius: 16px; box-shadow: 0 18px 60px rgb(23 38 58 / 22%);
+  }
+  dialog::backdrop { background: rgb(23 38 58 / 42%); }
+  #polygonEditDialog, #profileArcDialog { padding: 0; max-width: calc(100vw - 24px); }
+  #polygonEditDialog form, #profileArcDialog form { margin: 0; }
+  #profileArcDialog label { display: grid; gap: 6px; }
+  #profileArcDialog :is(input, select) {
+    width: 100%; padding: 8px 10px; color: inherit; background: #f5f7fa;
+    border: 1px solid #dce3eb; border-radius: 8px;
+  }
+  #profileArcDialog form > div:last-child { display: flex; flex-wrap: wrap; gap: 8px; }
+  #polygonEditDialog [data-poly-error] { color: #a53429; }
+  :is(#polygonEditDialog, #profileArcDialog) button[value="cancel"] {
+    background: #fff; border: 1px solid #cbd3dc; color: #526173;
+  }
+  #polygonEditDialog button[value="remove"] {
+    background: #fff; border: 1px solid #505a66; color: #303944;
+  }
+  :is(#polygonEditDialog, #profileArcDialog) button[value="cancel"]:hover,
+  #polygonEditDialog button[value="remove"]:enabled:hover { background: #f2f4f7; }
+  #polygonEditDialog button[value="remove"]:disabled { opacity: .45; cursor: not-allowed; }
+</style>
+</head>
   <body>
     <header class="app-header">
       <div class="brand" aria-label="ОкноСмета">
@@ -50,16 +76,17 @@
     </header>
 
     <main class="page-shell">
-      <section class="project-toolbar" aria-label="Управление проектом">
+      <section class="project-toolbar" aria-label="Управление заказом">
         <div class="project-current">
-          <span>Текущий проект</span>
-          <strong id="currentProjectName">Новый проект</strong>
+          <span>Текущий заказ</span>
+          <strong id="currentProjectName">Новый заказ</strong>
+          <button class="order-name-edit" id="renameCurrentOrder" type="button" title="Переименовать заказ" aria-label="Переименовать текущий заказ">✎</button>
           <small id="projectSaveStatus">Не сохранён</small>
         </div>
         <div class="project-actions">
-          <button class="button ghost" id="newProject" type="button">Новый проект</button>
-          <button class="button secondary" id="myProjects" type="button">Мои проекты</button>
-          <button class="button primary" id="saveProject" type="button">Сохранить проект</button>
+          <button class="button ghost" id="newProject" type="button">Новый заказ</button>
+          <button class="button secondary" id="myProjects" type="button">Мои заказы</button>
+          <button class="button primary" id="saveProject" type="button">Сохранить заказ</button>
         </div>
       </section>
 
@@ -79,22 +106,22 @@
               <label class="material-card active">
                 <input type="radio" name="material" value="pvc" checked />
                 <span class="material-swatch pvc"></span>
-                <span><b>Пластик</b><small>ПВХ</small></span>
+                <span><b>Пластик</b></span>
               </label>
               <label class="material-card">
                 <input type="radio" name="material" value="aluminum" />
                 <span class="material-swatch aluminum"></span>
-                <span><b>Алюминий</b><small>тёплый</small></span>
+                <span><b>Алюминий</b></span>
               </label>
               <label class="material-card">
                 <input type="radio" name="material" value="wood" />
                 <span class="material-swatch wood"></span>
-                <span><b>Дерево</b><small>массив</small></span>
+                <span><b>Дерево</b></span>
               </label>
             </div>
           </fieldset>
 
-          <div class="form-grid two">
+          <div class="form-grid">
             <label class="field">
               <span>Профильная система</span>
               <select id="profileSystem"></select>
@@ -107,9 +134,12 @@
 
           <fieldset class="control-group">
             <legend>Форма</legend>
-            <div class="segmented three" id="shapeOptions">
+            <div class="segmented four" id="shapeOptions">
               <button class="active" data-value="rect" type="button" aria-pressed="true">
                 <span class="shape-icon rect"></span>Прямое
+              </button>
+              <button data-value="skew" type="button" aria-pressed="false">
+                <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 8l16-4v16H4z"/></svg>Косое
               </button>
               <button data-value="arch" type="button" aria-pressed="false">
                 <span class="shape-icon arch"></span>Арочное
@@ -142,7 +172,7 @@
               <span>Количество одинаковых окон</span>
               <div class="stepper">
                 <button type="button" data-step="-1" aria-label="Уменьшить количество">−</button>
-                <input id="quantity" type="number" min="1" max="99" step="1" value="1" />
+                <input id="quantity" type="number" min="1" max="9999" step="1" value="1" />
                 <button type="button" data-step="1" aria-label="Увеличить количество">+</button>
               </div>
             </label>
@@ -282,7 +312,8 @@
           <div class="summary-grid">
             <div><span>Площадь</span><b id="summaryArea">—</b></div>
             <div><span>Створок</span><b id="summarySashes">—</b></div>
-            <div><span>Секций</span><b id="summaryPanes">—</b></div>
+            <div><span>Проёмы, шт.</span><b id="summaryPanes">—</b></div>
+            <div><span>Площадь стеклопакетов</span><b id="summaryGlassArea">—</b></div>
             <div><span>Количество</span><b id="summaryQuantity">—</b></div>
           </div>
 
@@ -361,18 +392,18 @@
     <dialog id="projectNameDialog" class="project-dialog project-name-dialog">
       <form id="projectNameForm">
         <div class="dialog-header">
-          <div><span class="eyebrow">Сохранение заказа</span><h2>Название проекта</h2></div>
+          <div><span class="eyebrow">Сохранение заказа</span><h2>Название заказа</h2></div>
           <button class="icon-button" id="closeProjectNameDialog" aria-label="Закрыть" type="button">×</button>
         </div>
         <p class="dialog-intro">Укажите понятное название, чтобы позже быстро найти этот заказ.</p>
         <label class="field">
-          <span>Название проекта</span>
-          <input id="projectNameInput" maxlength="80" autocomplete="off" placeholder="Например, Проект А" required />
+          <span>Название заказа</span>
+          <input id="projectNameInput" maxlength="80" autocomplete="off" placeholder="Например, Окна для кухни" required />
         </label>
         <p class="project-dialog-error" id="projectNameError" role="alert" hidden></p>
         <div class="dialog-actions">
           <button class="button ghost" id="cancelProjectName" type="button">Отмена</button>
-          <button class="button primary" type="submit">Сохранить проект</button>
+          <button class="button primary" type="submit">Сохранить заказ</button>
         </div>
       </form>
     </dialog>
@@ -380,11 +411,11 @@
     <dialog id="projectsDialog" class="project-dialog projects-dialog">
       <div class="projects-dialog-content">
         <div class="dialog-header">
-          <div><span class="eyebrow">Сохранённые заказы</span><h2>Мои проекты</h2></div>
+          <div><span class="eyebrow">Сохранённые заказы</span><h2>Мои заказы</h2></div>
           <button class="icon-button" id="closeProjectsDialog" aria-label="Закрыть" type="button">×</button>
         </div>
-        <p class="dialog-intro">Проекты хранятся только в этом браузере на текущем устройстве.</p>
-        <div class="projects-empty" id="projectsEmpty">Сохранённых проектов пока нет.</div>
+        <p class="dialog-intro">Заказы хранятся только в этом браузере на текущем устройстве.</p>
+        <div class="projects-empty" id="projectsEmpty">Сохранённых заказов пока нет.</div>
         <div class="projects-list" id="projectsList"></div>
       </div>
     </dialog>
@@ -485,5 +516,30 @@
 <script src="./editor-history.js"></script>
 <script src="./editor-tools.js"></script>
 <script src="./sash-imposts.js"></script>
-  </body>
+  <script>
+(() => {
+  const selectors = '#polygonEditDialog, #profileArcDialog';
+  const main = dialog => dialog.querySelector('button:is([value="apply"],[value="move"],[value="length"],[value="split"]):enabled');
+  document.addEventListener('focusin', event => {
+    const dialog = event.target.closest?.(selectors);
+    if (!dialog) return;
+    const button = main(dialog);
+    if (!button) return;
+    button.classList.add('button', 'primary');
+    dialog.querySelector('button[value="cancel"]')?.classList.add('button', 'ghost');
+    if (event.target.matches('button[value="cancel"]') && !event.relatedTarget?.closest?.(selectors)) button.focus();
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Enter' || event.isComposing || event.repeat || event.defaultPrevented) return;
+    const dialog = event.target.closest?.(selectors);
+    if (!dialog?.open || event.target.matches('select, textarea, [contenteditable]')) return;
+    const button = main(dialog);
+    if (!button?.form) return;
+    event.preventDefault();
+    event.stopPropagation();
+    button.form.requestSubmit(button);
+  }, true);
+})();
+</script>
+</body>
 </html>
