@@ -3050,7 +3050,7 @@ function bindEvents() {
     delete catalog[button.closest("[data-glass-id]").dataset.glassId];
     renderGlassCatalog();
   });
-  $("#saveTechnology").addEventListener("click", () => {
+  ["#saveTechnology", "#saveProfileSettings"].forEach(selector => $(selector).addEventListener("click", () => {
     captureGlassDraft();
     readCatalogDraftFromEditor();
     for (const [material, catalog] of Object.entries(glassDraft)) {
@@ -3076,7 +3076,7 @@ function bindEvents() {
     $("#pricesDialog").close();
     renderAll();
     showToast("Каталог профильных систем сохранён");
-  });
+  }));
   $("#resetTechnology").addEventListener("click", () => {
     catalogDraft = cloneMaterials();
     glassDraft = standardGlassCatalog();
@@ -3167,9 +3167,15 @@ function readPriceForm() {
 }
 
 function setSettingsTab(tab) {
+  if (catalogDraft && $("#pricesDialog").open) {
+    readCatalogDraftFromEditor();
+    captureGlassDraft();
+    if (tab !== "prices") renderTechnologyCatalog();
+  }
   const technologyTab = tab === "technology";
-  $("#settingsPricesPane").hidden = technologyTab;
+  $("#settingsPricesPane").hidden = tab !== "prices";
   $("#settingsTechnologyPane").hidden = !technologyTab;
+  $("#settingsProfilePane").hidden = tab !== "profile";
   $$("[data-settings-tab]").forEach((button) => {
     const active = button.dataset.settingsTab === tab;
     button.classList.toggle("active", active);
@@ -3188,14 +3194,18 @@ function updateCatalogMaterialTabs() {
 function renderTechnologyCatalog() {
   if (!catalogDraft) catalogDraft = cloneMaterials(MATERIALS);
   const material = catalogDraft[catalogMaterial];
-  const profileRows = material.profiles
+  const profileRows = material.profiles.map(profile => `
+    <article class="catalog-profile-card catalog-profile-name-row" data-profile-id="${escapeHtml(profile.id)}">
+      <label class="catalog-field catalog-name-field"><span>Название системы</span>
+        <input data-profile-field="name" value="${escapeHtml(profile.name)}" maxlength="80" required />
+      </label>
+      <button class="catalog-remove-button" type="button" data-catalog-action="remove-profile" aria-label="Удалить профильную систему">Удалить</button>
+    </article>`).join("");
+  const settingsRows = material.profiles
     .map(
       (profile) => `
         <article class="catalog-profile-card" data-profile-id="${escapeHtml(profile.id)}">
-          <label class="catalog-field catalog-name-field">
-            <span>Название системы</span>
-            <input data-profile-field="name" value="${escapeHtml(profile.name)}" maxlength="80" required />
-          </label>
+          <h4 class="catalog-settings-title">${escapeHtml(profile.name)}</h4>
           <label class="catalog-field">
             <span>Рама, мм</span>
             <input type="number" data-profile-field="frameWidth" value="${clamp(profile.frameWidth, 20, 250)}" min="20" max="250" />
@@ -3225,7 +3235,6 @@ function renderTechnologyCatalog() {
             <span>Разрешить створки в круглых изделиях</span>
             <input type="checkbox" data-profile-field="allowCircleSashes" ${profile.allowCircleSashes === true ? "checked" : ""} />
           </label>
-          <button class="catalog-remove-button" type="button" data-catalog-action="remove-profile" aria-label="Удалить профильную систему">Удалить</button>
         </article>`,
     )
     .join("");
@@ -3267,6 +3276,10 @@ function renderTechnologyCatalog() {
       <div class="catalog-color-list">${finishRows}</div>
     </section>`;
   $("#technologyCatalogEditor").append(glassSection);
+  $("#profileSettingsEditor").innerHTML = `<section class="catalog-section">
+    <div class="catalog-section-header"><div><h3>Настройки профильных систем</h3><span>${material.profiles.length} шт.</span></div></div>
+    <div class="catalog-profile-list">${settingsRows}</div>
+  </section>`;
   updateCatalogMaterialTabs();
 }
 
@@ -3277,6 +3290,10 @@ function readCatalogDraftFromEditor() {
     const profile = material.profiles.find((item) => item.id === row.dataset.profileId);
     if (!profile) return;
     profile.name = row.querySelector('[data-profile-field="name"]').value.trim() || "Новая профильная система";
+  });
+  $$("#profileSettingsEditor [data-profile-id]").forEach((row) => {
+    const profile = material.profiles.find((item) => item.id === row.dataset.profileId);
+    if (!profile) return;
     for (const [field] of GLASS_BITE_FIELDS) {
       const value = row.querySelector(`[data-profile-field="${field}"]`).value;
       profile[field] = clamp(value === "" ? 14 : value, 0, 100);
