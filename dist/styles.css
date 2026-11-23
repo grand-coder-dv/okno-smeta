@@ -692,6 +692,7 @@ h3 {
   min-width: 0;
   padding: 22px;
   overflow: hidden;
+  container-type: inline-size;
 }
 
 .editor-meta {
@@ -861,7 +862,7 @@ h3 {
   margin-top: 16px;
   padding: 15px;
   display: grid;
-  grid-template-columns: 105px minmax(145px, 1fr) minmax(170px, 1.15fr) auto;
+  grid-template-columns: auto minmax(145px, 1fr) minmax(170px, 1.15fr) auto;
   align-items: end;
   gap: 10px;
   background: #f6f8fa;
@@ -871,18 +872,28 @@ h3 {
 
 .selected-pane-label {
   align-self: center;
-  display: grid;
-  gap: 3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: max-content;
+  max-width: 100%;
+  min-height: 32px;
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  white-space: nowrap;
 }
 
 .selected-pane-label span {
   color: var(--muted);
-  font-size: 0.68rem;
+  font-size: 0.7rem;
 }
 
 .selected-pane-label strong {
-  color: var(--accent-dark);
-  font-size: 1rem;
+  color: var(--navy);
+  font-size: 0.76rem;
+  font-weight: 700;
 }
 
 .pane-inspector .field > span {
@@ -981,6 +992,11 @@ h3 {
 .impost-position-field > span {
   margin-bottom: 6px;
   font-size: 0.68rem;
+}
+
+.impost-position-field select {
+  width: 100%;
+  margin-bottom: 7px;
 }
 
 .impost-actions {
@@ -1303,6 +1319,99 @@ h3 {
   display: none;
 }
 
+.reports-dialog {
+  width: min(900px, calc(100vw - 24px));
+  max-height: min(92vh, 1100px);
+  padding: 24px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  color: var(--ink);
+  background: #fff;
+}
+
+.report-choices, .report-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.report-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: #f7f9fb;
+  cursor: pointer;
+}
+
+.report-choice input { margin: 3px 0 0; accent-color: var(--accent); }
+.report-choice span { display: grid; gap: 3px; min-width: 0; }
+.report-choice b { font-size: .86rem; }
+.report-choice small, .report-dialog-message { color: var(--muted); font-size: .75rem; }
+.report-dialog-message { min-height: 1.3em; }
+.reports-dialog .dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.report-preview { max-height: 55vh; overflow: auto; padding: 16px; margin-top: 16px; background: #eff2f6; border-radius: 12px; }
+
+.report-editor-card {
+  padding: 15px;
+  margin: 12px 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f7f9fb;
+}
+.report-editor-card h3 { margin: 0 0 12px; }
+.report-editor-card summary { cursor: pointer; font-weight: 760; }
+.report-editor-card[open] summary { margin-bottom: 14px; }
+.report-field { display: grid; gap: 5px; min-width: 0; font-size: .78rem; font-weight: 670; }
+.report-field input, .report-field textarea { width: 100%; padding: 9px 10px; border: 1px solid var(--line-strong); border-radius: 8px; font: inherit; color: var(--ink); background: white; }
+.report-field textarea { resize: vertical; min-height: 72px; }
+.report-options { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 10px 18px; font-size: .78rem; }
+.report-options label { display: inline-flex; align-items: center; gap: 5px; }
+
+.report-document {
+  padding: 24px;
+  margin-bottom: 18px;
+  background: white;
+  color: #17263a;
+  box-shadow: 0 2px 12px rgb(23 38 58 / 8%);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.report-header { display: flex; justify-content: space-between; align-items: end; gap: 16px; padding-bottom: 12px; border-bottom: 2px solid #17263a; }
+.report-header span { color: #697589; font-size: 11px; }
+.report-header h1 { margin: 3px 0; font-size: 23px; }
+.report-header p, .report-item p, .report-detail p { margin: 4px 0; }
+.report-total { display: grid; gap: 3px; text-align: right; flex-shrink: 0; }
+.report-total strong { font-size: 18px; }
+.report-intro, .report-terms, .report-legal { white-space: pre-line; margin: 14px 0; }
+.report-item { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 15px; padding: 12px 0; border-bottom: 1px solid #dce3eb; break-inside: avoid; }
+.report-item:not(:has(.report-sketch)) { display: block; }
+.report-item h3, .report-detail h3 { margin: 0 0 5px; font-size: 14px; }
+.report-item strong { display: block; margin-top: 5px; }
+.report-sketch { width: 100%; max-width: 480px; height: 300px; display: flex; align-items: center; justify-content: center; background: #f1f6f8; border: 1px solid #e1e8ef; border-radius: 7px; }
+.report-sketch svg { width: 100%; height: 100%; }
+.report-item:has(.report-sketch) { display: block; }
+.report-item .report-sketch { margin: 10px 0; }
+.report-detail { margin: 16px 0; break-inside: auto; }
+.report-detail .report-sketch { margin: 8px 0; }
+.report-table { width: 100%; border-collapse: collapse; table-layout: auto; font-size: 10px; }
+.report-table th, .report-table td { padding: 6px; border: 1px solid #d5dbe3; vertical-align: top; text-align: left; overflow-wrap: anywhere; }
+.report-table tr { break-inside: avoid; }
+.report-table small { display: block; color: #697589; }
+.report-subtotal { text-align: right; font-weight: 700; }
+.report-final { margin-top: 18px; padding-top: 10px; border-top: 2px solid #17263a; font-weight: 800; text-align: right; font-size: 15px; }
+.report-footer { padding-top: 12px; margin-top: 16px; border-top: 1px solid #d5dbe3; white-space: pre-line; color: #5d6879; }
+
+@media (max-width: 680px) {
+  .report-choices, .report-editor-grid { grid-template-columns: minmax(0, 1fr); }
+  .reports-dialog { padding: 16px; }
+  .reports-dialog .dialog-actions .button { flex: 1 1 140px; }
+}
+
 .summary-list div {
   padding: 10px 0;
   display: grid;
@@ -1622,6 +1731,7 @@ tbody tr:hover {
   padding: 4px;
   display: inline-flex;
   gap: 4px;
+  flex-wrap: wrap;
   background: #eef2f6;
   border: 1px solid var(--line);
   border-radius: 11px;
@@ -1921,7 +2031,7 @@ tbody tr:hover {
   }
 
   .pane-inspector {
-    grid-template-columns: 95px 1fr 1fr;
+    grid-template-columns: auto 1fr 1fr;
   }
 
   .pane-inspector .button {
@@ -2232,6 +2342,81 @@ tbody tr:hover {
   }
 }
 
+.pane-inspector {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: end;
+  gap: 10px 12px;
+  min-width: 0;
+}
+
+.pane-inspector > .selected-pane-label {
+  grid-column: 1 / -1;
+}
+
+.pane-inspector > .field,
+.pane-inspector > .button,
+.inner-impost-actions,
+.inner-impost-buttons {
+  min-width: 0;
+}
+
+.pane-inspector .field select {
+  max-width: 100%;
+  text-overflow: ellipsis;
+}
+
+.pane-inspector .field small {
+  display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: 0.72rem;
+}
+
+.pane-inspector > #applyGlassToAll {
+  grid-column: auto;
+  width: 100%;
+  white-space: normal;
+}
+
+.inner-impost-actions {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.inner-impost-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  width: 100%;
+}
+
+.inner-impost-buttons .button {
+  grid-column: auto;
+  min-width: 0;
+  width: 100%;
+  padding-inline: 7px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.inner-impost-buttons .button[hidden] {
+  display: none;
+}
+
+@container (max-width: 520px) {
+  .pane-inspector {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pane-inspector > .selected-pane-label,
+  .pane-inspector > #applyGlassToAll,
+  .inner-impost-actions {
+    grid-column: 1;
+  }
+}
+
 @media print {
   :root {
     background: white;
@@ -2317,6 +2502,17 @@ tbody tr:hover {
     display: block;
     color: #17263a;
   }
+
+  body.printing-order .report-document {
+    padding: 0;
+    margin: 0;
+    box-shadow: none;
+    break-after: page;
+  }
+
+  body.printing-order .report-document:last-child { break-after: auto; }
+  body.printing-order .report-table thead { display: table-header-group; }
+  body.printing-order .report-item, body.printing-order .report-header { break-inside: avoid; }
 
   .print-order-header {
     padding-bottom: 18px;
