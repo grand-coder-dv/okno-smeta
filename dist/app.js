@@ -462,7 +462,12 @@ function validateCurrentProduct() {
 
   const tech = getTechnology();
   for (const [i,entry] of sectionLayout().entries()) {
-    if (!entry.pane.split && glassGeometry(entry,tech).fields.some(f=>f.clearW<120 || f.clearH<120)) {
+    if (entry.pane.split) continue;
+    const geo=glassGeometry(entry,tech);
+    if ((state.shape === "circle" || state.shape === "skew") && geo.fields.some(f=>(fittedGlass(entry,geo,f,tech).area ?? f.w*f.h)<=1e-7)) {
+      return `Секция № ${sectionNumber(i)}: в этой части контура нет места для стеклопакета. Сместите или удалите импост.`;
+    }
+    if (geo.fields.some(f=>f.clearW<120 || f.clearH<120)) {
       return `Секция № ${sectionNumber(i)}: световой проём должен быть не менее 120 × 120 мм.`;
     }
   }
@@ -515,7 +520,7 @@ function renderOrder() {
               ${item.preliminary ? '<span class="preliminary-badge">Предварительно</span>' : ""}
               ${item.id === editingOrderItemId ? '<span class="editing-badge">Редактируется</span>' : ""}
             </div>
-            <small>${escapeHtml(material?.label || item.configuration.material)} · ${escapeHtml(shape)} · ${dimensions}<br>${item.quantity} шт. × ${formatMoney(item.unitPrice)}</small>
+            <small>${escapeHtml(material?.label || item.configuration.material)} · ${escapeHtml(shape)} · ${dimensions}<br>${item.quantity} шт. · ${formatMoney(item.unitPrice)} за шт.</small>
           </div>
           <div class="order-item-price">
             <span>Сумма позиции</span>
@@ -588,7 +593,7 @@ function renderPrintOrder() {
             <div class="print-order-item-total">
               ${item.preliminary ? "<span>Предварительный расчёт</span>" : "<span>Сумма позиции</span>"}
               <strong>${formatMoney(item.total)}</strong>
-              <small>${item.quantity} шт. × ${formatMoney(item.unitPrice)}</small>
+              <small>${item.quantity} шт. · ${formatMoney(item.unitPrice)} за шт.</small>
             </div>
           </div>
           ${specificationRows ? `
@@ -821,7 +826,7 @@ function saveCurrentOrderItem() {
 
   setConfigurationError();
   const calculation = buildSpecification();
-  const savedUnitPrice = Math.round(calculation.unitPrice);
+  const savedUnitPrice = calculation.unitPrice;
   const currentItem = editingOrderItemId ? orderItems.find((item) => item.id === editingOrderItemId) : null;
   const nextItem = {
     id: currentItem?.id || createOrderItemId(),
@@ -829,7 +834,7 @@ function saveCurrentOrderItem() {
     configuration: snapshotCurrentState(),
     quantity: state.quantity,
     unitPrice: savedUnitPrice,
-    total: savedUnitPrice * state.quantity,
+    total: Math.round(calculation.total),
     preliminary: isPreliminaryShape(),
     presentation: {
       material: calculation.material.label,
@@ -896,6 +901,18 @@ function makeEvenImposts(count, size, orientation) {
 
 function minimumSegment(size, impostCount) {
   return Math.min(220, Math.max(70, (size / (impostCount + 1)) * 0.36));
+}
+
+function removeRootImpost(orientation,id) {
+  const vertical=orientation === "vertical";
+  const items=vertical ? state.vImposts : state.hImposts;
+  const index=items.findIndex(item=>item.id===id);
+  if(index<0) return false;
+  const oldCols=state.vImposts.length+1;
+  state.panes=state.panes.filter((_,i)=>vertical ? i%oldCols!==index+1 : Math.floor(i/oldCols)!==index+1);
+  items.splice(index,1);
+  normalizeRootImposts();
+  return true;
 }
 
 function normalizeRootImposts() {
@@ -1057,7 +1074,7 @@ function paneGlazingArea(index, pane, shapeFactor = 1) {
   const entry=sectionLayout()[index], tech=getTechnology(), geo=glassGeometry(entry,tech);
   return geo.fields.reduce((sum,f)=>{
     if(f.clearW<=0 || f.clearH<=0 || f.w<=0 || f.h<=0) return sum;
-    return sum+(state.shape === "circle" ? fittedGlass(entry,geo,f,tech).area : f.w*f.h*shapeFactor);
+    return sum+(state.shape === "circle" || state.shape === "skew" ? (fittedGlass(entry,geo,f,tech).area ?? f.w*f.h) : f.w*f.h*shapeFactor);
   },0)/1e6;
 }
 
@@ -1086,7 +1103,7 @@ function geometry() {
   let nestedImpost = 0;
   let nestedCount = 0;
   let glassUnits = 0;
-  const paneGlazingAreas = [];
+  const paneGlazingAreas = [], paneGlassCounts = [];
   sectionPanes().forEach((pane, index) => {
     const paneRect = getPanePhysicalRect(index);
     pane.innerImposts.forEach((item) => {
@@ -1094,12 +1111,16 @@ function geometry() {
       nestedImpost += item.orientation === "vertical" ? (paneRect.height / 1000) * verticalFactor : (paneRect.width / 1000) * horizontalFactor;
     });
     if (pane.split) return;
-    glassUnits += paneGlassUnits(pane);
+    const entry=sectionLayout()[index], tech=getTechnology(), geo=glassGeometry(entry,tech);
+    paneGlassCounts[index] = state.shape === "circle" || state.shape === "skew"
+      ? geo.fields.filter(f=>f.clearW>0 && f.clearH>0 && (fittedGlass(entry,geo,f,tech).area ?? f.w*f.h)>1e-7).length
+      : paneGlassUnits(pane);
+    glassUnits += paneGlassCounts[index];
     paneGlazingAreas[index] = paneGlazingArea(index, pane, shapeFactor);
   });
   const glazingArea = paneGlazingAreas.reduce((sum, value) => sum + value, 0);
   const impost = primaryImpost + nestedImpost;
-  return { area, perimeter, glazingArea, paneGlazingAreas, impost, primaryImpost, nestedImpost, nestedCount, glassUnits, overall:overallSize() };
+  return { area, perimeter, glazingArea, paneGlazingAreas, paneGlassCounts, impost, primaryImpost, nestedImpost, nestedCount, glassUnits, overall:overallSize() };
 }
 
 function buildSpecification() {
@@ -1175,9 +1196,9 @@ function buildSpecification() {
   const glassGroups = sectionPanes().reduce((groups, pane, index) => {
     if (pane.split) return groups;
     const group = groups[pane.glass] || { fields: 0, area: 0 };
-    group.fields += paneGlassUnits(pane);
+    group.fields += dimensions.paneGlassCounts[index] || 0;
     group.area += dimensions.paneGlazingAreas[index] || 0;
-    groups[pane.glass] = group;
+    if (group.fields) groups[pane.glass] = group;
     return groups;
   }, {});
   Object.entries(glassGroups).forEach(([glassKey, group]) => {
@@ -1459,7 +1480,7 @@ function editPolygon(selection) {
 const PROFILE_SIDES = ["верхняя поперечина", "правая стойка", "нижняя поперечина", "левая стойка"];
 let activeProfileEdge = null;
 function customProfileArcs() {
-  return Boolean(polygonPoints() || (state.shape === "arch" && (Object.values(state.frameArcs || {}).some(Boolean) ||
+  return Boolean((state.shape === "arch" && (Object.values(state.frameArcs || {}).some(Boolean) ||
     sectionPanes().some(p => !p.split && p.opening !== "fixed" && Object.values(p.sashArcs || {}).some(Boolean)))));
 }
 function arcBoundaryPoints(p,q,radius,sweep) {
@@ -1646,9 +1667,9 @@ function fittedGlass(entry,geometry,f,tech,X=mm=>mm,Y=mm=>mm,sx=1,sy=1) {
   const poly=polygonPoints();
   if(poly){
     const points=polygonGlass(poly,geometry,f,tech);
-    if(points.length<3)return {path:"",w:0,h:0};
+    if(points.length<3)return {path:"",w:0,h:0,area:0};
     const [l,t,r,b]=polyBounds(points);
-    return {path:polyPath(points,X,Y),boundary:points,w:r-l,h:b-t};
+    return {path:polyPath(points,X,Y),boundary:points,w:r-l,h:b-t,area:Math.abs(closedArea(points))};
   }
   const depths=sides.map((touch,i)=>touch&&contact[i]<1e-5?depth:null);
   const sashArcs=sashBox && state.shape==="arch" ? entry.pane.sashArcs : null;
@@ -2209,7 +2230,10 @@ function bindCanvasDragging() {
   svg.addEventListener("pointermove", (event) => {
     if (!dragState || dragState.pointerId !== event.pointerId) return;
     event.preventDefault();
+    const record=getSelectedImpostRecord();
+    const prior=record?.item.position;
     moveSelectedImpostToPoint(getCanvasPoint(event));
+    if (record && state.shape === "circle" && validateCurrentProduct()) record.item.position=prior;
     renderAll();
   });
   const finishDrag = (event) => {
@@ -2384,7 +2408,7 @@ function renderSummary(calculation) {
     : "Замените тарифы на ваши в разделе «Прайс».";
 
   const savedItem = editingOrderItemId ? orderItems.find((item) => item.id === editingOrderItemId) : null;
-  const currentRoundedTotal = Math.round(calculation.unitPrice) * state.quantity;
+  const currentRoundedTotal = Math.round(calculation.total);
   const priceChanged = savedItem && savedItem.total !== currentRoundedTotal;
   $("#savedPriceComparison").hidden = !priceChanged;
   if (priceChanged) {
@@ -2649,9 +2673,8 @@ function bindEvents() {
     const record = getSelectedImpostRecord();
     if (!record) return;
     if (record.selected.scope === "root") {
-      const collection = record.selected.orientation === "vertical" ? state.vImposts : state.hImposts;
-      const index = collection.findIndex((item) => item.id === record.item.id);
-      collection.splice(index, 1);
+      if (!removeRootImpost(record.selected.orientation,record.item.id)) return;
+      state.selectedPane=null;
     } else if (record.pane.split) {
       if (record.pane.children.some(child => child.split) && !window.confirm("Удалить импост и все секции внутри этого деления?")) return;
       const first = record.pane.children[0];
