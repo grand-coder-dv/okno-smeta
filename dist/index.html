@@ -70,7 +70,7 @@
         </button>
         <button class="button primary" id="printEstimate" type="button">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V4h10v5M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M7 14h10v7H7z" /></svg>
-          Печать сметы
+          Отчёт
         </button>
       </div>
     </header>
@@ -215,7 +215,7 @@
           <div class="editor-heading">
             <div>
               <span class="eyebrow">Графический редактор</span>
-              <h2>Конструкция</h2>
+              <h2>Конструкция · <span id="editorProductName">Изделие 1</span><button type="button" id="renameEditorProduct" class="order-rename" aria-label="Переименовать изделие" title="Переименовать изделие">✎</button></h2>
             </div>
             <div class="editor-meta">
               <span id="editorDimensions">1400 × 1300 мм</span>
@@ -234,11 +234,11 @@
 
           <div class="pane-inspector" id="paneInspector">
             <div class="selected-pane-label">
-              <span>Выбрана секция</span>
+              <span>Секция</span>
               <strong id="selectedPaneName">№ 1</strong>
             </div>
             <label class="field">
-              <span>Тип открывания</span>
+              <span>Открывание</span>
               <select id="openingType">
                 <option value="fixed">Глухая</option>
                 <option value="turn">Поворотная</option>
@@ -247,11 +247,11 @@
               </select>
             </label>
             <label class="field" id="hingeSideField" hidden style="display:none">
-              <span>Сторона петель на рисунке</span>
-              <select id="hingeSide"><option value="left">Петли слева — ручка справа</option><option value="right">Петли справа — ручка слева</option></select>
+              <span>Петли</span>
+              <select id="hingeSide"><option value="left">Слева · ручка справа</option><option value="right">Справа · ручка слева</option></select>
             </label>
             <label class="field">
-              <span>Стеклопакет секции</span>
+              <span>Стеклопакет</span>
               <select id="paneGlass">
                 <option value="single">Однокамерный, 24 мм</option>
                 <option value="double">Двухкамерный, 40 мм</option>
@@ -259,16 +259,18 @@
                 <option value="acoustic">Шумоизоляционный, 44 мм</option>
               </select>
             </label>
-            <button class="button secondary" id="applyGlassToAll" type="button">Применить стеклопакет ко всем</button>
+            <button class="button secondary" id="applyGlassToAll" type="button" title="Применить выбранный стеклопакет ко всем секциям">Для всех секций</button>
             <div class="inner-impost-actions">
               <div>
-                <span>Импост внутри секции</span>
+                <span>Импосты</span>
                 <small id="innerImpostHint">Добавьте импост в выбранную секцию</small>
               </div>
               <div class="inner-impost-buttons">
                 <button class="button secondary" id="addInnerVertical" type="button" title="Добавить вертикальный импост в выбранную секцию">
                   <span class="mini-impost vertical" aria-hidden="true"></span> Вертикальный
                 </button>
+                <button class="button secondary" id="equalGlassWidth" type="button" title="Выровнять ширину выбранных стеклопакетов" hidden disabled>Равная ширина</button>
+                <button class="button secondary" id="equalGlassHeight" type="button" title="Выровнять высоту выбранных стеклопакетов" hidden disabled>Равная высота</button>
                 <button class="button secondary" id="addInnerHorizontal" type="button" title="Добавить горизонтальный импост в выбранную секцию">
                   <span class="mini-impost horizontal" aria-hidden="true"></span> Горизонтальный
                 </button>
@@ -282,7 +284,11 @@
               <strong id="selectedImpostName">Вертикальный</strong>
             </div>
             <label class="field impost-position-field">
-              <span id="impostPositionLabel">От левого края рамы, мм</span>
+              <span id="impostPositionLabel">Положение от края конструкции, мм</span>
+              <select id="impostPositionOrigin" aria-label="Край отсчёта импоста">
+                <option value="start">От левого края конструкции</option>
+                <option value="end">От правого края конструкции</option>
+              </select>
               <div class="input-with-unit">
                 <input id="impostPosition" type="number" min="100" step="10" inputmode="numeric" />
                 <em>мм</em>
@@ -395,7 +401,7 @@
         <p class="spec-footnote">Расчёт ориентировочный и не является публичной офертой. Размеры указаны по внешнему габариту рамы.</p>
       </section>
 
-      <section class="print-order" id="printOrder" aria-label="Печатная смета заказа"></section>
+      <section class="print-order" id="printOrder" aria-label="Печатные отчёты заказа"></section>
     </main>
 
     <dialog id="projectNameDialog" class="project-dialog project-name-dialog">
@@ -415,6 +421,22 @@
           <button class="button primary" type="submit">Сохранить заказ</button>
         </div>
       </form>
+    </dialog>
+
+    <dialog id="reportsDialog" class="reports-dialog">
+      <div class="dialog-header">
+        <div><span class="eyebrow">Документы заказа</span><h2>Отчёты</h2></div>
+        <button class="icon-button" id="closeReportsDialog" type="button" aria-label="Закрыть">×</button>
+      </div>
+      <p class="dialog-intro">Выберите документы. Они формируются по всем сохранённым изделиям текущего заказа.</p>
+      <div id="reportChoices" class="report-choices"></div>
+      <p id="reportDialogMessage" class="report-dialog-message" role="status"></p>
+      <div class="dialog-actions">
+        <button class="button ghost" id="editReportTemplates" type="button">Настроить отчёты</button>
+        <button class="button secondary" id="previewReports" type="button">Просмотр</button>
+        <button class="button primary" id="printReports" type="button">Печать выбранных</button>
+      </div>
+      <div id="reportPreview" class="report-preview" hidden></div>
     </dialog>
 
     <dialog id="projectsDialog" class="project-dialog projects-dialog">
@@ -439,6 +461,7 @@
           <button class="active" type="button" role="tab" aria-selected="true" data-settings-tab="prices">Прайс</button>
           <button type="button" role="tab" aria-selected="false" data-settings-tab="technology">Технологические</button>
           <button type="button" role="tab" aria-selected="false" data-settings-tab="profile">Настройки профиля</button>
+          <button type="button" role="tab" aria-selected="false" data-settings-tab="reports">Отчёты</button>
         </div>
 
         <section class="settings-pane" id="settingsPricesPane" role="tabpanel">
@@ -530,15 +553,23 @@
             <button class="button primary" id="saveProfileSettings" type="button">Сохранить каталог</button>
           </div>
         </section>
+        <section class="settings-pane" id="settingsReportsPane" role="tabpanel" hidden>
+          <p class="dialog-intro">Настройте внешний вид и текст каждого документа. Данные изделий, цены и спецификация подставляются из текущего заказа.</p>
+          <div id="reportTemplateEditor"></div>
+          <div class="dialog-actions">
+            <button class="button ghost" id="resetReportTemplates" type="button">Вернуть шаблоны</button>
+            <button class="button primary" id="saveReportTemplates" type="button">Сохранить отчёты</button>
+          </div>
+        </section>
       </form>
     </dialog>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="./app.js"></script>
+<script src="./reports.js"></script>
 <script src="./impost-selection.js"></script>
 <script src="./editor-history.js"></script>
 <script src="./editor-tools.js"></script>
-<script src="./sash-imposts.js"></script>
   <script>
 (() => {
   const selectors = '#polygonEditDialog, #profileArcDialog';
