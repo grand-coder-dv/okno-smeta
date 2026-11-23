@@ -334,6 +334,7 @@ function createDefaultState() {
 let state = createDefaultState();
 let multiSections = new Set();
 let sharedAxis = null;
+const impostPositionOrigin = {vertical:"start", horizontal:"start"};
 function selectedSections() {
   const entries = sectionLayout();
   const indices = multiSections.size ? [...multiSections] : [state.selectedPane];
@@ -342,6 +343,7 @@ function selectedSections() {
 let orderItems = [];
 let editingOrderItemId = null;
 let orderItemSequence = 0;
+let draftProductName = "Изделие 1";
 let projects = readStoredProjects();
 let activeProjectId = null;
 let activeProjectSnapshot = null;
@@ -412,6 +414,7 @@ function openingAllowed(opening) {
 
 function normalizeUnsupportedOpenings() {
   function visit(pane) {
+    if (pane.sashFill && !openingAllowed(pane.opening)) { pane.opening = "fixed"; delete pane.hingeSide; }
     if (pane.split) (pane.children || []).forEach(visit);
     else if (!openingAllowed(pane.opening)) { pane.opening = "fixed"; delete pane.hingeSide; }
   }
@@ -544,6 +547,7 @@ function restoreProductState(configuration) {
 
 function resetCurrentProduct(previous = null) {
   editingOrderItemId = null;
+  draftProductName = `Изделие ${orderItemSequence + 1}`;
   state = createDefaultState();
   if (previous) {
     for (const key of ["material", "profile", "finish", "productType", "shape", "width", "height", "defaultGlass"]) {
@@ -564,14 +568,15 @@ function resetCurrentProduct(previous = null) {
   renderProjectToolbar();
 }
 
-function orderItemSketch(config) {
+function orderItemSketch(config, detailed = false) {
   // Draw the saved configuration with the same renderer as the large editor.
   const previousState = state;
   const previousLayout = canvasLayout;
   const preview = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   try {
     state = config;
-    renderCanvas({ svg: preview, thumbnail: true });
+    renderCanvas({ svg: preview, thumbnail: !detailed });
+    if (detailed) preview.querySelectorAll(".pane-hit, .pane-selected, .impost-hit, .impost-grip, .impost-endpoint, [data-profile-edge], [data-profile-length]").forEach(node => node.remove());
     const prefix = `order-preview-${Math.random().toString(36).slice(2)}-`;
     preview.innerHTML = preview.innerHTML
       .replace(/(\s)id="([^"]+)"/g, (_, space, id) => `${space}id="${prefix}${id}"`)
@@ -963,7 +968,7 @@ function saveCurrentOrderItem() {
   const currentItem = editingOrderItemId ? orderItems.find((item) => item.id === editingOrderItemId) : null;
   const nextItem = {
     id: currentItem?.id || createOrderItemId(),
-    name: currentItem?.name || `Изделие ${orderItemSequence}`,
+    name: draftProductName.trim() || currentItem?.name || `Изделие ${orderItemSequence}`,
     configuration: snapshotCurrentState(),
     quantity: state.quantity,
     unitPrice: savedUnitPrice,
@@ -1003,6 +1008,7 @@ function editOrderItem(itemId) {
     } else if (choice?.trim() !== "2") return;
   }
   editingOrderItemId = item.id;
+  draftProductName = item.name || `Изделие ${orderItemSequence}`;
   restoreProductState(orderItems.find(candidate => candidate.id === itemId).configuration);
   renderOrder();
   $("#saveOrderItem").scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1017,6 +1023,7 @@ function renameOrderItem(itemId) {
   if (!name || name.length > 100) return showToast("Название должно содержать от 1 до 100 символов.");
   if (name === item.name) return;
   item.name = name;
+  if(editingOrderItemId===item.id)draftProductName=name;
   item.updatedAt = new Date().toISOString();
   projectDirty = true;
   renderOrder();
@@ -1109,19 +1116,20 @@ function primaryBoundaries(orientation) {
 
 function sectionLayout(x = primaryBoundaries("vertical"), y = primaryBoundaries("horizontal")) {
   const entries = [];
-  function visit(pane, rect, [l,r,t,b], rootCol, rootRow) {
-    entries.push({ pane, rect, edges: [l,r,t,b], rootCol, rootRow });
+  function visit(pane, rect, [l,r,t,b], rootCol, rootRow, owner = null) {
+    entries.push({ pane, rect, edges: [l,r,t,b], rootCol, rootRow, sashOwner: owner });
     if (!pane.split) return;
+    const nextOwner = pane.sashFill && pane.opening !== "fixed" ? {pane,rect,edges:[l,r,t,b]} : owner;
     const [a,c] = pane.children;
     const p = pane.split.position;
     if (pane.split.orientation === "vertical") {
       const d = rect.width*p;
-      visit(a,{...rect,width:d},[l,false,t,b],rootCol,rootRow);
-      visit(c,{...rect,x:rect.x+d,width:rect.width-d},[false,r,t,b],rootCol,rootRow);
+      visit(a,{...rect,width:d},[l,false,t,b],rootCol,rootRow,nextOwner);
+      visit(c,{...rect,x:rect.x+d,width:rect.width-d},[false,r,t,b],rootCol,rootRow,nextOwner);
     } else {
       const d = rect.height*p;
-      visit(a,{...rect,height:d},[l,r,t,false],rootCol,rootRow);
-      visit(c,{...rect,y:rect.y+d,height:rect.height-d},[l,r,false,b],rootCol,rootRow);
+      visit(a,{...rect,height:d},[l,r,t,false],rootCol,rootRow,nextOwner);
+      visit(c,{...rect,y:rect.y+d,height:rect.height-d},[l,r,false,b],rootCol,rootRow,nextOwner);
     }
   }
   state.panes.forEach((pane,i) => {
@@ -1232,8 +1240,15 @@ function updateMaterialSelects(reset = false, preserveProfile = false) {
     .join("");
 }
 
-function glassGeometry({pane, rect, edges}, tech = getTechnology()) {
+function glassGeometry({pane, rect, edges, sashOwner}, tech = getTechnology()) {
   const [fl,fr,ft,fb] = edges.map(outer => outer ? tech.frame : tech.impost/2);
+  const ownerEdges=sashOwner && [
+    Math.abs(rect.x-sashOwner.rect.x)<0.01,
+    Math.abs(rect.x+rect.width-sashOwner.rect.x-sashOwner.rect.width)<0.01,
+    Math.abs(rect.y-sashOwner.rect.y)<0.01,
+    Math.abs(rect.y+rect.height-sashOwner.rect.y-sashOwner.rect.height)<0.01
+  ];
+  const sashDepth=tech.sash-SASH_LAP;
   const poly=constructionPolygon();
   const outer=poly ? polygonClip(poly,rectPoints([
     rect.x, edges[2] ? Math.min(rect.y,...poly.map(p=>p[1])) : rect.y,
@@ -1241,16 +1256,16 @@ function glassGeometry({pane, rect, edges}, tech = getTechnology()) {
   ])) : null;
   const shapeBounds=outer?.length>=3 ? polyBounds(outer) : null;
   const [l,t,r,b] = [
-    (edges[0] && shapeBounds ? Math.min(rect.x,shapeBounds[0]) : rect.x)+fl,
-    (edges[2] && shapeBounds ? Math.min(rect.y,shapeBounds[1]) : rect.y)+ft,
-    (edges[1] && shapeBounds ? Math.max(rect.x+rect.width,shapeBounds[2]) : rect.x+rect.width)-fr,
-    (edges[3] && shapeBounds ? Math.max(rect.y+rect.height,shapeBounds[3]) : rect.y+rect.height)-fb
+    (edges[0] && shapeBounds ? Math.min(rect.x,shapeBounds[0]) : rect.x)+fl+(ownerEdges?.[0]?sashDepth:0),
+    (edges[2] && shapeBounds ? Math.min(rect.y,shapeBounds[1]) : rect.y)+ft+(ownerEdges?.[2]?sashDepth:0),
+    (edges[1] && shapeBounds ? Math.max(rect.x+rect.width,shapeBounds[2]) : rect.x+rect.width)-fr-(ownerEdges?.[1]?sashDepth:0),
+    (edges[3] && shapeBounds ? Math.max(rect.y+rect.height,shapeBounds[3]) : rect.y+rect.height)-fb-(ownerEdges?.[3]?sashDepth:0)
   ];
   const sash = pane.opening !== "fixed";
   const sashBox = sash ? [l-SASH_LAP,t-SASH_LAP,r+SASH_LAP,b+SASH_LAP] : null;
   const d = sash ? tech.sash-SASH_LAP : 0;
   const opening = [l+d,t+d,r-d,b-d];
-  const bites = edges.map(outer => tech.bite[sash ? "створка" : outer ? "рама" : "импост"]);
+  const bites = edges.map((outer,i) => tech.bite[sash || ownerEdges?.[i] ? "створка" : outer ? "рама" : "импост"]);
   const intervals = (axis, lo, hi, origin, size, first, last) => {
     const marks = pane.innerImposts.filter(i => !pane.split && i.orientation === axis)
       .map(i => origin + i.position*size).sort((a,b) => a-b);
@@ -1448,7 +1463,7 @@ function buildSpecification() {
   });
 
   const openingGroups = sectionPanes().reduce((groups, pane) => {
-    if (pane.split) return groups;
+    if (pane.split && !pane.sashFill) return groups;
     if (pane.opening !== "fixed") groups[pane.opening] = (groups[pane.opening] || 0) + 1;
     return groups;
   }, {});
@@ -2074,12 +2089,12 @@ function circularOutline(bounds,depth,X,Y) {
 
 function fittedGlass(entry,geometry,f,tech,X=mm=>mm,Y=mm=>mm,sx=1,sy=1) {
   const {sashBox,opening}=geometry;
-  const bite=tech.bite[sashBox ? "створка" : "рама"];
+  const bite=tech.bite[sashBox || entry.sashOwner ? "створка" : "рама"];
   const fbox=[f.x,f.y,f.x+f.w,f.y+f.h];
   const contact=[Math.abs(fbox[1]-opening[1]+bite),Math.abs(fbox[2]-opening[2]-bite),
     Math.abs(fbox[3]-opening[3]-bite),Math.abs(fbox[0]-opening[0]+bite)];
   const sides=[entry.edges[2],entry.edges[1],entry.edges[3],entry.edges[0]];
-  const depth=tech.frame+(sashBox?tech.sash-SASH_LAP:0)-bite;
+  const depth=tech.frame+(sashBox || entry.sashOwner ? tech.sash-SASH_LAP:0)-bite;
   if(state.shape === "circle") return circularOutline(fbox,depth,X,Y);
   const poly=constructionPolygon();
   if(poly){
@@ -2089,7 +2104,7 @@ function fittedGlass(entry,geometry,f,tech,X=mm=>mm,Y=mm=>mm,sx=1,sy=1) {
     return {path:polyPath(points,X,Y),boundary:points,w:r-l,h:b-t,area:Math.abs(closedArea(points))};
   }
   const depths=sides.map((touch,i)=>touch&&contact[i]<1e-5?depth:null);
-  const sashArcs=sashBox && state.shape==="arch" ? entry.pane.sashArcs : null;
+  const sashArcs=(sashBox || entry.sashOwner) && state.shape==="arch" ? (entry.sashOwner?.pane || entry.pane).sashArcs : null;
   const glassArcs=sashArcs && Object.fromEntries(Object.entries(sashArcs).filter(([i])=>contact[i]<1e-5));
   const outline=fittedOutline(fbox,depths,glassArcs,X,Y,sx,sy);
   const points=outline.extrema || outline.boundary || outline.pts;
@@ -2369,7 +2384,29 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
       }
     });
 
-    if (pane.split) { localImpostsMarkup += innerImpostsMarkup; return; }
+    if (pane.split) {
+      localImpostsMarkup += innerImpostsMarkup;
+      if (pane.sashFill && pane.opening !== "fixed") {
+        const shell=glassGeometry({...entry,pane:{...pane,innerImposts:[],split:null}},tech);
+        const sashBox=shell.sashBox, opening=shell.opening;
+        const depth=tech.frame-SASH_LAP;
+        const outerSash=state.shape==="circle"?circularOutline(sashBox,depth,X,Y)
+          : !poly ? fit(sashBox,depth,pane.sashArcs)
+          : {path:polyPath(clipSlantedSections(polygonClip(rectPoints(slantedBounds(sashBox,entry)),poly,depth),entry,Math.max(0,tech.impost/2-SASH_LAP)),X,Y)};
+        const innerSash=state.shape==="circle"?circularOutline(opening,depth+tech.sash,X,Y)
+          : !poly ? fit(opening,depth+tech.sash,pane.sashArcs)
+          : {path:polyPath(clipSlantedSections(polygonClip(rectPoints(slantedBounds(opening,entry)),poly,depth+tech.sash),entry,Math.max(0,tech.impost/2+tech.sash-SASH_LAP)),X,Y)};
+        if(outerSash?.path && innerSash?.path){
+          sashMarkup+=`<path d="${outerSash.path} ${innerSash.path}" fill="${profileColor}" fill-rule="evenodd" stroke="${material.edge}" stroke-width=".8" />`;
+          const envelope=fittedGlass({...entry,pane:{...pane,innerImposts:[],split:null}},shell,shell.fields[0],tech,X,Y,sx,sy);
+          if(envelope.boundary?.length && innerSash.boundary?.length && outerSash.boundary?.length){
+            const mark=sashOpeningMark(envelope.boundary,outerSash.boundary,innerSash.boundary,pane.opening,pane.hingeSide,X,Y);
+            sashMarkup+=`<g clip-path="url(#glassCutClip)">${mark.dashes}</g>${mark.handle}`;
+          }
+        }
+      }
+      return;
+    }
     const {opening,sashBox,fields} = glassGeometry(entry,tech);
     const sashArcs=state.shape==="arch" ? pane.sashArcs : null;
     const outerDepth=tech.frame-SASH_LAP, innerDepth=outerDepth+tech.sash;
@@ -2710,6 +2747,35 @@ function getCanvasPoint(event) {
 
 function bindCanvasDragging() {
   const svg = $("#windowCanvas");
+  let lastEditableClick=null;
+  svg.addEventListener("click", event=>{
+    const node=event.target.closest?.(".impost-endpoint, [data-profile-edge]");
+    if(!node)return;
+    const key=node.matches(".impost-endpoint")
+      ? `impost:${node.dataset.scope}:${node.dataset.id}:${node.dataset.endpoint}`
+      : `profile:${node.dataset.profileEdge}:${node.dataset.edgeIndex||""}:${node.dataset.edgeSide}`;
+    const now=Date.now();
+    const doubleClick=event.detail>=2 || lastEditableClick?.key===key && now-lastEditableClick.time<550
+      && Math.hypot(event.clientX-lastEditableClick.x,event.clientY-lastEditableClick.y)<24;
+    lastEditableClick={key,time:now,x:event.clientX,y:event.clientY};
+    if(!doubleClick)return;
+    lastEditableClick=null;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if(node.matches(".impost-endpoint")){
+      if(state.shape!=="skew")return;
+      activeImpostEndpoint={owner:state,id:node.dataset.id,orientation:node.dataset.orientation,
+        scope:node.dataset.scope,paneIndex:Number(node.dataset.pane),end:Number(node.dataset.endpoint)};
+      activeProfileEdge=null;
+    } else {
+      const type=node.dataset.profileEdge;
+      activeImpostEndpoint=null;
+      activeProfileEdge={owner:state,type,index:(type==="sash"||type==="skew-sash")?Number(node.dataset.edgeIndex):null,side:Number(node.dataset.edgeSide)};
+    }
+    refreshProfileEdit();
+    const button=$("#editProfileGeometry");
+    if(!button.hidden && !button.disabled)button.click();
+  },true);
   svg.addEventListener("click", event=>{
     const point=event.target.closest?.(".impost-endpoint");
     if(!point)return;
@@ -2814,6 +2880,10 @@ function largestGapPosition(items) {
 function addInnerImpost(orientation) {
   const targets = selectedSections();
   if (!targets.length) return;
+  if (targets.some(({pane}) => pane.innerImposts.length)) {
+    showToast("В секции уже есть импост старого типа. Удалите его перед новой разбивкой, чтобы сохранить размеры стеклопакетов.");
+    return;
+  }
   const vertical = orientation === "vertical";
   const start = rect => vertical ? rect.x : rect.y;
   const size = rect => vertical ? rect.width : rect.height;
@@ -2825,16 +2895,17 @@ function addInnerImpost(orientation) {
     const item = {id:createImpostId("pane", orientation), orientation,
       position:commonEnd > commonStart ? (axis - start(rect)) / size(rect) : 0.5};
     pane.split = item;
+    if (pane.opening !== "fixed") pane.sashFill = true;
     pane.innerImposts = [item];
     pane.children = [
-      {opening:pane.opening, hingeSide:pane.hingeSide, glass:pane.glass, innerImposts:[]},
+      {opening:"fixed", glass:pane.glass, innerImposts:[]},
       {opening:"fixed", glass:pane.glass, innerImposts:[]},
     ];
     return {pane, old};
   });
   const issue = validateCurrentProduct();
   if (issue) {
-    changed.forEach(({pane,old}) => { delete pane.split; delete pane.children; pane.innerImposts = old; });
+    changed.forEach(({pane,old}) => { delete pane.split; delete pane.children; delete pane.sashFill; pane.innerImposts = old; });
     showToast(issue);
     return;
   }
@@ -2845,6 +2916,108 @@ function addInnerImpost(orientation) {
   sharedAxis = null;
   renderAll();
   showToast(`Импостов добавлено: ${changed.length}`);
+}
+function equalizeSelectedGlass(axis) {
+  const entries=selectedSections();
+  const horizontal=axis==="horizontal";
+  const coordinate=e=>horizontal?e.rect.y:e.rect.x;
+  const length=e=>horizontal?e.rect.height:e.rect.width;
+  const limit=horizontal?state.height:state.width;
+  const selected=new Set(entries.map(e=>e.pane));
+  const initialLayout=sectionLayout();
+  const descendants=pane=>pane.split?pane.children.flatMap(descendants):[pane];
+  const independent=initialLayout.filter(e=>e.pane.split?.orientation===axis &&
+    descendants(e.pane).every(p=>selected.has(p)));
+  if(independent.length && entries.length===independent.reduce((sum,e)=>sum+descendants(e.pane).length,0)){
+    const changes=[], targets=[];
+    for(const parent of independent){
+      const sides=parent.pane.children.map(child=>descendants(child).map(pane=>initialLayout.find(e=>e.pane===pane)));
+      const offsets=sides.map(side=>side.map(e=>{
+        const field=glassGeometry(e).fields[0];return (horizontal?field.h:field.w)-length(e);
+      }));
+      if(offsets.some(values=>values.some(value=>Math.abs(value-values[0])>0.5))){
+        showToast("В одном ряду различаются профили или створки стеклопакетов.");return;
+      }
+      targets.push((length(parent)+offsets[0][0]+offsets[1][0])/2);
+      changes.push({item:parent.pane.split,size:length(parent),bias:offsets[0][0],old:parent.pane.split.position});
+    }
+    if(targets.some(value=>Math.abs(value-targets[0])>0.5)){
+      showToast("Для этих рядов размеры стеклопакетов несовместимы.");return;
+    }
+    const target=targets.reduce((sum,value)=>sum+value,0)/targets.length;
+    changes.forEach(({item,size,bias})=>{item.position=(target-bias)/size;});
+    const issue=validateCurrentProduct();
+    const actual=sectionLayout().filter(e=>selected.has(e.pane)).map(e=>{
+      const field=glassGeometry(e).fields[0];return horizontal?field.h:field.w;
+    });
+    if(issue || changes.some(({item,size})=>item.position*size<getTechnology().impost ||
+        (1-item.position)*size<getTechnology().impost) || Math.max(...actual)-Math.min(...actual)>1){
+      changes.forEach(({item,old})=>{item.position=old;});
+      showToast(issue||"Не удалось выровнять все выбранные стеклопакеты.");return;
+    }
+    renderAll();showToast(`Стеклопакеты выровнены по ${horizontal?"высоте":"ширине"}`);return;
+  }
+  const groups=[];
+  for(const entry of entries){
+    if(entry.pane.split || entry.pane.innerImposts.length){
+      showToast("Выберите секции без дополнительных импостов внутри стеклопакета.");return;
+    }
+    let group=groups.find(g=>Math.abs(g.start-coordinate(entry))<0.01 && Math.abs(g.end-coordinate(entry)-length(entry))<0.01);
+    if(!group){group={start:coordinate(entry),end:coordinate(entry)+length(entry),entries:[]};groups.push(group);}
+    group.entries.push(entry);
+  }
+  groups.sort((a,b)=>a.start-b.start);
+  if(groups.length<2 || groups.some((g,i)=>i && Math.abs(g.start-groups[i-1].end)>0.01)){
+    showToast("Выберите соседние секции для равной разбивки.");return;
+  }
+  const glass=e=>{const field=glassGeometry(e).fields[0];return horizontal?field.h:field.w;};
+  const biases=groups.map(group=>{
+    const values=group.entries.map(e=>glass(e)-length(e));
+    return values.every(v=>Math.abs(v-values[0])<0.5)?values[0]:null;
+  });
+  if(biases.includes(null)){
+    showToast("В одном столбце различаются профили или створки стеклопакетов.");return;
+  }
+  const layout=sectionLayout(), items=horizontal?state.hImposts:state.vImposts;
+  const boundaries=groups.slice(0,-1).map(group=>group.end);
+  const changes=[];
+  for(const boundary of boundaries){
+    const matches=[];
+    items.forEach(item=>{if(Math.abs(item.position-boundary)<0.01)matches.push({item,root:true});});
+    layout.forEach(entry=>{
+      if(entry.pane.split?.orientation!==axis)return;
+      const splitAt=coordinate(entry)+length(entry)*entry.pane.split.position;
+      if(Math.abs(splitAt-boundary)<0.01)matches.push({item:entry.pane.split,pane:entry.pane,root:false});
+    });
+    if(!matches.length){showToast("Не найден импост между выбранными секциями.");return;}
+    changes.push(matches);
+  }
+  const target=(groups.at(-1).end-groups[0].start+biases.reduce((sum,v)=>sum+v,0))/groups.length;
+  let next=groups[0].start;
+  const positions=groups.slice(0,-1).map((_,i)=>(next+=target-biases[i]));
+  const originals=new Map(changes.flat().map(({item})=>[item,item.position]));
+  const rollback=()=>originals.forEach((position,item)=>{item.position=position;});
+  // Root boundaries move first. Nested positions are then measured in their updated parent rectangles.
+  changes.forEach((matches,i)=>matches.filter(m=>m.root).forEach(({item})=>{item.position=positions[i];}));
+  const nested=changes.flatMap((matches,i)=>matches.filter(m=>!m.root).map(m=>({...m,at:positions[i]})));
+  nested.sort((a,b)=>layout.findIndex(e=>e.pane===a.pane)-layout.findIndex(e=>e.pane===b.pane));
+  for(const {item,pane,at} of nested){
+    const parent=sectionLayout().find(e=>e.pane===pane);
+    item.position=(at-coordinate(parent))/length(parent);
+  }
+  const issue=validateCurrentProduct();
+  const current=sectionLayout().filter(e=>selected.has(e.pane)).map(glass);
+  const gap=getTechnology().impost;
+  const invalid=items.some((item,i)=>item.position<=(i?items[i-1].position:0)+gap ||
+    item.position>=(i<items.length-1?items[i+1].position:limit)-gap) ||
+    nested.some(({item,pane})=>{
+      const size=length(sectionLayout().find(e=>e.pane===pane));
+      return item.position*size<gap || (1-item.position)*size<gap;
+    });
+  if(issue || invalid || Math.max(...current)-Math.min(...current)>1){
+    rollback();showToast(issue||"Не удалось выровнять все выбранные стеклопакеты.");return;
+  }
+  renderAll();showToast(`Стеклопакеты выровнены по ${horizontal?"высоте":"ширине"}`);
 }
 
 function renderInspector() {
@@ -2858,6 +3031,13 @@ function renderInspector() {
     const vertical = record.selected.orientation === "vertical";
     const isRoot = record.selected.scope === "root";
     const positionInput = $("#impostPosition");
+    const originSelect = $("#impostPositionOrigin");
+    const dimension = vertical ? state.width : state.height;
+    const reverse = impostPositionOrigin[record.selected.orientation] === "end";
+    originSelect.innerHTML = vertical
+      ? '<option value="start">От левого края конструкции</option><option value="end">От правого края конструкции</option>'
+      : '<option value="start">От верхнего края конструкции</option><option value="end">От нижнего края конструкции</option>';
+    originSelect.value = reverse ? "end" : "start";
     let position;
     let min;
     let max;
@@ -2870,26 +3050,28 @@ function renderInspector() {
       const physical = getPanePhysicalRect(record.selected.paneIndex);
       const size = vertical ? physical.width : physical.height;
       const limits = nestedImpostLimits(record.item, record.pane);
-      position = record.item.position * size;
-      min = limits.min * size;
-      max = limits.max * size;
+      const offset = vertical ? physical.x : physical.y;
+      position = offset + record.item.position * size;
+      min = offset + limits.min * size;
+      max = offset + limits.max * size;
     }
     const nestedScope = record.pane?.opening === "fixed" ? "глухой секции" : "створке";
     $("#selectedImpostScope").textContent = isRoot ? "Импост рамы" : `Импост в ${nestedScope} № ${record.selected.paneIndex + 1}`;
     $("#selectedImpostName").textContent = vertical ? "Вертикальный" : "Горизонтальный";
-    $("#impostPositionLabel").textContent = vertical
-      ? `От левого края ${isRoot ? "рамы" : record.pane?.opening === "fixed" ? "глухой секции" : "створки"}, мм`
-      : `От верхнего края ${isRoot ? "рамы" : record.pane?.opening === "fixed" ? "глухой секции" : "створки"}, мм`;
+    $("#impostPositionLabel").textContent = "Расстояние от выбранного края, мм";
     if (sharedAxis) {
       const group = sharedImpostLimits(sharedAxis, record.selected.orientation);
       const first = group.members[0];
       if (first) {
         const axis = first.start + first.item.position * first.size;
-        position = vertical ? axis : state.height - axis;
-        min = vertical ? group.min : state.height - group.max;
-        max = vertical ? group.max : state.height - group.min;
+        position = axis;
+        min = group.min;
+        max = group.max;
       }
-      $("#impostPositionLabel").textContent = vertical ? "Координата X от левого края рамы, мм" : "Координата Y от нижнего края рамы, мм";
+    }
+    if(reverse){
+      position = dimension - position;
+      [min,max] = [dimension-max,dimension-min];
     }
     positionInput.min = Math.ceil(min);
     positionInput.max = Math.floor(max);
@@ -2900,9 +3082,15 @@ function renderInspector() {
   if (!pane) { $("#paneInspector").hidden = true; $("#impostInspector").hidden = true; return; }
   $("#paneInspector").hidden = false;
   $("#impostInspector").hidden = true;
-  $("#selectedPaneName").textContent = multiSections.size > 1
-    ? `Выбрано секций: ${multiSections.size}` : `№ ${sectionNumber(state.selectedPane)}`;
+  const selectedCount=selectedSections().length;
+  $(".selected-pane-label span").textContent = selectedCount > 1 ? "Выбрано" : "Секция";
+  $("#selectedPaneName").textContent = selectedCount > 1
+    ? `${selectedCount} ${selectedCount % 10 === 1 && selectedCount % 100 !== 11 ? "секция" :
+        [2,3,4].includes(selectedCount % 10) && ![12,13,14].includes(selectedCount % 100) ? "секции" : "секций"}`
+    : `№ ${sectionNumber(state.selectedPane)}`;
   const openingSelect = $("#openingType");
+  const entry=sectionLayout()[state.selectedPane];
+  const openingPane=entry.sashOwner?.pane || pane;
   const canAddSash = ["turn", "tiltturn", "tilt"].some(openingAllowed);
   openingSelect.disabled = !canAddSash;
   $$("#openingType option").forEach(option => {
@@ -2914,35 +3102,35 @@ function renderInspector() {
   else openingField.style.removeProperty("display");
   openingSelect.title = openingSelect.disabled ? "Для этой формы и профильной системы створки недоступны" : "";
   openingSelect.querySelector('[data-mixed-opening]')?.remove();
-  const mixed = selectedSections().some(entry => entry.pane.opening !== pane.opening);
+  const mixed = selectedSections().some(entry => (entry.sashOwner?.pane || entry.pane).opening !== openingPane.opening);
   if (mixed) {
     const option = new Option("Разные типы открывания", "");
     option.disabled = true;
     option.dataset.mixedOpening = "";
     openingSelect.prepend(option);
   }
-  openingSelect.value = mixed ? "" : pane.opening;
-  const canTurn = ["turn", "tiltturn", "tilt"].includes(pane.opening);
+  openingSelect.value = mixed ? "" : openingPane.opening;
+  const canTurn = ["turn", "tiltturn", "tilt"].includes(openingPane.opening);
   $("#hingeSideField").hidden = !canTurn;
   $("#hingeSideField").style.display = canTurn ? "" : "none";
-  $("#hingeSide").innerHTML = pane.opening === "tilt"
-    ? '<option value="bottom">Петли снизу</option><option value="top">Петли сверху</option>'
-    : '<option value="left">Петли слева — ручка справа</option><option value="right">Петли справа — ручка слева</option>';
-  $("#hingeSide").value = pane.opening === "tilt"
-    ? (pane.hingeSide === "top" ? "top" : "bottom") : (pane.hingeSide === "right" ? "right" : "left");
+  $("#hingeSide").innerHTML = openingPane.opening === "tilt"
+    ? '<option value="bottom">Снизу</option><option value="top">Сверху</option>'
+    : '<option value="left">Слева · ручка справа</option><option value="right">Справа · ручка слева</option>';
+  $("#hingeSide").value = openingPane.opening === "tilt"
+    ? (openingPane.hingeSide === "top" ? "top" : "bottom") : (openingPane.hingeSide === "right" ? "right" : "left");
   const select = $("#paneGlass");
   select.value = pane.glass;
   let note = $("#paneGlassSize");
   if (!note) { note = document.createElement("small"); note.id = "paneGlassSize"; select.after(note); }
-  const entry=sectionLayout()[state.selectedPane], tech=getTechnology();
+  const tech=getTechnology();
   const geometry=glassGeometry(entry,tech);
   const labels=geometry.fields.map(f=>glassSizeLabel({...f,...fittedGlass(entry,geometry,f,tech)}));
   note.textContent=`${state.shape !== "circle" && !customProfileArcs() ? "Размер" : "Габарит по контуру, ориентировочно"}: ${[...new Set(labels)].join("; ")}`;
   const innerCount = pane.innerImposts.length;
   const paneKind = pane.opening === "fixed" ? "глухой секции" : "створке";
   $("#innerImpostHint").textContent = innerCount
-    ? `В ${paneKind} установлено: ${innerCount}`
-    : `Добавьте импост в ${paneKind}`;
+    ? `Установлено: ${innerCount}`
+    : "Добавьте вертикальный или горизонтальный";
 }
 
 function renderSummary(calculation) {
@@ -3023,12 +3211,19 @@ function updateActiveControls() {
 
 function renderAll() {
   ensurePanes();
+  $("#editorProductName").textContent=draftProductName;
   syncGlassChoices();
   const calculation = buildSpecification();
   renderCanvas();
   syncOverallInputs();
   refreshProfileEdit();
   renderInspector();
+  for(const [id,orientation] of [["equalGlassWidth","vertical"],["equalGlassHeight","horizontal"]]){
+    const button=$(`#${id}`);
+    const roots=orientation==="vertical"?state.vImposts:state.hImposts;
+    button.hidden=!roots.length && !sectionPanes().some(p=>p.split?.orientation===orientation);
+    button.disabled=selectedSections().length<2;
+  }
   renderSummary(calculation);
   renderSpecification(calculation);
   if(customProfileArcs()) {
@@ -3165,12 +3360,12 @@ function bindEvents() {
 
   $("#openingType").addEventListener("change", (event) => {
     if (!openingAllowed(event.target.value)) { renderInspector(); return; }
-    const targets = selectedSections();
-    const old = targets.map(({pane}) => pane.opening);
-    targets.forEach(({pane}) => { pane.opening = event.target.value; });
+    const targets = [...new Set(selectedSections().map(entry=>entry.sashOwner?.pane || entry.pane))];
+    const old = targets.map(pane => pane.opening);
+    targets.forEach(pane => { pane.opening = event.target.value; });
     const issue = validateCurrentProduct();
     if (issue) {
-      targets.forEach(({pane}, i) => { pane.opening = old[i]; });
+      targets.forEach((pane, i) => { pane.opening = old[i]; });
       renderAll();
       showToast(issue);
       return;
@@ -3178,8 +3373,9 @@ function bindEvents() {
     renderAll();
   });
   $("#hingeSide").addEventListener("change", event => {
-    const pane = sectionPanes()[state.selectedPane];
-    if (!pane || pane.split) return;
+    const entry=sectionLayout()[state.selectedPane];
+    const pane=entry?.sashOwner?.pane || entry?.pane;
+    if (!pane || (pane.split && !pane.sashFill)) return;
     pane.hingeSide = event.target.value;
     renderAll();
   });
@@ -3197,18 +3393,28 @@ function bindEvents() {
   });
 
   $("#addInnerVertical").addEventListener("click", () => addInnerImpost("vertical"));
+  $("#equalGlassWidth").addEventListener("click",()=>equalizeSelectedGlass("vertical"));
+  $("#equalGlassHeight").addEventListener("click",()=>equalizeSelectedGlass("horizontal"));
   $("#addInnerHorizontal").addEventListener("click", () => addInnerImpost("horizontal"));
+  $("#impostPositionOrigin").addEventListener("change", event => {
+    const record=getSelectedImpostRecord();
+    if(!record)return;
+    impostPositionOrigin[record.selected.orientation]=event.target.value;
+    renderInspector();
+  });
   $("#impostPosition").addEventListener("change", (event) => {
     const record = getSelectedImpostRecord();
     if (!record) return;
     if (event.target.value === "") { renderAll(); return; }
     const value = Number(event.target.value);
     if (!Number.isFinite(value)) return;
+    const vertical=record.selected.orientation==="vertical";
+    const dimension=vertical?state.width:state.height;
+    const absolute=impostPositionOrigin[record.selected.orientation]==="end"?dimension-value:value;
     if (sharedAxis) {
       const group = sharedImpostLimits(sharedAxis, record.selected.orientation);
       if (!group.members.length || group.min > group.max) { renderAll(); return; }
-      const axis = record.selected.orientation === "horizontal" ? state.height - value : value;
-      const position = clamp(axis, group.min, group.max);
+      const position = clamp(absolute, group.min, group.max);
       const old = group.members.map(m => m.item.position);
       group.members.forEach(m => { m.item.position = (position - m.start) / m.size; });
       const issue = validateCurrentProduct();
@@ -3221,12 +3427,13 @@ function bindEvents() {
     }
     if (record.selected.scope === "root") {
       const limits = rootImpostLimits(record.item, record.selected.orientation);
-      record.item.position = Math.min(Math.max(value, limits.min), limits.max);
+      record.item.position = Math.min(Math.max(absolute, limits.min), limits.max);
     } else {
       const physical = getPanePhysicalRect(record.selected.paneIndex);
-      const size = record.selected.orientation === "vertical" ? physical.width : physical.height;
+      const size = vertical ? physical.width : physical.height;
+      const offset = vertical ? physical.x : physical.y;
       const limits = nestedImpostLimits(record.item, record.pane);
-      record.item.position = Math.min(Math.max(value / size, limits.min), limits.max);
+      record.item.position = Math.min(Math.max((absolute-offset) / size, limits.min), limits.max);
     }
     renderAll();
   });
@@ -3267,10 +3474,13 @@ function bindEvents() {
     } else if (record.pane.split) {
       if (record.pane.children.some(child => child.split) && !window.confirm("Удалить импост и все секции внутри этого деления?")) return;
       const first = record.pane.children[0];
-      record.pane.opening = first.opening;
-      record.pane.hingeSide = first.hingeSide;
+      if (!record.pane.sashFill) {
+        record.pane.opening = first.opening;
+        record.pane.hingeSide = first.hingeSide;
+      }
       record.pane.glass = first.glass;
       delete record.pane.split;
+      delete record.pane.sashFill;
       delete record.pane.children;
       record.pane.innerImposts = [];
       state.selectedPane = record.selected.paneIndex;
@@ -3287,10 +3497,21 @@ function bindEvents() {
 
   $("#scrollToSpec").addEventListener("click", () => $("#specification").scrollIntoView({ behavior: "smooth", block: "start" }));
   $("#printEstimate").addEventListener("click", () => {
-    renderPrintOrder();
-    window.print();
+    openReportsDialog();
   });
   $("#saveOrderItem").addEventListener("click", saveCurrentOrderItem);
+  $("#renameEditorProduct").addEventListener("click",()=>{
+    const entered=window.prompt("Название изделия:",draftProductName);
+    if(entered===null)return;
+    const name=entered.trim();
+    if(!name||name.length>100)return showToast("Название должно содержать от 1 до 100 символов.");
+    draftProductName=name;
+    $("#editorProductName").textContent=name;
+    if(editingOrderItemId){
+      const item=orderItems.find(candidate=>candidate.id===editingOrderItemId);
+      if(item){item.name=name;item.updatedAt=new Date().toISOString();projectDirty=true;renderOrder();renderProjectToolbar();}
+    }
+  });
   $("#orderItems").addEventListener("click", (event) => {
     const button = event.target.closest("[data-order-action]");
     const item = event.target.closest("[data-order-item-id]");
@@ -3462,7 +3683,6 @@ function bindEvents() {
   });
 
   bindCanvasDragging();
-  window.addEventListener("beforeprint", renderPrintOrder);
   window.addEventListener("afterprint", () => document.body.classList.remove("printing-order"));
   window.addEventListener("beforeunload", (event) => {
     if (!hasUnsavedProjectWork()) return;
@@ -3551,6 +3771,7 @@ function setSettingsTab(tab) {
   $("#settingsPricesPane").hidden = tab !== "prices";
   $("#settingsTechnologyPane").hidden = !technologyTab;
   $("#settingsProfilePane").hidden = tab !== "profile";
+  $("#settingsReportsPane").hidden = tab !== "reports";
   $$("[data-settings-tab]").forEach((button) => {
     const active = button.dataset.settingsTab === tab;
     button.classList.toggle("active", active);
