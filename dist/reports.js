@@ -104,8 +104,84 @@
         ${t.prices?`<p class="report-subtotal">Итого по изделию: ${money(item.total)}</p>`:""}</section>`;
     }).join("");
   }
+  /* ---------- Коммерческое предложение: 3 изделия на лист A4 ---------- */
+  const PROPOSAL_PER_PAGE = 3;
+  const HINGES = {left:"петли слева", right:"петли справа", top:"петли сверху", bottom:"петли снизу"};
+  function leafPanes(panes, out = []) {
+    for (const pane of panes || []) {
+      if (pane?.children?.length) leafPanes(pane.children, out);
+      else if (pane) out.push(pane);
+    }
+    return out;
+  }
+  const plural = (n, a, b, c) => typeof pluralizeRu === "function" ? pluralizeRu(n, a, b, c) : a;
+  function proposalSpecs(item, info) {
+    const c = item.configuration, p = item.presentation || {};
+    const leaves = leafPanes(c.panes);
+    const sashes = leaves.filter(pane => pane.opening && pane.opening !== "fixed");
+    const groups = new Map();
+    sashes.forEach(pane => {
+      const key = [OPENINGS[pane.opening]?.name || pane.opening, HINGES[pane.hingeSide]].filter(Boolean).join(", ");
+      groups.set(key, (groups.get(key) || 0) + 1);
+    });
+    const glass = [...new Set(leaves.map(pane => pane.glass).filter(Boolean))]
+      .map(id => GLASS[id] ? `${GLASS[id].name}, ${GLASS[id].detail}` : id).join("; ");
+    const shape = p.shape || SHAPES[c.shape] || c.shape;
+    const rows = [
+      ["Изделие", [p.productType || PRODUCT_TYPES[c.productType || "window"] || "Окно", shape !== SHAPES.rect ? shape : ""].filter(Boolean).join(" · ")],
+      ["Профиль", `${info.material}, ${info.profile}`],
+      ["Отделка", info.finish],
+    ];
+    if (glass) rows.push(["Стеклопакет", glass]);
+    if (leaves.length) {
+      rows.push(["Конструкция", `${leaves.length} ${plural(leaves.length, "секция", "секции", "секций")}, ${sashes.length ? `створок: ${sashes.length}` : "без створок"}`]);
+      rows.push(["Открывание", groups.size ? [...groups].map(([k, n]) => n > 1 ? `${k} ×${n}` : k).join("; ") : "Глухое"]);
+    }
+    return rows;
+  }
+  function proposalItem(item, index, t) {
+    const info = itemInfo(item, index);
+    info.material = item.presentation?.material || MATERIALS[item.configuration.material]?.label || item.configuration.material;
+    const num = String(index + 1).padStart(2, "0");
+    const cls = ["pr-item", t.sketches ? "" : "no-sketch", t.prices ? "" : "no-price"].filter(Boolean).join(" ");
+    return `<section class="${cls}">
+      ${t.sketches ? `<div class="pr-visual"><div class="pr-sketch">${orderItemSketch(item.configuration, true)}</div><div class="pr-size">${h(overallSizeLabel(item.configuration))}</div></div>` : ""}
+      <div class="pr-info"><span class="pr-tag">${num} / ИЗДЕЛИЕ</span><h3>${h(info.name)}</h3>
+        ${t.characteristics ? `<dl>${proposalSpecs(item, info).map(([k, v]) => `<dt>${h(k)}</dt><dd>${h(v)}</dd>`).join("")}</dl>` : ""}
+      </div>
+      ${t.prices ? `<div class="pr-price"><span>Количество</span><b>${item.quantity} шт.</b><span>Цена за шт.</span><b>${money(item.unitPrice)}</b><div class="pr-sum"><span>Сумма</span><strong>${money(item.total)}</strong></div></div>` : ""}
+    </section>`;
+  }
+  function proposal(t) {
+    const orderName = document.querySelector("#currentProjectName").textContent.trim() || "Заказ";
+    const pages = Math.max(1, Math.ceil(orderItems.length / PROPOSAL_PER_PAGE));
+    const total = orderItems.reduce((n, item) => n + item.total, 0);
+    const quantity = orderItems.reduce((n, item) => n + item.quantity, 0);
+    const preliminary = orderItems.some(item => item.preliminary);
+    const company = settings.company;
+    const html = Array.from({length: pages}, (_, page) => {
+      const items = orderItems.slice(page * PROPOSAL_PER_PAGE, (page + 1) * PROPOSAL_PER_PAGE);
+      const last = page === pages - 1;
+      const meta = page === 0 && (company.customer || t.intro)
+        ? `<div class="pr-meta">${company.customer ? `<p><b>Для:</b> ${h(company.customer)}</p>` : ""}${t.intro ? `<p class="pr-intro">${h(t.intro)}</p>` : ""}</div>` : "";
+      const foot = last
+        ? `<footer class="pr-foot"><div class="pr-notes">${h(t.footer)}${company.contact ? `<p>${h(company.contact)}</p>` : ""}</div>
+            ${t.prices ? `<div class="pr-total"><span>Итого по заказу</span><strong>${money(total)}</strong><small>${orderItems.length} поз. · ${quantity} шт.${preliminary ? " · предварительная сумма" : ""}</small></div>` : ""}</footer>`
+        : `<footer class="pr-foot pr-more"><span>Продолжение на следующем листе →</span></footer>`;
+      return `<div class="pr-page"><header class="pr-head"><div><span class="pr-company">${h(company.name || "Организация не указана")}</span><h1>${h(t.title)}</h1><p class="pr-sub">${h(orderName)} · ${date()}</p></div>
+        <div class="pr-sheet">Лист ${page + 1} / ${pages}</div></header>${meta}
+        <div class="pr-items">${items.map((item, i) => proposalItem(item, page * PROPOSAL_PER_PAGE + i, t)).join("")}</div>${foot}</div>`;
+    }).join("");
+    return `<article class="report-document report-proposal">${html}</article>`;
+  }
+  function fitProposalPreview(preview) {
+    const pageWidth = 210 * 96 / 25.4;
+    const zoom = Math.min(1, Math.max(0.3, (preview.clientWidth - 32) / pageWidth));
+    preview.style.setProperty("--pr-zoom", zoom.toFixed(3));
+  }
   function report(id) {
     const t=settings.templates[id];
+    if(id==="proposal")return proposal(t);
     const orderName=document.querySelector("#currentProjectName").textContent.trim() || "Заказ";
     const body=id==="invoice"?invoiceTable(t):id==="specification"?detailed(t):itemCards(t);
     return `<article class="report-document report-${id}"><header class="report-header"><div><span>${h(settings.company.name||"Организация не указана")}</span><h1>${h(t.title)}</h1><p>${h(orderName)} · ${date()}</p></div>${t.prices?summary():""}</header>
@@ -133,7 +209,7 @@
   document.querySelector("#previewReports").addEventListener("click",()=>{
     const ids=chosen();if(!ids.length)return message("Выберите хотя бы один отчёт.");
     if(!orderItems.length)return message("Сначала сохраните изделие в заказе.");
-    const preview=document.querySelector("#reportPreview");preview.innerHTML=render(ids);preview.hidden=false;message("");
+    const preview=document.querySelector("#reportPreview");preview.innerHTML=render(ids);preview.hidden=false;fitProposalPreview(preview);message("");
     preview.scrollIntoView({behavior:"smooth",block:"start"});
   });
   document.querySelector("#printReports").addEventListener("click",()=>{
