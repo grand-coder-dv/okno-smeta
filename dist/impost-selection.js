@@ -75,7 +75,7 @@
     if (targets.some(({pane,item}) => pane?.split?.id === item.id && pane.children.some(child => child.split)) &&
         !window.confirm("Удалить выбранные импосты? При объединении будут удалены и вложенные секции.")) return;
     targets.sort((a,b) => (b.ref.paneIndex ?? -1) - (a.ref.paneIndex ?? -1));
-    for (const {pane,items,item} of targets) {
+    for (const {pane,items,item,ref} of targets) {
       if (pane?.split?.id === item.id) {
         const first = pane.children[0];
         pane.opening = first.opening;
@@ -84,6 +84,8 @@
         delete pane.split;
         delete pane.children;
         pane.innerImposts = [];
+      } else if (ref.scope === "root") {
+        removeRootImpost(ref.orientation,item.id);
       } else {
         const i = items.indexOf(item);
         if (i >= 0) items.splice(i,1);
