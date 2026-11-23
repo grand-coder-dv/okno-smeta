@@ -2385,3 +2385,28 @@ tbody tr:hover {
     grid-column: 1 / -1;
   }
 }
+
+@media screen {
+  #editorHistory .button:enabled {
+    background: #23364b;
+    border-color: #23364b;
+    color: #fff;
+    opacity: 1;
+    cursor: pointer;
+  }
+  #editorHistory .button:enabled:hover {
+    background: #304961;
+    border-color: #304961;
+  }
+  #editorHistory .button:disabled {
+    background: #e9edf3;
+    border-color: #dce3eb;
+    color: #68778a;
+    cursor: not-allowed;
+    opacity: 1;
+  }
+  #editorHistory .button:focus-visible {
+    outline: 2px solid #2367ad;
+    outline-offset: 2px;
+  }
+}
