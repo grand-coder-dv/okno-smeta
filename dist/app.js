@@ -182,14 +182,14 @@ async function changeStoredProjects(change) {
     return await navigator.locks.request(PROJECTS_STORAGE_KEY, () => {
       const raw = localStorage.getItem(PROJECTS_STORAGE_KEY);
       const latest = JSON.parse(raw ?? "[]");
-      if (!Array.isArray(latest)) throw new Error("Неверный формат проектов");
+      if (!Array.isArray(latest)) throw new Error("Неверный формат заказов");
       const next = change(latest);
       if (!next) return false;
       localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(next));
       return true;
     });
   } catch {
-    showToast("Не удалось записать проекты в браузере. Изменения остались в редакторе.");
+    showToast("Не удалось записать заказы в браузере. Изменения остались в редакторе.");
     return false;
   } finally {
     projectWritePending = false;
@@ -439,6 +439,19 @@ function setWindowShapeMode(mode) {
   if(!Object.hasOwn(SHAPES,mode)||mode===state.shape)return;
   state.shape=mode;
   state.shapeModeVersion=1;
+  // A new outline starts with one empty fixed opening; old shape geometry
+  // and section settings must not carry over to it.
+  delete state.frameArcs;
+  delete state.framePolygon;
+  state.vImposts=[];
+  state.hImposts=[];
+  state.cols=1;
+  state.rows=1;
+  state.defaultGlass="double";
+  state.panes=[{opening:"fixed",glass:state.defaultGlass,innerImposts:[]}];
+  state.selectedPane=0;
+  state.selectedImpost=null;
+  multiSections.clear();
   activeProfileEdge=null;
   sharedAxis=null;
   if(mode==="circle")state.height=state.width;
@@ -453,7 +466,7 @@ function setConfigurationError(message = "") {
 function validateCurrentProduct() {
   if (!Number.isFinite(state.width) || state.width < 400 || state.width > 5000) return "Ширина изделия должна быть от 400 до 5000 мм.";
   if (!Number.isFinite(state.height) || state.height < 400 || state.height > 4000) return "Высота изделия должна быть от 400 до 4000 мм.";
-  if (!Number.isInteger(state.quantity) || state.quantity < 1 || state.quantity > 99) return "Количество должно быть целым числом от 1 до 99.";
+  if (!Number.isInteger(state.quantity) || state.quantity < 1 || state.quantity > 9999) return "Количество должно быть целым числом от 1 до 9999.";
   const material = MATERIALS[state.material];
   if (!material) return "Выбран неизвестный материал профиля.";
   if (!material.profiles.some((item) => item.id === state.profile)) return "Выбранная профильная система больше недоступна.";
@@ -464,11 +477,11 @@ function validateCurrentProduct() {
   for (const [i,entry] of sectionLayout().entries()) {
     if (entry.pane.split) continue;
     const geo=glassGeometry(entry,tech);
-    if ((state.shape === "circle" || state.shape === "skew") && geo.fields.some(f=>(fittedGlass(entry,geo,f,tech).area ?? f.w*f.h)<=1e-7)) {
+    if ((state.shape === "circle" || state.shape === "skew") && geo.fields.some(f=>f.clearW>1e-6 && f.clearH>1e-6 && (fittedGlass(entry,geo,f,tech).area ?? f.w*f.h)<=1e-7)) {
       return `Секция № ${sectionNumber(i)}: в этой части контура нет места для стеклопакета. Сместите или удалите импост.`;
     }
-    if (geo.fields.some(f=>f.clearW<120 || f.clearH<120)) {
-      return `Секция № ${sectionNumber(i)}: световой проём должен быть не менее 120 × 120 мм.`;
+    if (geo.fields.some(f=>f.clearW< -1e-6 || f.clearH< -1e-6)) {
+      return `Секция № ${sectionNumber(i)}: профили перекрывают световой проём.`;
     }
   }
   return "";
@@ -504,6 +517,28 @@ function resetCurrentProduct() {
   renderProjectToolbar();
 }
 
+function orderItemSketch(config) {
+  // Draw the saved configuration with the same renderer as the large editor.
+  const previousState = state;
+  const previousLayout = canvasLayout;
+  const preview = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  try {
+    state = config;
+    renderCanvas({ svg: preview, thumbnail: true });
+    const prefix = `order-preview-${Math.random().toString(36).slice(2)}-`;
+    preview.innerHTML = preview.innerHTML
+      .replace(/(\s)id="([^"]+)"/g, (_, space, id) => `${space}id="${prefix}${id}"`)
+      .replace(/url\(#([^)]+)\)/g, (_, id) => `url(#${prefix}${id})`);
+    preview.classList.add("order-sketch");
+    preview.setAttribute("role", "img");
+    preview.setAttribute("aria-label", "Эскиз изделия");
+    return preview.outerHTML;
+  } finally {
+    state = previousState;
+    canvasLayout = previousLayout;
+  }
+}
+
 function renderOrder() {
   const container = $("#orderItems");
   $("#orderEmpty").hidden = orderItems.length > 0;
@@ -514,9 +549,11 @@ function renderOrder() {
       const dimensions = overallSizeLabel(item.configuration);
       return `
         <article class="order-item${item.id === editingOrderItemId ? " editing" : ""}" data-order-item-id="${escapeHtml(item.id)}">
+          <div class="order-item-preview">${orderItemSketch(item.configuration)}</div>
           <div class="order-item-title">
-            <div>
+            <div class="order-item-heading">
               <strong>${escapeHtml(item.name || `Изделие ${index + 1}`)}</strong>
+              <button type="button" class="order-rename" data-order-action="rename" aria-label="Переименовать ${escapeHtml(item.name || `Изделие ${index + 1}`)}" title="Переименовать">✎</button>
               ${item.preliminary ? '<span class="preliminary-badge">Предварительно</span>' : ""}
               ${item.id === editingOrderItemId ? '<span class="editing-badge">Редактируется</span>' : ""}
             </div>
@@ -636,7 +673,7 @@ function projectTotals(project) {
 
 function renderProjectToolbar() {
   const currentDirty = currentProductIsDirty();
-  $("#currentProjectName").textContent = activeProjectName || "Новый проект";
+  $("#currentProjectName").textContent = activeProjectName || "Новый заказ";
   const status = $("#projectSaveStatus");
   if (activeProjectId && !projectDirty && !currentDirty) {
     status.textContent = "Сохранён";
@@ -651,7 +688,7 @@ function renderProjectToolbar() {
     status.textContent = "Не сохранён";
     status.classList.remove("saved");
   }
-  $("#saveProject").textContent = activeProjectId ? "Сохранить изменения" : "Сохранить проект";
+  $("#saveProject").textContent = activeProjectId ? "Сохранить изменения" : "Сохранить заказ";
 }
 
 function renderProjectsList() {
@@ -673,6 +710,7 @@ function renderProjectsList() {
           </div>
           <div class="project-card-actions">
             <button class="button secondary" type="button" data-project-action="open">Открыть</button>
+            <button class="button secondary" type="button" data-project-action="rename">Переименовать</button>
             <button class="button danger" type="button" data-project-action="delete">Удалить</button>
           </div>
         </article>`;
@@ -684,6 +722,55 @@ function hasUnsavedProjectWork() {
   return projectDirty || currentProductIsDirty();
 }
 
+function askOrderName(current) {
+  const entered = window.prompt("Название заказа:", current || "Новый заказ");
+  if (entered === null) return null;
+  const name = entered.trim();
+  if (!name || name.length > 80) {
+    showToast("Название заказа должно содержать от 1 до 80 символов.");
+    return null;
+  }
+  return name;
+}
+
+function renameCurrentOrder() {
+  const name = askOrderName(activeProjectName);
+  if (!name || name === activeProjectName) return;
+  activeProjectName = name;
+  projectDirty = true;
+  renderProjectToolbar();
+  showToast("Название заказа изменено. Сохраните заказ, чтобы записать его.");
+}
+
+async function renameStoredOrder(projectId) {
+  if (projectWritePending) return;
+  projects = readStoredProjects();
+  const project = projects.find(item => item.id === projectId);
+  if (!project) return;
+  const name = askOrderName(project.name);
+  if (!name || name === project.name) return;
+  const baseline = JSON.stringify(project);
+  const now = new Date().toISOString();
+  const renamed = { ...project, name, updatedAt: now, revision: createProjectId() };
+  const saved = await changeStoredProjects(latest => {
+    const current = latest.find(item => item?.id === projectId);
+    if (!current || JSON.stringify(current) !== baseline) {
+      showToast("Заказ изменён в другой вкладке. Откройте обновлённый список.");
+      return null;
+    }
+    return latest.map(item => item?.id === projectId ? renamed : item);
+  });
+  if (!saved) return;
+  if (activeProjectId === projectId) {
+    const pendingName = activeProjectName !== project.name;
+    activeProjectSnapshot = JSON.stringify(renamed);
+    if (!pendingName) activeProjectName = name;
+    projectDirty = projectDirty || pendingName;
+    renderProjectToolbar();
+  }
+  showToast(`Заказ «${name}» переименован`);
+}
+
 function confirmDiscardUnsavedWork(actionText) {
   if (!hasUnsavedProjectWork()) return true;
   return window.confirm(`Есть несохранённые изменения. ${actionText} без их сохранения?`);
@@ -692,8 +779,8 @@ function confirmDiscardUnsavedWork(actionText) {
 function confirmProjectSaveWithoutCurrentProduct() {
   if (!currentProductIsDirty()) return true;
   const message = editingOrderItemId
-    ? "Изменения открытого изделия ещё не сохранены в заказе. Сохранить проект без этих изменений?"
-    : "Текущее изделие ещё не добавлено в заказ. Сохранить проект без него?";
+    ? "Изменения открытого изделия ещё не сохранены в заказе. Сохранить заказ без этих изменений?"
+    : "Текущее изделие ещё не добавлено в заказ. Сохранить заказ без него?";
   return window.confirm(message);
 }
 
@@ -711,7 +798,7 @@ async function saveProjectRecord(name) {
   const saved = await changeStoredProjects(latest => {
     const existing = latest.find(p => p?.id === project.id);
     if (id ? (!existing || JSON.stringify(existing) !== baseline) : Boolean(existing)) {
-      showToast("Проект изменён или удалён в другой вкладке. Ваши изменения не записаны; открытая копия осталась в редакторе.");
+      showToast("Заказ изменён или удалён в другой вкладке. Ваши изменения не записаны; открытая копия осталась в редакторе.");
       return null;
     }
     return id ? latest.map(p => p?.id === id ? project : p) : [...latest, project];
@@ -723,7 +810,7 @@ async function saveProjectRecord(name) {
   projectDirty = JSON.stringify(orderItems) !== JSON.stringify(project.items);
   renderProjectToolbar();
   renderProjectsList();
-  showToast(`Проект «${project.name}» сохранён`);
+  showToast(`Заказ «${project.name}» сохранён`);
   return true;
 }
 
@@ -737,7 +824,7 @@ function requestProjectSave() {
     saveProjectRecord(activeProjectName);
     return;
   }
-  $("#projectNameInput").value = "";
+  $("#projectNameInput").value = activeProjectName || "";
   $("#projectNameError").hidden = true;
   $("#projectNameDialog").showModal();
   $("#projectNameInput").focus();
@@ -748,7 +835,7 @@ function openProject(projectId) {
   projects = readStoredProjects();
   const project = projects.find((candidate) => candidate.id === projectId);
   if (!project) return;
-  if (!confirmDiscardUnsavedWork(`Открыть проект «${project.name}»`)) return;
+  if (!confirmDiscardUnsavedWork(`Открыть заказ «${project.name}»`)) return;
   orderItems = cloneData(project.items);
   orderItemSequence = Math.max(
     Number(project.orderItemSequence) || 0,
@@ -762,17 +849,17 @@ function openProject(projectId) {
   resetCurrentProduct();
   renderProjectsList();
   $("#projectsDialog").close();
-  showToast(`Проект «${project.name}» открыт`);
+  showToast(`Заказ «${project.name}» открыт`);
 }
 
 async function deleteProject(projectId) {
   const project = projects.find((candidate) => candidate.id === projectId);
-  if (!project || !window.confirm(`Удалить проект «${project.name}»? Восстановить его будет невозможно.`)) return;
+  if (!project || !window.confirm(`Удалить заказ «${project.name}»? Восстановить его будет невозможно.`)) return;
   const expected = JSON.stringify(project);
   if (!await changeStoredProjects(latest => {
     const current = latest.find(p => p?.id === projectId);
     if (!current || JSON.stringify(current) !== expected) {
-      showToast("Проект уже изменён или удалён в другой вкладке. Проверьте обновлённый список.");
+      showToast("Заказ уже изменён или удалён в другой вкладке. Проверьте обновлённый список.");
       return null;
     }
     return latest.filter(p => p?.id !== projectId);
@@ -785,12 +872,12 @@ async function deleteProject(projectId) {
   }
   renderProjectToolbar();
   renderProjectsList();
-  showToast(`Проект «${project.name}» удалён`);
+  showToast(`Заказ «${project.name}» удалён`);
 }
 
 function startNewProject() {
   if (projectWritePending) return;
-  if (!confirmDiscardUnsavedWork("Создать новый проект")) return;
+  if (!confirmDiscardUnsavedWork("Создать новый заказ")) return;
   activeProjectId = null;
   activeProjectSnapshot = null;
   activeProjectName = "";
@@ -799,7 +886,7 @@ function startNewProject() {
   orderItemSequence = 0;
   resetCurrentProduct();
   renderProjectsList();
-  showToast("Создан новый проект");
+  showToast("Создан новый заказ");
 }
 
 function saveCurrentOrderItem() {
@@ -874,6 +961,22 @@ function editOrderItem(itemId) {
   $("#saveOrderItem").scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
+function renameOrderItem(itemId) {
+  const item = orderItems.find(candidate => candidate.id === itemId);
+  if (!item) return;
+  const entered = window.prompt("Название изделия:", item.name);
+  if (entered === null) return;
+  const name = entered.trim();
+  if (!name || name.length > 100) return showToast("Название должно содержать от 1 до 100 символов.");
+  if (name === item.name) return;
+  item.name = name;
+  item.updatedAt = new Date().toISOString();
+  projectDirty = true;
+  renderOrder();
+  renderProjectToolbar();
+  showToast("Название изделия изменено");
+}
+
 function deleteOrderItem(itemId) {
   const item = orderItems.find((candidate) => candidate.id === itemId);
   if (!item || !window.confirm(`Удалить «${item.name}» из заказа?`)) return;
@@ -915,21 +1018,38 @@ function removeRootImpost(orientation,id) {
   return true;
 }
 
+function profileImpostStops(orientation,count) {
+  const axis=orientation==="vertical"?0:1, size=axis===0?state.width:state.height;
+  const tech=getTechnology(), f=tech.frame, poly=polygonPoints();
+  let bounds=[f,f,state.width-f,state.height-f];
+  const inner=poly ? polygonClip(poly,poly,f) : null;
+  if(inner?.length>=3) bounds=polyBounds(inner);
+  else if(state.shape==="arch" && state.width>2*f && state.height>2*f) {
+    const outline=fittedOutline(bounds,[f,f,f,f],null,x=>x,y=>y,1,1);
+    const points=outline.extrema || outline.boundary || outline.pts;
+    if(points?.length) bounds=polyBounds(points);
+  }
+  const min=bounds[axis]+tech.impost/2, max=bounds[axis+2]-tech.impost/2;
+  if(max-min>=(count-1)*tech.impost) return {min,max,gap:tech.impost};
+  const gap=minimumSegment(size,count);
+  return {min:gap,max:size-gap,gap};
+}
+
 function normalizeRootImposts() {
-  const normalize = (items, size) => {
+  const normalize = (items, orientation) => {
     items.sort((a, b) => a.position - b.position);
-    const gap = minimumSegment(size, items.length);
+    const {min,max,gap}=profileImpostStops(orientation,items.length);
     items.forEach((item, index) => {
-      const lower = index === 0 ? gap : items[index - 1].position + gap;
-      item.position = Math.max(lower, Math.min(Number(item.position) || lower, size - gap));
+      const lower = index === 0 ? min : items[index - 1].position + gap;
+      item.position = Math.max(lower, Math.min(Number(item.position) || lower, max));
     });
     for (let index = items.length - 1; index >= 0; index -= 1) {
-      const upper = index === items.length - 1 ? size - gap : items[index + 1].position - gap;
+      const upper = index === items.length - 1 ? max : items[index + 1].position - gap;
       items[index].position = Math.min(items[index].position, upper);
     }
   };
-  normalize(state.vImposts, state.width);
-  normalize(state.hImposts, state.height);
+  normalize(state.vImposts, "vertical");
+  normalize(state.hImposts, "horizontal");
   state.cols = state.vImposts.length + 1;
   state.rows = state.hImposts.length + 1;
 }
@@ -1015,18 +1135,30 @@ function getSelectedImpostRecord() {
 
 function rootImpostLimits(item, orientation) {
   const collection = orientation === "vertical" ? state.vImposts : state.hImposts;
-  const size = orientation === "vertical" ? state.width : state.height;
   const index = collection.findIndex((candidate) => candidate.id === item.id);
-  const gap = minimumSegment(size, collection.length);
+  const {min,max,gap}=profileImpostStops(orientation,collection.length);
   return {
-    min: index <= 0 ? gap : collection[index - 1].position + gap,
-    max: index >= collection.length - 1 ? size - gap : collection[index + 1].position - gap,
+    min: index <= 0 ? min : collection[index - 1].position + gap,
+    max: index >= collection.length - 1 ? max : collection[index + 1].position - gap,
   };
 }
 
 function nestedImpostLimits(item, pane) {
   const siblings = pane.innerImposts.filter((candidate) => candidate.orientation === item.orientation).sort((a, b) => a.position - b.position);
   const index = siblings.findIndex((candidate) => candidate.id === item.id);
+  const entry=sectionLayout().find(e=>e.pane===pane);
+  if(entry){
+    const axis=item.orientation==="vertical"?0:1, tech=getTechnology(), {rect}=entry;
+    const size=axis===0?rect.width:rect.height, origin=axis===0?rect.x:rect.y;
+    const {opening,sashBox}=glassGeometry(entry,tech), poly=polygonPoints();
+    const depth=tech.frame+(sashBox?tech.sash-SASH_LAP:0);
+    const edge=poly?polygonClip(rectPoints(opening),poly,depth):null;
+    const box=edge?.length>=3?polyBounds(edge):opening;
+    const half=tech.impost/2, gap=tech.impost/size;
+    const min=index<=0?(box[axis]-origin+half)/size:siblings[index-1].position+gap;
+    const max=index>=siblings.length-1?(box[axis+2]-origin-half)/size:siblings[index+1].position-gap;
+    if(min<=max)return {min,max};
+  }
   const gap = Math.min(0.16, 0.42 / (siblings.length + 1));
   return {
     min: index <= 0 ? gap : siblings[index - 1].position + gap,
@@ -1073,7 +1205,7 @@ function glassSizeLabel(f) { return f.clearW>0 && f.clearH>0 && f.w>0 && f.h>0 ?
 function paneGlazingArea(index, pane, shapeFactor = 1) {
   const entry=sectionLayout()[index], tech=getTechnology(), geo=glassGeometry(entry,tech);
   return geo.fields.reduce((sum,f)=>{
-    if(f.clearW<=0 || f.clearH<=0 || f.w<=0 || f.h<=0) return sum;
+    if(f.clearW<=1e-6 || f.clearH<=1e-6 || f.w<=0 || f.h<=0) return sum;
     return sum+(state.shape === "circle" || state.shape === "skew" ? (fittedGlass(entry,geo,f,tech).area ?? f.w*f.h) : f.w*f.h*shapeFactor);
   },0)/1e6;
 }
@@ -1112,9 +1244,8 @@ function geometry() {
     });
     if (pane.split) return;
     const entry=sectionLayout()[index], tech=getTechnology(), geo=glassGeometry(entry,tech);
-    paneGlassCounts[index] = state.shape === "circle" || state.shape === "skew"
-      ? geo.fields.filter(f=>f.clearW>0 && f.clearH>0 && (fittedGlass(entry,geo,f,tech).area ?? f.w*f.h)>1e-7).length
-      : paneGlassUnits(pane);
+    paneGlassCounts[index] = geo.fields.filter(f=>f.clearW>1e-6 && f.clearH>1e-6 &&
+      ((state.shape === "circle" || state.shape === "skew") ? (fittedGlass(entry,geo,f,tech).area ?? f.w*f.h)>1e-7 : true)).length;
     glassUnits += paneGlassCounts[index];
     paneGlazingAreas[index] = paneGlazingArea(index, pane, shapeFactor);
   });
@@ -1434,7 +1565,7 @@ function refreshProfileEdit() {
   if(host && button.parentElement!==host) host.append(button);
   button.hidden=state.shape!=="arch" && state.shape!=="skew";
   button.style.display=button.hidden?"none":"";
-  button.disabled=button.hidden || !activeProfileEdge || activeProfileEdge.owner!==state;
+  button.disabled=button.hidden || !activeProfileEdge || activeProfileEdge.owner!==state || activeProfileEdge.type==="skew-sash";
   button.style.color=button.disabled?"#68778a":"white";button.style.background=button.disabled?"#edf1f5":"#24384f";
 }
 function editPolygon(selection) {
@@ -1679,6 +1810,61 @@ function fittedGlass(entry,geometry,f,tech,X=mm=>mm,Y=mm=>mm,sx=1,sy=1) {
   const xs=points.map(p=>p[0]), ys=points.map(p=>p[1]);
   return {path:outline.path,boundary:outline.boundary||outline.pts,w:Math.max(...xs)-Math.min(...xs),h:Math.max(...ys)-Math.min(...ys)};
 }
+function polygonProfileTargets(outer,inner,type,index,X,Y) {
+  if(outer.length<3 || inner.length<3) return "";
+  const label=type==="polygon" ? "Рама" : "Створка";
+  const next=i=>(i+1)%outer.length;
+  const distances=outer.map(([x,y],i)=>{
+    const [u,v]=outer[next(i)], dx=u-x,dy=v-y, length=Math.hypot(dx,dy);
+    return ([a,b])=>(dx*(b-y)-dy*(a-x))/length;
+  });
+  const clip=(points,distance)=>points.flatMap((p,i)=>{
+    const q=points[(i+1)%points.length], a=distance(p), b=distance(q);
+    const vertices=a>=0?[p]:[];
+    if((a<0&&b>0)||(a>0&&b<0))vertices.push(p.map((v,k)=>v+(q[k]-v)*a/(a-b)));
+    return vertices;
+  });
+  const joints=outer.map((p,i)=>{
+    const a=outer[(i+outer.length-1)%outer.length].map((v,k)=>v-p[k]);
+    const b=outer[next(i)].map((v,k)=>v-p[k]);
+    return Math.atan2(Math.abs(a[0]*b[1]-a[1]*b[0]),a[0]*b[0]+a[1]*b[1])*90/Math.PI;
+  });
+  const active=activeProfileEdge?.owner===state ? activeProfileEdge : null;
+  const note=i=>{
+    const [a,b]=outer[i], center=outer.reduce(([x,y],[u,v])=>[x+u/outer.length,y+v/outer.length],[0,0]);
+    const x=X(a),y=Y(b), dx=X(center[0])-x,dy=Y(center[1])-y,m=Math.hypot(dx,dy)||1;
+    const point=j=>{
+      const [u,v]=outer[j], ex=X(u)-x,ey=Y(v)-y,len=Math.hypot(ex,ey)||1,d=Math.min(13,len/3);
+      return [x+ex/len*d,y+ey/len*d];
+    };
+    const p=point((i+outer.length-1)%outer.length), q=point(next(i));
+    return `<path d="M ${p.join(' ')} Q ${x} ${y} ${q.join(' ')}" fill="none" stroke="#546678" stroke-width="1" pointer-events="none"/><text x="${x+dx/m*21}" y="${y+dy/m*21}" dy=".32em" text-anchor="middle" font-size="10" fill="#20384c" stroke="white" stroke-width="2" paint-order="stroke" pointer-events="none">${formatNumber(joints[i],1)}°</text>`;
+  };
+  const notes=active?.type===type && active.index===index && outer[active.side]
+    ? note(active.side)+note(next(active.side))
+    : type==="polygon" && active?.type==="vertex" && outer[active.side] ? note(active.side) : "";
+  const bands=outer.map((_,i)=>{
+    const distance=distances[i];
+    const region=points=>distances.reduce((p,d,j)=>i===j?p:clip(p,v=>d(v)-distance(v)),points);
+    const selected=active?.type===type && active.index===index && active.side===i;
+    const title=`${label}: сторона ${i+1}. Углы стыка пополам: ${formatNumber(joints[i],1)}° и ${formatNumber(joints[next(i)],1)}°`;
+    return `<path d="${polyPath(region(outer),X,Y)} ${polyPath(region(inner),X,Y)}" fill-rule="evenodd" fill="${selected?'#ff9a36':'transparent'}" fill-opacity="${selected?0.42:0}" pointer-events="fill" style="cursor:pointer" data-profile-edge="${type}" data-edge-side="${i}" data-edge-index="${index??''}" tabindex="0" role="button" aria-label="${title}"><title>${title}</title></path>`;
+  }).join("");
+  const seams=outer.map((p,i)=>{
+    const unit=q=>{const x=q[0]-p[0],y=q[1]-p[1],m=Math.hypot(x,y)||1;return [x/m,y/m];};
+    const a=unit(outer[(i+outer.length-1)%outer.length]), b=unit(outer[next(i)]);
+    if(Math.abs(a[0]*b[1]-a[1]*b[0])<1e-8)return "";
+    const dx=a[0]+b[0],dy=a[1]+b[1];
+    let t=0,end=Infinity;
+    inner.forEach((u,j)=>{
+      const v=inner[(j+1)%inner.length], z=cross2(u,v,p), k=(v[0]-u[0])*dy-(v[1]-u[1])*dx;
+      if(k>1e-8)t=Math.max(t,-z/k);else if(k< -1e-8)end=Math.min(end,-z/k);else if(z< -1e-8)end=-Infinity;
+    });
+    return t>1e-8 && t<=end+1e-8 ? `<line x1="${X(p[0])}" y1="${Y(p[1])}" x2="${X(p[0]+t*dx)}" y2="${Y(p[1]+t*dy)}" stroke="#506176" stroke-opacity=".75" stroke-width="1" pointer-events="none"/>` : "";
+  }).join("");
+  return bands+seams+notes;
+}
+
 function profileEdgeTargets(outer, inner, type, index = null) {
   const label=type === 'frame' ? 'Рама' : 'Створка';
   const joints=outer.edges.map((edge,i)=>{
@@ -1781,8 +1967,7 @@ function circleFrameTargets(cx,cy,rx,ry,frame) {
   return halves+`<path d="M ${cx-rx} ${cy} H ${cx-ix} M ${cx+ix} ${cy} H ${cx+rx}" fill="none" stroke="#506176" stroke-width="1" pointer-events="none"/>`;
 }
 
-function renderCanvas() {
-  const svg = $("#windowCanvas");
+function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
   const maxWidth = 455;
   const maxHeight = 350;
   const ratio = state.width / state.height;
@@ -1806,14 +1991,11 @@ function renderCanvas() {
   const paths = shapePaths(x, y, width, height, frame);
   let profileTargets = state.shape === "circle" ? circleFrameTargets(x+width/2,y+height/2,width/2,height/2,frame) : "";
   const poly=polygonPoints();
+  const polygonOpening=poly ? polygonClip(poly,poly,tech.frame) : null;
   if(poly){
     paths.outer=`<path d="${polyPath(poly,X,Y)}"/>`;
-    paths.inner=`<path d="${polyPath(polygonClip(poly,poly,tech.frame),X,Y)}"/>`;
-    profileTargets=poly.map((p,i)=>{
-      const q=poly[(i+1)%poly.length];
-      const sel=activeProfileEdge?.owner===state&&activeProfileEdge.type==="polygon"&&activeProfileEdge.side===i;
-      return `<path d="M ${X(p[0])} ${Y(p[1])} L ${X(q[0])} ${Y(q[1])}" stroke="${sel?'#ef8b25':'transparent'}" stroke-width="${sel?5:14}" pointer-events="stroke" data-profile-edge="polygon" data-edge-side="${i}" tabindex="0" role="button" aria-label="Сторона ${i+1}"/>`;
-    }).join("");
+    paths.inner=`<path d="${polyPath(polygonOpening,X,Y)}"/>`;
+    profileTargets=polygonProfileTargets(poly,polygonOpening,"polygon",null,X,Y);
   } else if (state.shape === "arch" || state.shape === "rect") {
     const arcs=state.shape === "arch" ? state.frameArcs : null;
     const outer=profileOutline([0,0,state.width,state.height],arcs,X,Y,sx,sy);
@@ -1858,6 +2040,12 @@ function renderCanvas() {
     const offsets=d=>sides.map(touch=>touch?d:null);
     const fit=(bounds,depth,arcs=null)=>fittedOutline(bounds,offsets(depth),arcs,X,Y,sx,sy);
     const border=(side,at,fallback)=>sides[side] ? (frameCurve(side,0)?.(at) ?? fallback) : fallback;
+    const bounds=[physical.x,physical.y,physical.x+physical.width,physical.y+physical.height];
+    const sectionPolygon=poly ? polygonClip(polygonOpening,rectPoints(bounds)) : null;
+    const clippedCenter=(axis,at,fallback)=>{
+      const range=sectionPolygon && outlineRange(sectionPolygon,axis,at);
+      return range ? (range[0]+range[1])/2 : fallback;
+    };
     let innerImpostsMarkup = "";
 
     pane.innerImposts.forEach((item) => {
@@ -1875,7 +2063,7 @@ function renderCanvas() {
         innerImpostsMarkup += `
           <line class="impost-visible inner-impost-visible${active ? " selected" : ""}" x1="${lineX}" y1="${y1}" x2="${lineX}" y2="${y2}" stroke="${profileColor}" stroke-width="${paneImpostFace}" />
           <line x1="${lineX}" y1="${y1}" x2="${lineX}" y2="${y2}" stroke="${material.edge}" stroke-width="1.2" opacity=".55" pointer-events="none" />
-          <rect class="impost-grip${active ? " selected" : ""}" x="${lineX - 7}" y="${py + paneHeight / 2 - 14}" width="14" height="28" rx="7" />
+          <rect class="impost-grip${active ? " selected" : ""}" x="${lineX - 7}" y="${Y(clippedCenter(0,physical.x+physicalPosition,physical.y+physical.height/2)) - 14}" width="14" height="28" rx="7" />
           <line class="impost-hit" data-scope="pane" data-pane="${index}" data-orientation="vertical" data-id="${item.id}" x1="${lineX}" y1="${y1}" x2="${lineX}" y2="${y2}" tabindex="0" role="slider" aria-label="Вертикальный импост в ${paneKind} ${index + 1}" aria-valuenow="${Math.round(physicalPosition)}" />
           `;
       } else {
@@ -1883,7 +2071,7 @@ function renderCanvas() {
         innerImpostsMarkup += `
           <line class="impost-visible inner-impost-visible${active ? " selected" : ""}" x1="${x1}" y1="${lineY}" x2="${x2}" y2="${lineY}" stroke="${profileColor}" stroke-width="${paneImpostFace}" />
           <line x1="${x1}" y1="${lineY}" x2="${x2}" y2="${lineY}" stroke="${material.edge}" stroke-width="1.2" opacity=".55" pointer-events="none" />
-          <rect class="impost-grip${active ? " selected" : ""}" x="${px + paneWidth / 2 - 14}" y="${lineY - 7}" width="28" height="14" rx="7" />
+          <rect class="impost-grip${active ? " selected" : ""}" x="${X(clippedCenter(1,physical.y+physicalPosition,physical.x+physical.width/2)) - 14}" y="${lineY - 7}" width="28" height="14" rx="7" />
           <line class="impost-hit horizontal" data-scope="pane" data-pane="${index}" data-orientation="horizontal" data-id="${item.id}" x1="${x1}" y1="${lineY}" x2="${x2}" y2="${lineY}" tabindex="0" role="slider" aria-label="Горизонтальный импост в ${paneKind} ${index + 1}" aria-valuenow="${Math.round(physicalPosition)}" />
           `;
       }
@@ -1907,6 +2095,9 @@ function renderCanvas() {
     } else localImpostsMarkup += innerImpostsMarkup;
     if (sashBox && (state.shape==="arch" || state.shape==="rect") && opening[2]>opening[0] && opening[3]>opening[1]) {
       profileTargets+=profileEdgeTargets(outerSash,innerSash,"sash",index);
+     } else if (state.shape === "skew" && outerSash && innerSash) {
+      profileTargets+=poly ? polygonProfileTargets(outerSash.boundary,innerSash.boundary,"skew-sash",index,X,Y)
+        : profileEdgeTargets(outerSash,innerSash,"skew-sash",index);
     }
     if (outerSash?.path && innerSash?.path && opening[2]>opening[0] && opening[3]>opening[1]) {
       sashMarkup += `<path d="${outerSash.path} ${innerSash.path}" fill="${profileColor}" fill-rule="evenodd" stroke="${material.edge}" stroke-width=".8" />`;
@@ -1920,30 +2111,42 @@ function renderCanvas() {
           <g clip-path="url(#${clip})">${mark.dashes}</g>${mark.handle}`;
       }
     }
+    const center=sectionPolygon ? sectionPolygon.reduce(([a,b],[u,v])=>[a+u/sectionPolygon.length,b+v/sectionPolygon.length],[0,0]) : null;
+    const paneCx=center ? X(center[0]) : px+paneWidth/2, paneCy=center ? Y(center[1]) : py+paneHeight/2;
     for (const f of fields) {
-      if (f.clearW<=0 || f.clearH<=0) continue;
+      if (f.clearW<=1e-6 || f.clearH<=1e-6) continue;
       const w=f.w*sx,h=f.h*sy;
       const fitted=fittedGlass(entry,{sashBox,opening},f,tech,X,Y,sx,sy);
       const glassPath=fitted.path;
       if(!glassPath) continue;
       if (selected) glassMarkup += `<path class="pane-selected" d="${glassPath}" fill="none" />`;
-      const font=Math.min(10,w/8,h/4);
-      if (font>=4) glassMarkup += `<text x="${X(f.x)+w/2}" y="${Y(f.y)+h/2+Math.min(26,h/3)}"
+      const vertices=poly ? fitted.boundary : null;
+      const center=vertices?.length ? vertices.reduce(([a,b],[u,v])=>[a+u/vertices.length,b+v/vertices.length],[0,0]) : null;
+      const labelX=poly && fields.length===1 ? paneCx : center ? X(center[0]) : X(f.x)+w/2;
+      const fieldY=center ? Y(center[1])+4 : Y(f.y)+h/2+Math.min(26,h/3);
+      const labelY=poly && (fields.length===1 || (Math.abs(labelX-paneCx)<48 && Math.abs(fieldY-paneCy)<24)) ? paneCy+27 : fieldY;
+      const font=Math.min(10,(poly?fitted.w*sx:w)/8,(poly?fitted.h*sy:h)/4);
+      if (font>=4) glassMarkup += `<text x="${labelX}" y="${labelY}"
         text-anchor="middle" font-size="${font}" fill="#20384c" paint-order="stroke" stroke="#edf6fa" stroke-width="2">${state.shape !== "circle" && !customProfileArcs() ? "" : "≈ "}${glassSizeLabel({...f,w:fitted.w,h:fitted.h})}</text>`;
     }
-    const paneOutline=hasFrameArc ? fit([physical.x,physical.y,physical.x+physical.width,physical.y+physical.height],0).path : null;
+    if (poly && sectionPolygon.length<3) return;
+    const paneOutline=poly ? polyPath(sectionPolygon,X,Y) : hasFrameArc ? fit([physical.x,physical.y,physical.x+physical.width,physical.y+physical.height],0).path : null;
     const areaAttrs=paneOutline?`d="${paneOutline}"`:`x="${px}" y="${py}" width="${paneWidth}" height="${paneHeight}"`;
     const tag=paneOutline?"path":"rect";
     panesMarkup += `
       <g class="pane" data-index="${index}" clip-path="url(#innerClip)">
         <${tag} ${areaAttrs} fill="${glass.color}" />
         <${tag} ${areaAttrs} fill="url(#glassSheen)" opacity="0.55" />
-        <circle cx="${px + paneWidth / 2}" cy="${py + paneHeight / 2}" r="14" fill="rgba(255,255,255,.82)" stroke="rgba(53,80,105,.22)" />
-        <text class="pane-number" x="${px + paneWidth / 2}" y="${py + paneHeight / 2 + 4}">${sectionNumber(index)}</text>
+        <circle cx="${paneCx}" cy="${paneCy}" r="14" fill="rgba(255,255,255,.82)" stroke="rgba(53,80,105,.22)" />
+        <text class="pane-number" x="${paneCx}" y="${paneCy+4}">${sectionNumber(index)}</text>
         <${tag} class="pane-hit" data-pane="${index}" ${areaAttrs} fill="transparent" tabindex="0" role="button" aria-label="Настроить секцию ${index + 1}" />
       </g>`;
   });
 
+  const rootGripCenter=(axis,at,fallback)=>{
+    const range=polygonOpening && outlineRange(polygonOpening,axis,at);
+    return range ? (axis===0?Y:X)((range[0]+range[1])/2) : fallback;
+  };
   let rootImpostsMarkup = "";
   state.vImposts.forEach((item, index) => {
     const lineX = rootVerticalX[index];
@@ -1952,7 +2155,7 @@ function renderCanvas() {
     rootImpostsMarkup += `
       <line class="impost-visible${active ? " selected" : ""}" x1="${lineX}" y1="${state.shape==="arch" && state.frameArcs?.[0] ? Y(frameCurve(0,0)?.(item.position) ?? 0) : box.y - 2}" x2="${lineX}" y2="${state.shape==="arch" && state.frameArcs?.[2] ? Y(frameCurve(2,0)?.(item.position) ?? state.height) : box.y + box.height + 2}" stroke="${profileColor}" stroke-width="${impostFace}" />
       <line x1="${lineX}" y1="${state.shape==="arch" && state.frameArcs?.[0] ? Y(frameCurve(0,0)?.(item.position) ?? 0) : box.y - 2}" x2="${lineX}" y2="${state.shape==="arch" && state.frameArcs?.[2] ? Y(frameCurve(2,0)?.(item.position) ?? state.height) : box.y + box.height + 2}" stroke="${material.edge}" stroke-width="1.4" opacity=".55" pointer-events="none" />
-      <rect class="impost-grip${active ? " selected" : ""}" x="${lineX - 8}" y="${box.y + box.height / 2 - 18}" width="16" height="36" rx="8" />
+      <rect class="impost-grip${active ? " selected" : ""}" x="${lineX - 8}" y="${rootGripCenter(0,item.position,box.y+box.height/2) - 18}" width="16" height="36" rx="8" />
       <line class="impost-hit" data-scope="root" data-orientation="vertical" data-id="${item.id}" x1="${lineX}" y1="${state.shape==="arch" && state.frameArcs?.[0] ? Y(frameCurve(0,0)?.(item.position) ?? 0) : box.y - 2}" x2="${lineX}" y2="${state.shape==="arch" && state.frameArcs?.[2] ? Y(frameCurve(2,0)?.(item.position) ?? state.height) : box.y + box.height + 2}" tabindex="0" role="slider" aria-label="Вертикальный импост рамы" aria-valuemin="0" aria-valuemax="${state.width}" aria-valuenow="${Math.round(item.position)}" />
       `;
   });
@@ -1963,7 +2166,7 @@ function renderCanvas() {
     rootImpostsMarkup += `
       <line class="impost-visible${active ? " selected" : ""}" x1="${state.shape==="arch" && state.frameArcs?.[3] ? X(frameCurve(3,0)?.(item.position) ?? 0) : box.x - 2}" y1="${lineY}" x2="${state.shape==="arch" && state.frameArcs?.[1] ? X(frameCurve(1,0)?.(item.position) ?? state.width) : box.x + box.width + 2}" y2="${lineY}" stroke="${profileColor}" stroke-width="${impostFace}" />
       <line x1="${state.shape==="arch" && state.frameArcs?.[3] ? X(frameCurve(3,0)?.(item.position) ?? 0) : box.x - 2}" y1="${lineY}" x2="${state.shape==="arch" && state.frameArcs?.[1] ? X(frameCurve(1,0)?.(item.position) ?? state.width) : box.x + box.width + 2}" y2="${lineY}" stroke="${material.edge}" stroke-width="1.4" opacity=".55" pointer-events="none" />
-      <rect class="impost-grip${active ? " selected" : ""}" x="${box.x + box.width / 2 - 18}" y="${lineY - 8}" width="36" height="16" rx="8" />
+      <rect class="impost-grip${active ? " selected" : ""}" x="${rootGripCenter(1,item.position,box.x+box.width/2) - 18}" y="${lineY - 8}" width="36" height="16" rx="8" />
       <line class="impost-hit horizontal" data-scope="root" data-orientation="horizontal" data-id="${item.id}" x1="${state.shape==="arch" && state.frameArcs?.[3] ? X(frameCurve(3,0)?.(item.position) ?? 0) : box.x - 2}" y1="${lineY}" x2="${state.shape==="arch" && state.frameArcs?.[1] ? X(frameCurve(1,0)?.(item.position) ?? state.width) : box.x + box.width + 2}" y2="${lineY}" tabindex="0" role="slider" aria-label="Горизонтальный импост рамы" aria-valuemin="0" aria-valuemax="${state.height}" aria-valuenow="${Math.round(item.position)}" />
       `;
   });
@@ -1992,8 +2195,14 @@ function renderCanvas() {
   let shoulderMarkup="";
   if(showShoulderWidth) shoulderMarkup+=shoulderDimension([x,y+height],[x+width,y+height],[x,by1+37],[x+width,by1+37],state.width,"Ширина по плечам");
   if(showShoulderHeight) shoulderMarkup+=shoulderDimension([x,y],[x,y+height],[bx0-37,y],[bx0-37,y+height],state.height,"Высота до плеча",null,-90);
-  if(poly && activeProfileEdge?.owner===state && activeProfileEdge.type==="polygon") {
-    const i=activeProfileEdge.side,a=poly[i],b=poly[(i+1)%poly.length];
+  if(poly) for(let i=0;i<poly.length;i++) {
+    const a=poly[i],b=poly[(i+1)%poly.length];
+    const selected=activeProfileEdge?.owner===state && activeProfileEdge.type==="polygon" && activeProfileEdge.side===i;
+    const dxModel=Math.abs(b[0]-a[0]),dyModel=Math.abs(b[1]-a[1]);
+    const eps=1e-6;
+    const fullWidth=dyModel<eps && Math.abs(dxModel-actualWidth)<eps;
+    const fullHeight=dxModel<eps && Math.abs(dyModel-actualHeight)<eps;
+    if(!selected && (fullWidth || fullHeight)) continue;
     if(a&&b){
       const p=[X(a[0]),Y(a[1])],q=[X(b[0]),Y(b[1])];
       const dx=q[0]-p[0],dy=q[1]-p[1],length=Math.hypot(dx,dy);
@@ -2070,6 +2279,17 @@ function renderCanvas() {
         <text class="dimension-text" x="0" y="5">${numberFormatter.format(Math.round(actualHeight))} мм</text>
       </g>
     </g>`;
+
+  if (thumbnail) {
+    // Keep the actual rendered frame, glass, sashes and imposts; omit editor controls.
+    svg.querySelectorAll(".dimensions, .pane-hit, .pane-selected, .impost-hit, .impost-grip, [data-profile-edge], [data-profile-length], circle, text").forEach(node => node.remove());
+    svg.querySelectorAll("[data-pane], [data-axis-group]").forEach(node => {
+      node.removeAttribute("tabindex");
+      node.removeAttribute("role");
+    });
+    svg.setAttribute("viewBox", `${x - 6} ${y - 6} ${width + 12} ${height + 12}`);
+    return;
+  }
 
   $$("#windowCanvas .pane-hit").forEach((node) => {
     const choose = event => {
@@ -2177,7 +2397,7 @@ function bindCanvasDragging() {
     if(hit){
       event.preventDefault();
       const type=hit.dataset.profileEdge;
-      activeProfileEdge={owner:state,type,index:type==="sash"?Number(hit.dataset.edgeIndex):null,side:Number(hit.dataset.edgeSide)};
+      activeProfileEdge={owner:state,type,index:(type==="sash"||type==="skew-sash")?Number(hit.dataset.edgeIndex):null,side:Number(hit.dataset.edgeSide)};
       state.selectedPane=null;state.selectedImpost=null;multiSections.clear();sharedAxis=null;
       renderAll();
     }
@@ -2390,6 +2610,7 @@ function renderSummary(calculation) {
   $("#summaryArea").textContent = `${formatNumber(totalArea)} м²`;
   $("#summarySashes").textContent = `${calculation.sashCount * state.quantity}`;
   $("#summaryPanes").textContent = `${calculation.glassUnits * state.quantity}`;
+  $("#summaryGlassArea").textContent = `${formatNumber(calculation.glazingArea * state.quantity)} м²`;
   $("#summaryQuantity").textContent = `${state.quantity} шт.`;
   $("#summaryMaterial").textContent = calculation.material.label;
   $("#summaryProfile").textContent = calculation.profile.name;
@@ -2535,12 +2756,13 @@ function bindEvents() {
     const skew=document.createElement("button");
     skew.type="button";skew.dataset.value="skew";skew.setAttribute("aria-pressed","false");
     skew.innerHTML='<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 8l16-4v16H4z"/></svg>Косое';
-    shapeOptions.append(skew);
+    shapeOptions.querySelector('[data-value="arch"]')?.before(skew);
   }
   shapeOptions.addEventListener("click",event=>{
     const button=event.target.closest("button[data-value]");
     if(!button || button.dataset.value===state.shape)return;
     setWindowShapeMode(button.dataset.value);
+    syncFormFromState();
     renderAll();
   });
 
@@ -2550,13 +2772,13 @@ function bindEvents() {
   }
 
   $("#quantity").addEventListener("input", (event) => {
-    state.quantity = clamp(event.target.value, 1, 99);
+    state.quantity = clamp(event.target.value, 1, 9999);
     renderAll();
   });
   $("#quantity").addEventListener("change", (event) => (event.target.value = state.quantity));
   $$(".stepper button").forEach((button) => {
     button.addEventListener("click", () => {
-      state.quantity = clamp(state.quantity + Number(button.dataset.step), 1, 99);
+      state.quantity = clamp(state.quantity + Number(button.dataset.step), 1, 9999);
       $("#quantity").value = state.quantity;
       renderAll();
     });
@@ -2707,9 +2929,11 @@ function bindEvents() {
     const item = event.target.closest("[data-order-item-id]");
     if (!button || !item) return;
     if (button.dataset.orderAction === "edit") editOrderItem(item.dataset.orderItemId);
+    if (button.dataset.orderAction === "rename") renameOrderItem(item.dataset.orderItemId);
     if (button.dataset.orderAction === "delete") deleteOrderItem(item.dataset.orderItemId);
   });
   $("#newProject").addEventListener("click", startNewProject);
+  $("#renameCurrentOrder").addEventListener("click", renameCurrentOrder);
   $("#saveProject").addEventListener("click", requestProjectSave);
   window.addEventListener("storage", event => {
     if (event.key !== PROJECTS_STORAGE_KEY && event.key !== null) return;
@@ -2725,7 +2949,7 @@ function bindEvents() {
     event.preventDefault();
     const name = $("#projectNameInput").value.trim();
     if (!name) {
-      $("#projectNameError").textContent = "Введите название проекта";
+      $("#projectNameError").textContent = "Введите название заказа";
       $("#projectNameError").hidden = false;
       return;
     }
@@ -2740,6 +2964,7 @@ function bindEvents() {
     const card = event.target.closest("[data-project-id]");
     if (!button || !card) return;
     if (button.dataset.projectAction === "open") openProject(card.dataset.projectId);
+    if (button.dataset.projectAction === "rename") renameStoredOrder(card.dataset.projectId);
     if (button.dataset.projectAction === "delete") deleteProject(card.dataset.projectId);
   });
   ["#projectNameDialog", "#projectsDialog"].forEach((selector) => {
@@ -3138,7 +3363,7 @@ function exposeAgentTools() {
     });
     if (input.material !== undefined && !MATERIALS[input.material]) throw new Error("Неизвестный материал");
     if (input.shape !== undefined && !SHAPES[input.shape]) throw new Error("Неизвестная форма");
-    const ranges = { width: [400, 5000], height: [400, 4000], columns: [1, 4], rows: [1, 3], quantity: [1, 99] };
+    const ranges = { width: [400, 5000], height: [400, 4000], columns: [1, 4], rows: [1, 3], quantity: [1, 9999] };
     Object.entries(ranges).forEach(([key, [min, max]]) => {
       if (input[key] === undefined) return;
       if (typeof input[key] !== "number" || !Number.isFinite(input[key]) || input[key] < min || input[key] > max) {
@@ -3166,7 +3391,7 @@ function exposeAgentTools() {
               height: { type: "number", minimum: 400, maximum: 4000 },
               columns: { type: "integer", minimum: 1, maximum: 4 },
               rows: { type: "integer", minimum: 1, maximum: 3 },
-              quantity: { type: "integer", minimum: 1, maximum: 99 },
+              quantity: { type: "integer", minimum: 1, maximum: 9999 },
             },
             additionalProperties: false,
           },
