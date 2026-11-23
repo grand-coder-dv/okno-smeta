@@ -79,6 +79,23 @@ function readStoredMaterials() {
 
 let MATERIALS = readStoredMaterials();
 
+const PRODUCT_TYPES = { window: "Окно", entranceDoor: "Входная дверь", balconyDoor: "Балконная дверь" };
+function profileTypeSettings(profile, type = state.productType || "window") {
+  const legacy = {
+    frameWidth: profile.frameWidth, sashWidth: profile.sashWidth, impostWidth: profile.impostWidth,
+    glassBiteFrame: profile.glassBiteFrame ?? profile.glassBite ?? 14,
+    glassBiteSash: profile.glassBiteSash ?? profile.glassBite ?? 14,
+    glassBiteImpost: profile.glassBiteImpost ?? profile.glassBite ?? 14,
+    factor: profile.factor, seals: profile.seals,
+    allowCircleShape: true, allowCircleSashes: profile.allowCircleSashes === true,
+    allowTiltturn: true, allowTurn: true, allowTilt: true,
+  };
+  return { ...legacy, ...(profile.types?.[type] || {}), enabled: profile.types?.[type]?.enabled ?? type === "window" };
+}
+function availableProfiles(material = state.material, type = state.productType || "window") {
+  return MATERIALS[material].profiles.filter(profile => profileTypeSettings(profile, type).enabled);
+}
+
 const GLASS = {
   single: { name: "Однокамерный", detail: "24 мм", color: "#cce9f3" },
   double: { name: "Двухкамерный", detail: "40 мм", color: "#bfe3ef" },
@@ -293,6 +310,7 @@ let dragState = null;
 function createDefaultState() {
   return {
     material: "pvc",
+    productType: "window",
     profile: "pvc70",
     finish: "white",
     shape: "rect",
@@ -380,7 +398,24 @@ function createCatalogId(prefix) {
 }
 
 function getProfile() {
-  return MATERIALS[state.material].profiles.find((item) => item.id === state.profile) || MATERIALS[state.material].profiles[0];
+  const profiles = MATERIALS[state.material].profiles;
+  const profile = profiles.find(item => item.id === state.profile) || availableProfiles()[0] || profiles[0];
+  return { ...profile, ...profileTypeSettings(profile) };
+}
+
+function openingAllowed(opening) {
+  if (opening === "fixed") return true;
+  const profile = getProfile();
+  if (state.shape === "circle" && !profile.allowCircleSashes) return false;
+  return profile[{ turn: "allowTurn", tiltturn: "allowTiltturn", tilt: "allowTilt" }[opening]] !== false;
+}
+
+function normalizeUnsupportedOpenings() {
+  function visit(pane) {
+    if (pane.split) (pane.children || []).forEach(visit);
+    else if (!openingAllowed(pane.opening)) { pane.opening = "fixed"; delete pane.hingeSide; }
+  }
+  (state.panes || []).forEach(visit);
 }
 
 function getFinish() {
@@ -469,13 +504,16 @@ function validateCurrentProduct() {
   if (!Number.isInteger(state.quantity) || state.quantity < 1 || state.quantity > 9999) return "Количество должно быть целым числом от 1 до 9999.";
   const material = MATERIALS[state.material];
   if (!material) return "Выбран неизвестный материал профиля.";
-  if (!material.profiles.some((item) => item.id === state.profile)) return "Выбранная профильная система больше недоступна.";
+  if (!PRODUCT_TYPES[state.productType || "window"]) return "Выбран неизвестный тип изделия.";
+  if (!availableProfiles().some((item) => item.id === state.profile)) return "Для этого типа изделия нет доступной профильной системы.";
+  if (state.shape === "circle" && !getProfile().allowCircleShape) return "Для этой профильной системы круглая форма недоступна.";
   if (!material.finishes.some((item) => item.id === state.finish)) return "Выбранный цвет или отделка больше недоступны.";
   if (!Array.isArray(state.panes) || state.panes.length !== state.cols * state.rows) return "Количество секций не соответствует выбранной разбивке.";
 
   const tech = getTechnology();
   for (const [i,entry] of sectionLayout().entries()) {
     if (entry.pane.split) continue;
+    if (!openingAllowed(entry.pane.opening)) return `Секция № ${sectionNumber(i)}: тип открывания недоступен для этой системы.`;
     const geo=glassGeometry(entry,tech);
     if ((state.shape === "circle" || state.shape === "skew") && geo.fields.some(f=>f.clearW>1e-6 && f.clearH>1e-6 && (fittedGlass(entry,geo,f,tech).area ?? f.w*f.h)<=1e-7)) {
       return `Секция № ${sectionNumber(i)}: в этой части контура нет места для стеклопакета. Сместите или удалите импост.`;
@@ -557,7 +595,7 @@ function renderOrder() {
               ${item.preliminary ? '<span class="preliminary-badge">Предварительно</span>' : ""}
               ${item.id === editingOrderItemId ? '<span class="editing-badge">Редактируется</span>' : ""}
             </div>
-            <small>${escapeHtml(material?.label || item.configuration.material)} · ${escapeHtml(shape)} · ${dimensions}<br>${item.quantity} шт. · ${formatMoney(item.unitPrice)} за шт.</small>
+            <small>${escapeHtml(PRODUCT_TYPES[item.configuration.productType || "window"] || "Окно")} · ${escapeHtml(material?.label || item.configuration.material)} · ${escapeHtml(shape)} · ${dimensions}<br>${item.quantity} шт. · ${formatMoney(item.unitPrice)} за шт.</small>
           </div>
           <div class="order-item-price">
             <span>Сумма позиции</span>
@@ -624,7 +662,7 @@ function renderPrintOrder() {
             <div>
               <span>Позиция ${itemIndex + 1}</span>
               <h2>${escapeHtml(item.name || `Изделие ${itemIndex + 1}`)}</h2>
-              <p>${escapeHtml(presentation.material || material?.label || configuration.material)} · ${escapeHtml(presentation.shape || SHAPES[configuration.shape] || configuration.shape)} · ${dimensions}</p>
+              <p>${escapeHtml(PRODUCT_TYPES[configuration.productType || "window"] || "Окно")} · ${escapeHtml(presentation.material || material?.label || configuration.material)} · ${escapeHtml(presentation.shape || SHAPES[configuration.shape] || configuration.shape)} · ${dimensions}</p>
               <p>${escapeHtml(presentation.profile || profile?.name || configuration.profile)} · ${escapeHtml(presentation.finish || finish?.name || configuration.finish)}</p>
             </div>
             <div class="print-order-item-total">
@@ -924,6 +962,7 @@ function saveCurrentOrderItem() {
     total: Math.round(calculation.total),
     preliminary: isPreliminaryShape(),
     presentation: {
+      productType: PRODUCT_TYPES[state.productType || "window"],
       material: calculation.material.label,
       profile: calculation.profile.name,
       finish: calculation.finish.name,
@@ -1166,13 +1205,19 @@ function nestedImpostLimits(item, pane) {
   };
 }
 
-function updateMaterialSelects(reset = false) {
+function updateMaterialSelects(reset = false, preserveProfile = false) {
   const material = MATERIALS[state.material];
-  if (reset || !material.profiles.some((item) => item.id === state.profile)) state.profile = material.profiles[1]?.id || material.profiles[0].id;
+  if (reset || !availableProfiles().length) state.productType = "window";
+  const compatible = availableProfiles();
+  if (reset || (!preserveProfile && !compatible.some((item) => item.id === state.profile))) state.profile = compatible[0]?.id || material.profiles[0].id;
   if (reset || !material.finishes.some((item) => item.id === state.finish)) state.finish = material.finishes[0].id;
 
+  $("#productType").value = state.productType || "window";
+  $$("#productType option").forEach(option => {
+    option.disabled = !availableProfiles(state.material, option.value).length;
+  });
   $("#profileSystem").innerHTML = material.profiles
-    .map((item) => `<option value="${item.id}" ${item.id === state.profile ? "selected" : ""}>${item.name}</option>`)
+    .map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === state.profile ? "selected" : ""}>${escapeHtml(item.name)}</option>`)
     .join("");
   $("#finish").innerHTML = material.finishes
     .map((item) => `<option value="${item.id}" ${item.id === state.finish ? "selected" : ""}>${item.name}</option>`)
@@ -1273,7 +1318,7 @@ function buildSpecification() {
   const frameUnitTotal = dimensions.perimeter * frameRate;
   addLine({
     name: "Профиль рамы",
-    note: `Наружный габарит: ${overallSizeLabel()}`,
+    note: `${PRODUCT_TYPES[state.productType || "window"]}; наружный габарит: ${overallSizeLabel()}`,
     characteristic: `${profile.name}; ${finish.name}; ширина ${tech.frame} мм`,
     qty: dimensions.perimeter * quantity,
     unit: "пог. м",
@@ -1539,7 +1584,11 @@ function sashOpeningMark(glass, outer, inner, type, side, X, Y) {
   const line=points=>`<path d="M ${points.join(' L ')}" fill="none" stroke="#4d7085" stroke-width="1.7" stroke-dasharray="5 4"/>`;
   let dashes="";
   if((type==="turn"||type==="tiltturn")&&upper&&lower&&mid) dashes+=line([pt(upper[hinge],top),pt(mid[free],ym),pt(lower[hinge],bottom)]);
-  if((type==="tilt"||type==="tiltturn")&&lower&&summit) dashes+=line([pt(lower[0],bottom),pt(xmid,summit[0]),pt(lower[1],bottom)]);
+  if((type==="tilt"||type==="tiltturn")&&summit) {
+    const topHinges = type === "tilt" && side === "top";
+    const hingeRange = topHinges ? upper : lower;
+    if (hingeRange) dashes+=line([pt(hingeRange[0],topHinges?top:bottom),pt(xmid,summit[topHinges?1:0]),pt(hingeRange[1],topHinges?top:bottom)]);
+  }
   const half=Math.min((b-t)*.05,9/Math.max(1e-8,Math.abs(Y(1)-Y(0))));
   const handlePoints=[ym-half,ym+half].map(y=>{
     const a=outlineRange(outer,1,y), b=outlineRange(inner,1,y);
@@ -2570,11 +2619,16 @@ function renderInspector() {
   $("#selectedPaneName").textContent = multiSections.size > 1
     ? `Выбрано секций: ${multiSections.size}` : `№ ${sectionNumber(state.selectedPane)}`;
   const openingSelect = $("#openingType");
-  openingSelect.disabled = circleSashesBlocked();
+  const canAddSash = ["turn", "tiltturn", "tilt"].some(openingAllowed);
+  openingSelect.disabled = !canAddSash;
+  $$("#openingType option").forEach(option => {
+    if (!OPENINGS[option.value] || option.value === "fixed") return;
+    option.hidden = option.disabled = !openingAllowed(option.value);
+  });
   const openingField = openingSelect.closest("label") || openingSelect;
   if (openingSelect.disabled) openingField.style.setProperty("display", "none", "important");
   else openingField.style.removeProperty("display");
-  openingSelect.title = openingSelect.disabled ? "Створки для круглой формы отключены в выбранной профильной системе" : "";
+  openingSelect.title = openingSelect.disabled ? "Для этой формы и профильной системы створки недоступны" : "";
   openingSelect.querySelector('[data-mixed-opening]')?.remove();
   const mixed = selectedSections().some(entry => entry.pane.opening !== pane.opening);
   if (mixed) {
@@ -2584,10 +2638,14 @@ function renderInspector() {
     openingSelect.prepend(option);
   }
   openingSelect.value = mixed ? "" : pane.opening;
-  const canTurn = ["turn", "tiltturn"].includes(pane.opening);
+  const canTurn = ["turn", "tiltturn", "tilt"].includes(pane.opening);
   $("#hingeSideField").hidden = !canTurn;
   $("#hingeSideField").style.display = canTurn ? "" : "none";
-  $("#hingeSide").value = pane.hingeSide === "right" ? "right" : "left";
+  $("#hingeSide").innerHTML = pane.opening === "tilt"
+    ? '<option value="bottom">Петли снизу</option><option value="top">Петли сверху</option>'
+    : '<option value="left">Петли слева — ручка справа</option><option value="right">Петли справа — ручка слева</option>';
+  $("#hingeSide").value = pane.opening === "tilt"
+    ? (pane.hingeSide === "top" ? "top" : "bottom") : (pane.hingeSide === "right" ? "right" : "left");
   const select = $("#paneGlass");
   select.value = pane.glass;
   let note = $("#paneGlassSize");
@@ -2613,6 +2671,7 @@ function renderSummary(calculation) {
   $("#summaryGlassArea").textContent = `${formatNumber(calculation.glazingArea * state.quantity)} м²`;
   $("#summaryQuantity").textContent = `${state.quantity} шт.`;
   $("#summaryMaterial").textContent = calculation.material.label;
+  $("#summaryProductType").textContent = PRODUCT_TYPES[state.productType || "window"];
   $("#summaryProfile").textContent = calculation.profile.name;
   const tech = getTechnology();
   $("#summaryTechnology").textContent = `рама ${tech.frame} · створка ${tech.sash} · импост ${tech.impost} мм`;
@@ -2660,6 +2719,7 @@ function updateShapeControls() {
     const active = button.dataset.value === state.shape;
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", String(active));
+    button.disabled = button.dataset.value === "circle" && !getProfile().allowCircleShape;
   });
   const isCircle = state.shape === "circle";
   $("#widthLabel").textContent = isCircle ? "Диаметр, мм" : "Ширина, мм";
@@ -2738,12 +2798,25 @@ function bindEvents() {
     input.addEventListener("change", () => {
       state.material = input.value;
       updateMaterialSelects(true);
+      normalizeUnsupportedOpenings();
       renderAll();
     });
   });
 
   $("#profileSystem").addEventListener("change", (event) => {
     state.profile = event.target.value;
+    state.productType = "window";
+    updateMaterialSelects(false, true);
+    if (state.shape === "circle" && !getProfile().allowCircleShape) setWindowShapeMode("rect");
+    normalizeUnsupportedOpenings();
+    renderAll();
+  });
+  $("#productType").addEventListener("change", event => {
+    state.productType = event.target.value;
+    updateMaterialSelects();
+    if (state.shape === "circle" && !getProfile().allowCircleShape) setWindowShapeMode("rect");
+    normalizeUnsupportedOpenings();
+    syncFormFromState();
     renderAll();
   });
   $("#finish").addEventListener("change", (event) => {
@@ -2797,7 +2870,7 @@ function bindEvents() {
   });
 
   $("#openingType").addEventListener("change", (event) => {
-    if (circleSashesBlocked()) { renderInspector(); return; }
+    if (!openingAllowed(event.target.value)) { renderInspector(); return; }
     const targets = selectedSections();
     const old = targets.map(({pane}) => pane.opening);
     targets.forEach(({pane}) => { pane.opening = event.target.value; });
@@ -2813,7 +2886,7 @@ function bindEvents() {
   $("#hingeSide").addEventListener("change", event => {
     const pane = sectionPanes()[state.selectedPane];
     if (!pane || pane.split) return;
-    pane.hingeSide = event.target.value === "right" ? "right" : "left";
+    pane.hingeSide = event.target.value;
     renderAll();
   });
   $("#paneGlass").addEventListener("change", (event) => {
@@ -3026,6 +3099,10 @@ function bindEvents() {
     });
   });
   $("#technologyCatalogEditor").addEventListener("click", handleCatalogAction);
+  $("#profileSettingsEditor").addEventListener("change", event => {
+    if (!event.target.matches("[data-type-enabled]")) return;
+    event.target.closest("[data-product-type]").querySelector(".profile-type-fields").hidden = !event.target.checked;
+  });
   $("#technologyCatalogEditor").addEventListener("input", event => {
     const input = event.target.closest('[data-profile-field="name"]');
     if (!input) return;
@@ -3053,6 +3130,10 @@ function bindEvents() {
   ["#saveTechnology", "#saveProfileSettings"].forEach(selector => $(selector).addEventListener("click", () => {
     captureGlassDraft();
     readCatalogDraftFromEditor();
+    for (const [material, catalog] of Object.entries(catalogDraft)) {
+      if (!catalog.profiles.some(profile => profileTypeSettings(profile, "window").enabled))
+        return showToast(`${MATERIALS[material].label}: включите тип «Окно» хотя бы для одной системы`);
+    }
     for (const [material, catalog] of Object.entries(glassDraft)) {
       const profiles = catalogDraft[material].profiles;
       for (const item of Object.values(catalog)) {
@@ -3201,43 +3282,28 @@ function renderTechnologyCatalog() {
       </label>
       <button class="catalog-remove-button" type="button" data-catalog-action="remove-profile" aria-label="Удалить профильную систему">Удалить</button>
     </article>`).join("");
-  const settingsRows = material.profiles
-    .map(
-      (profile) => `
-        <article class="catalog-profile-card" data-profile-id="${escapeHtml(profile.id)}">
-          <h4 class="catalog-settings-title">${escapeHtml(profile.name)}</h4>
-          <label class="catalog-field">
-            <span>Рама, мм</span>
-            <input type="number" data-profile-field="frameWidth" value="${clamp(profile.frameWidth, 20, 250)}" min="20" max="250" />
-          </label>
-          <label class="catalog-field">
-            <span>Створка, мм</span>
-            <input type="number" data-profile-field="sashWidth" value="${clamp(profile.sashWidth, 20, 250)}" min="20" max="250" />
-          </label>
-          <label class="catalog-field">
-            <span>Импост, мм</span>
-            <input type="number" data-profile-field="impostWidth" value="${clamp(profile.impostWidth, 20, 250)}" min="20" max="250" />
-          </label>
-          ${GLASS_BITE_FIELDS.map(([field, part]) => `<label class="catalog-field">
-            <span>Заход стеклопакета: ${part}, мм</span>
-            <input type="number" data-profile-field="${field}" min="0" max="100" step="any"
-              value="${clamp(profile[field] ?? profile.glassBite ?? 14, 0, 100)}" />
-          </label>`).join("")}
-          <label class="catalog-field">
-            <span>Коэффициент цены</span>
-            <input type="number" data-profile-field="factor" value="${Number(profile.factor) || 1}" min="0.1" max="5" step="0.01" />
-          </label>
-          <label class="catalog-field">
-            <span>Контуры уплотнения</span>
-            <input type="number" data-profile-field="seals" value="${clamp(profile.seals, 1, 5)}" min="1" max="5" />
-          </label>
-          <label class="catalog-field">
-            <span>Разрешить створки в круглых изделиях</span>
-            <input type="checkbox" data-profile-field="allowCircleSashes" ${profile.allowCircleSashes === true ? "checked" : ""} />
-          </label>
-        </article>`,
-    )
-    .join("");
+  const settingsRows = material.profiles.map(profile => `
+    <article class="catalog-system-settings" data-profile-id="${escapeHtml(profile.id)}">
+      <h4 class="catalog-settings-title">${escapeHtml(profile.name)}</h4>
+      <div class="profile-type-list">${Object.entries(PRODUCT_TYPES).map(([type, label]) => {
+        const settings = profileTypeSettings(profile, type);
+        return `<section class="profile-type-card" data-product-type="${type}">
+          <label class="profile-type-toggle"><input type="checkbox" data-type-enabled ${settings.enabled ? "checked" : ""} /> ${label}</label>
+          <div class="profile-type-fields" ${settings.enabled ? "" : "hidden"}>
+            ${[["frameWidth","Рама, мм",20,250],["sashWidth","Створка, мм",20,250],["impostWidth","Импост, мм",20,250],
+              ["glassBiteFrame","Заход стекла: рама, мм",0,100],["glassBiteSash","Заход стекла: створка, мм",0,100],
+              ["glassBiteImpost","Заход стекла: импост, мм",0,100],["factor","Коэффициент цены",0.1,5],["seals","Контуры уплотнения",1,5]]
+              .map(([field,title,min,max]) => `<label class="catalog-field"><span>${title}</span><input type="number" data-type-field="${field}"
+                value="${field === "factor" ? Number(settings[field]) || 1 : clamp(settings[field], min, max)}" min="${min}" max="${max}" step="${field === "factor" ? "0.01" : "1"}" /></label>`).join("")}
+            <label class="profile-type-option"><input type="checkbox" data-type-field="allowCircleShape" ${settings.allowCircleShape ? "checked" : ""} /> Круглая форма</label>
+            <label class="profile-type-option"><input type="checkbox" data-type-field="allowCircleSashes" ${settings.allowCircleSashes ? "checked" : ""} /> Створки в круглой форме</label>
+            <label class="profile-type-option"><input type="checkbox" data-type-field="allowTiltturn" ${settings.allowTiltturn !== false ? "checked" : ""} /> Поворотно-откидная</label>
+            <label class="profile-type-option"><input type="checkbox" data-type-field="allowTurn" ${settings.allowTurn !== false ? "checked" : ""} /> Поворотная</label>
+            <label class="profile-type-option"><input type="checkbox" data-type-field="allowTilt" ${settings.allowTilt !== false ? "checked" : ""} /> Откидная</label>
+          </div>
+        </section>`;
+      }).join("")}</div>
+    </article>`).join("");
 
   const finishRows = material.finishes
     .map(
@@ -3292,18 +3358,20 @@ function readCatalogDraftFromEditor() {
     profile.name = row.querySelector('[data-profile-field="name"]').value.trim() || "Новая профильная система";
   });
   $$("#profileSettingsEditor [data-profile-id]").forEach((row) => {
-    const profile = material.profiles.find((item) => item.id === row.dataset.profileId);
+    const profile = material.profiles.find(item => item.id === row.dataset.profileId);
     if (!profile) return;
-    for (const [field] of GLASS_BITE_FIELDS) {
-      const value = row.querySelector(`[data-profile-field="${field}"]`).value;
-      profile[field] = clamp(value === "" ? 14 : value, 0, 100);
-    }
-    profile.frameWidth = clamp(row.querySelector('[data-profile-field="frameWidth"]').value, 20, 250);
-    profile.sashWidth = clamp(row.querySelector('[data-profile-field="sashWidth"]').value, 20, 250);
-    profile.impostWidth = clamp(row.querySelector('[data-profile-field="impostWidth"]').value, 20, 250);
-    profile.factor = clamp(row.querySelector('[data-profile-field="factor"]').value, 0.1, 5);
-    profile.allowCircleSashes = row.querySelector('[data-profile-field="allowCircleSashes"]').checked;
-    profile.seals = Math.round(clamp(row.querySelector('[data-profile-field="seals"]').value, 1, 5));
+    profile.types ||= {};
+    row.querySelectorAll("[data-product-type]").forEach(typeRow => {
+      const type = typeRow.dataset.productType;
+      const previous = profileTypeSettings(profile, type);
+      const settings = { ...previous, enabled: typeRow.querySelector("[data-type-enabled]").checked };
+      typeRow.querySelectorAll("[data-type-field]").forEach(input => {
+        const field = input.dataset.typeField;
+        if (input.type === "checkbox") settings[field] = input.checked;
+        else settings[field] = clamp(input.value, Number(input.min), Number(input.max));
+      });
+      profile.types[type] = settings;
+    });
   });
   $$("#technologyCatalogEditor [data-finish-id]").forEach((row) => {
     const finish = material.finishes.find((item) => item.id === row.dataset.finishId);
@@ -3365,6 +3433,8 @@ function readTechnologyForm() {
   MATERIALS = cloneMaterials(catalogDraft);
   localStorage.setItem("oknoSmetaProfileCatalog", JSON.stringify(MATERIALS));
   updateMaterialSelects();
+  if (state.shape === "circle" && !getProfile().allowCircleShape) setWindowShapeMode("rect");
+  normalizeUnsupportedOpenings();
 }
 
 function exposeAgentTools() {
