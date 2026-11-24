@@ -304,13 +304,18 @@ let technology = readStoredTechnology();
 
 const HARDWARE_STORAGE_KEY = "oknoSmetaHardware";
 const HANDLE_STYLES = {
-  bar: "Прямая",
-  lever: "Рычаг",
-  offset: "Со смещением",
-  knob: "Кнопка",
-  lock: "С ключом",
-  long: "Удлинённая",
+  window: "Оконная",
+  turn: "Поворотная",
+  cylinder: "Поворотная с цилиндром",
+  bow: "Скоба",
+  rod: "Штанга",
 };
+const HANDLE_LENGTHS = { window: 175, turn: 175, cylinder: 250, bow: 300, rod: 1000 };
+const HANDLE_STYLE_ALIASES = { bar: "window", lever: "turn", offset: "bow", knob: "window", lock: "cylinder", long: "rod" };
+function normalizeHandleStyle(style) {
+  if (HANDLE_STYLES[style]) return style;
+  return HANDLE_STYLE_ALIASES[style] || "window";
+}
 const MATERIAL_TITLES = { pvc: "Пластик", aluminum: "Алюминий", wood: "Дерево" };
 
 function hardwareBound(value, fallback) {
@@ -340,10 +345,11 @@ function defaultHardwareCatalog() {
       { id: "hw-door", name: "Дверная фурнитура", minWidth: 400, maxWidth: 1300, minHeight: 1400, maxHeight: 2700, price: 8900, links: linksForMaterials(["pvc", "aluminum", "wood"], ["entranceDoor"]) },
     ],
     handles: [
-      { id: "hdl-white", name: "Стандарт белая", color: "#d5dde6", style: "bar", price: 520, hardwareIds: ["hw-roto-nt", "hw-futurus", "hw-maco", "hw-roto-wood", "hw-door"] },
-      { id: "hdl-anthracite", name: "Антрацит", color: "#3d4450", style: "lever", price: 690, hardwareIds: ["hw-roto-nt", "hw-futurus", "hw-maco", "hw-roto-wood"] },
-      { id: "hdl-gold", name: "Золото", color: "#b8860b", style: "offset", price: 740, hardwareIds: ["hw-roto-nt", "hw-roto-wood"] },
-      { id: "hdl-lock", name: "С ключом", color: "#e4ebf2", style: "lock", price: 980, hardwareIds: ["hw-door", "hw-roto-nt"] },
+      { id: "hdl-window", name: "Оконная белая", color: "#f4f7f8", style: "window", price: 520, hardwareIds: ["hw-roto-nt", "hw-futurus", "hw-maco", "hw-roto-wood", "hw-door"] },
+      { id: "hdl-turn", name: "Поворотная белая", color: "#f4f7f8", style: "turn", price: 690, hardwareIds: ["hw-roto-nt", "hw-futurus", "hw-maco", "hw-roto-wood", "hw-door"] },
+      { id: "hdl-cylinder", name: "Поворотная с цилиндром", color: "#f4f7f8", style: "cylinder", price: 980, hardwareIds: ["hw-door", "hw-roto-nt", "hw-futurus", "hw-maco", "hw-roto-wood"] },
+      { id: "hdl-bow", name: "Скоба", color: "#f4f7f8", style: "bow", price: 1450, hardwareIds: ["hw-door", "hw-roto-nt", "hw-maco", "hw-roto-wood"] },
+      { id: "hdl-rod", name: "Штанга", color: "#f4f7f8", style: "rod", price: 2400, hardwareIds: ["hw-door", "hw-maco", "hw-roto-wood"] },
     ],
   };
 }
@@ -368,7 +374,7 @@ function sanitizeHardwareCatalog(raw) {
     id: item.id,
     name: String(item.name || "Ручка").slice(0, 80),
     color: /^#[0-9a-fA-F]{6}$/.test(item.color || "") ? item.color : "#d5dde6",
-    style: HANDLE_STYLES[item.style] ? item.style : "bar",
+    style: normalizeHandleStyle(item.style),
     price: hardwareBound(item.price, 0),
     hardwareIds: (Array.isArray(item.hardwareIds) ? item.hardwareIds : []).filter((id) => ids.has(id)),
   }));
