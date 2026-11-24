@@ -65,7 +65,7 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
     paneRects[index] = { x: px, y: py, width: paneWidth, height: paneHeight, physicalWidth: physical.width, physicalHeight: physical.height };
     const glass = materialGlass()[pane.glass];
     const selected = index === state.selectedPane || multiSections.has(index);
-    const paneKind = pane.opening === "fixed" ? "глухой секции" : "створке";
+    const paneKind = pane.opening === "fixed" ? "глухом проёме" : "створке";
     const paneImpostFace = impostFace;
     const sides=[entry.edges[2],entry.edges[1],entry.edges[3],entry.edges[0]];
     const hasFrameArc=sides.some((touch,i)=>touch&&frameCurve(i,tech.frame));
@@ -224,7 +224,7 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
         <${tag} ${areaAttrs} fill="url(#glassSheen)" opacity="0.55" />
         <circle cx="${paneCx}" cy="${paneCy}" r="14" fill="rgba(255,255,255,.82)" stroke="rgba(53,80,105,.22)" />
         <text class="pane-number" x="${paneCx}" y="${paneCy+4}">${sectionNumber(index)}</text>
-        <${tag} class="pane-hit" data-pane="${index}" ${areaAttrs} fill="transparent" tabindex="0" role="button" aria-label="Настроить секцию ${index + 1}" />
+        <${tag} class="pane-hit" data-pane="${index}" ${areaAttrs} fill="transparent" tabindex="0" role="button" aria-label="Настроить проём ${index + 1}" />
       </g>`;
   });
 
