@@ -55,6 +55,24 @@ function renderInspector() {
     positionInput.min = Math.ceil(min);
     positionInput.max = Math.floor(max);
     positionInput.value = Math.round(position);
+    const endBox=$("#impostEndSizes");
+    const ends=record.item.endOffsets||[0,0];
+    if(endBox){
+      const slanted=state.shape==="skew" && ends.some(Boolean);
+      endBox.hidden=!slanted;
+      if(slanted){
+        const base=isRoot ? record.item.position
+          : (vertical ? getPanePhysicalRect(record.selected.paneIndex).x : getPanePhysicalRect(record.selected.paneIndex).y)
+            +(vertical ? getPanePhysicalRect(record.selected.paneIndex).width : getPanePhysicalRect(record.selected.paneIndex).height)*record.item.position;
+        const labels=vertical ? ["Верхний конец","Нижний конец"] : ["Левый конец","Правый конец"];
+        const axis=vertical ? "X" : "Y";
+        [0,1].forEach(end=>{
+          const value=Math.round(base+(ends[end]||0));
+          const shown=reverse ? dimension-value : value;
+          $(`#impostEndSize${end}`).textContent=`${labels[end]}: ${axis} = ${shown} мм`;
+        });
+      }
+    }
     return;
   }
 
@@ -104,7 +122,7 @@ function renderInspector() {
   const tech=getTechnology();
   const geometry=glassGeometry(entry,tech);
   const labels=geometry.fields.map(f=>glassSizeLabel({...f,...fittedGlass(entry,geometry,f,tech)}));
-  note.textContent=`${state.shape !== "circle" && !customProfileArcs() ? "Размер" : "Габарит по контуру, ориентировочно"}: ${[...new Set(labels)].join("; ")}`;
+  note.textContent=`${state.shape !== "circle" && !customProfileArcs() && !hasSlantedImposts() ? "Размер" : "Габарит по контуру, ориентировочно"}: ${[...new Set(labels)].join("; ")}`;
   const innerCount = pane.innerImposts.length;
   const paneKind = pane.opening === "fixed" ? "глухой секции" : "створке";
   $("#innerImpostHint").textContent = innerCount
