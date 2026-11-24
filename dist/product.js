@@ -22,6 +22,8 @@ function createDefaultState() {
     vImposts: [],
     hImposts: [],
     defaultGlass: "double",
+    hardwareId: "",
+    handleId: "",
     selectedPane: 0,
     selectedImpost: null,
     panes: [
@@ -31,6 +33,7 @@ function createDefaultState() {
 }
 
 let state = createDefaultState();
+syncHardwareChoice();
 let multiSections = new Set();
 let sharedAxis = null;
 const impostPositionOrigin = {vertical:"start", horizontal:"start"};
@@ -250,7 +253,7 @@ function resetCurrentProduct(previous = null) {
   draftProductName = `Изделие ${orderItemSequence + 1}`;
   state = createDefaultState();
   if (previous) {
-    for (const key of ["material", "profile", "finish", "productType", "shape", "width", "height", "defaultGlass"]) {
+    for (const key of ["material", "profile", "finish", "productType", "shape", "width", "height", "defaultGlass", "hardwareId", "handleId"]) {
       if (previous[key] !== undefined) state[key] = previous[key];
     }
     if (state.shape === "skew" && previous.framePolygon) state.framePolygon = cloneData(previous.framePolygon);
