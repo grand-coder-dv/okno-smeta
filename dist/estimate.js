@@ -172,7 +172,7 @@ function buildSpecification() {
       name: handleItem ? `Ручка: ${handleItem.name}` : "Оконная ручка",
       note: handleItem ? "Ручка комплекта фурнитуры" : "Ручка с креплением",
       characteristic: handleItem
-        ? `${HANDLE_STYLES[handleItem.style] || "Прямая"}${hardware ? `; ${hardware.name}` : ""}`
+        ? `${HANDLE_STYLES[handleItem.style] || "Оконная"}, ${HANDLE_LENGTHS[handleItem.style] || 175} мм${hardware ? `; ${hardware.name}` : ""}`
         : "В цвет профиля",
       qty: sashCount * quantity,
       unit: "шт.",
