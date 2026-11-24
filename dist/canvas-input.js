@@ -196,7 +196,7 @@ function addInnerImpost(orientation) {
   const targets = selectedSections();
   if (!targets.length) return;
   if (targets.some(({pane}) => pane.innerImposts.length)) {
-    showToast("В секции уже есть импост старого типа. Удалите его перед новой разбивкой, чтобы сохранить размеры стеклопакетов.");
+    showToast("В проёме уже есть импост старого типа. Удалите его перед новой разбивкой, чтобы сохранить размеры стеклопакетов.");
     return;
   }
   const vertical = orientation === "vertical";
@@ -275,7 +275,7 @@ function equalizeSelectedGlass(axis) {
   const groups=[];
   for(const entry of entries){
     if(entry.pane.split || entry.pane.innerImposts.length){
-      showToast("Выберите секции без дополнительных импостов внутри стеклопакета.");return;
+      showToast("Выберите проёмы без дополнительных импостов внутри стеклопакета.");return;
     }
     let group=groups.find(g=>Math.abs(g.start-coordinate(entry))<0.01 && Math.abs(g.end-coordinate(entry)-length(entry))<0.01);
     if(!group){group={start:coordinate(entry),end:coordinate(entry)+length(entry),entries:[]};groups.push(group);}
@@ -283,7 +283,7 @@ function equalizeSelectedGlass(axis) {
   }
   groups.sort((a,b)=>a.start-b.start);
   if(groups.length<2 || groups.some((g,i)=>i && Math.abs(g.start-groups[i-1].end)>0.01)){
-    showToast("Выберите соседние секции для равной разбивки.");return;
+    showToast("Выберите соседние проёмы для равной разбивки.");return;
   }
   const glass=e=>{const field=glassGeometry(e).fields[0];return horizontal?field.h:field.w;};
   const biases=groups.map(group=>{
@@ -304,7 +304,7 @@ function equalizeSelectedGlass(axis) {
       const splitAt=coordinate(entry)+length(entry)*entry.pane.split.position;
       if(Math.abs(splitAt-boundary)<0.01)matches.push({item:entry.pane.split,pane:entry.pane,root:false});
     });
-    if(!matches.length){showToast("Не найден импост между выбранными секциями.");return;}
+    if(!matches.length){showToast("Не найден импост между выбранными проёмами.");return;}
     changes.push(matches);
   }
   const target=(groups.at(-1).end-groups[0].start+biases.reduce((sum,v)=>sum+v,0))/groups.length;
