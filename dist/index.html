@@ -142,6 +142,21 @@
           </div>
 
           <fieldset class="control-group">
+            <legend>Фурнитура изделия</legend>
+            <div class="form-grid two">
+              <label class="field">
+                <span>Комплект</span>
+                <select id="hardwareSet"></select>
+              </label>
+              <label class="field">
+                <span>Ручка</span>
+                <select id="hardwareHandle"></select>
+              </label>
+            </div>
+            <p id="hardwareRangeNote" class="hardware-range-note"></p>
+          </fieldset>
+
+          <fieldset class="control-group">
             <legend>Форма</legend>
             <div class="segmented four" id="shapeOptions">
               <button class="active" data-value="rect" type="button" aria-pressed="true">
@@ -216,7 +231,7 @@
           <div class="editor-heading">
             <div>
               <span class="eyebrow">Графический редактор</span>
-              <h2>Конструкция · <span id="editorProductName">Изделие 1</span><button type="button" id="renameEditorProduct" class="order-rename" aria-label="Переименовать изделие" title="Переименовать изделие">✎</button></h2>
+              <h2><span id="editorProductName">Изделие 1</span><button type="button" id="renameEditorProduct" class="order-rename" aria-label="Переименовать изделие" title="Переименовать изделие">✎</button></h2>
             </div>
             <div class="editor-meta">
               <span id="editorDimensions">1400 × 1300 мм</span>
@@ -230,12 +245,12 @@
 
           <div class="canvas-note">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM12 10v6M12 7h.01" /></svg>
-            Перетаскивайте импосты мышью. Нажмите на импост для точного размера или на секцию для настройки створки.
+            Перетаскивайте импосты мышью. Нажмите на импост для точного размера или на проём для настройки створки.
           </div>
 
           <div class="pane-inspector" id="paneInspector">
             <div class="selected-pane-label">
-              <span>Секция</span>
+              <span>Проём</span>
               <strong id="selectedPaneName">№ 1</strong>
             </div>
             <label class="field">
@@ -251,6 +266,7 @@
               <span>Петли</span>
               <select id="hingeSide"><option value="left">Слева · ручка справа</option><option value="right">Справа · ручка слева</option></select>
             </label>
+            <p id="paneHardwareNote" class="hardware-range-note" hidden></p>
             <label class="field">
               <span>Стеклопакет</span>
               <select id="paneGlass">
@@ -260,19 +276,19 @@
                 <option value="acoustic">Шумоизоляционный, 44 мм</option>
               </select>
             </label>
-            <button class="button secondary" id="applyGlassToAll" type="button" title="Применить выбранный стеклопакет ко всем секциям">Для всех секций</button>
+            <button class="button secondary" id="applyGlassToAll" type="button" title="Применить выбранный стеклопакет ко всем проёмам">Для всех проёмов</button>
             <div class="inner-impost-actions">
               <div>
                 <span>Импосты</span>
-                <small id="innerImpostHint">Добавьте импост в выбранную секцию</small>
+                <small id="innerImpostHint">Добавьте импост в выбранный проём</small>
               </div>
               <div class="inner-impost-buttons">
-                <button class="button secondary" id="addInnerVertical" type="button" title="Добавить вертикальный импост в выбранную секцию">
+                <button class="button secondary" id="addInnerVertical" type="button" title="Добавить вертикальный импост в выбранный проём">
                   <span class="mini-impost vertical" aria-hidden="true"></span> Вертикальный
                 </button>
                 <button class="button secondary" id="equalGlassWidth" type="button" title="Выровнять ширину выбранных стеклопакетов" hidden disabled>Равная ширина</button>
                 <button class="button secondary" id="equalGlassHeight" type="button" title="Выровнять высоту выбранных стеклопакетов" hidden disabled>Равная высота</button>
-                <button class="button secondary" id="addInnerHorizontal" type="button" title="Добавить горизонтальный импост в выбранную секцию">
+                <button class="button secondary" id="addInnerHorizontal" type="button" title="Добавить горизонтальный импост в выбранный проём">
                   <span class="mini-impost horizontal" aria-hidden="true"></span> Горизонтальный
                 </button>
               </div>
@@ -343,6 +359,8 @@
             <div><dt>Ширина профилей</dt><dd id="summaryTechnology">—</dd></div>
             <div><dt>Форма</dt><dd id="summaryShape">Прямоугольная</dd></div>
             <div><dt>Отделка</dt><dd id="summaryFinish">—</dd></div>
+            <div><dt>Фурнитура</dt><dd id="summaryHardware">—</dd></div>
+            <div><dt>Ручка</dt><dd id="summaryHandle">—</dd></div>
           </dl>
 
           <div class="estimate-note">
@@ -466,6 +484,7 @@
           <button class="active" type="button" role="tab" aria-selected="true" data-settings-tab="prices">Прайс</button>
           <button type="button" role="tab" aria-selected="false" data-settings-tab="technology">Технологические</button>
           <button type="button" role="tab" aria-selected="false" data-settings-tab="profile">Настройки профиля</button>
+          <button type="button" role="tab" aria-selected="false" data-settings-tab="hardware">Фурнитура</button>
           <button type="button" role="tab" aria-selected="false" data-settings-tab="reports">Отчёты</button>
         </div>
 
@@ -491,6 +510,7 @@
           </section>
           <section>
             <h3>Фурнитура, ₽/компл.</h3>
+            <p class="technology-note">Эти тарифы используются, если для профильной системы не назначен комплект во вкладке «Фурнитура».</p>
             <label><span>Поворотная</span><input name="hardwareTurn" type="number" min="0" step="10" /></label>
             <label><span>Поворотно-откидная</span><input name="hardwareTiltturn" type="number" min="0" step="10" /></label>
             <label><span>Откидная</span><input name="hardwareTilt" type="number" min="0" step="10" /></label>
@@ -556,6 +576,14 @@
           <div id="profileSettingsEditor" class="technology-catalog-editor"></div>
           <div class="dialog-actions">
             <button class="button primary" id="saveProfileSettings" type="button">Сохранить каталог</button>
+          </div>
+        </section>
+        <section class="settings-pane" id="settingsHardwarePane" role="tabpanel" hidden>
+          <p class="dialog-intro">Комплект фурнитуры и ручка выбираются на всё изделие. Диапазон — ширина и высота стеклопакета в створке. Отметьте, для каких профильных систем и типов изделия ставится комплект, и в какой фурнитуре применяется ручка.</p>
+          <div id="hardwareCatalogEditor" class="hardware-catalog-editor"></div>
+          <div class="dialog-actions">
+            <button class="button ghost" id="resetHardware" type="button">Вернуть стандартные</button>
+            <button class="button primary" id="saveHardware" type="button">Сохранить фурнитуру</button>
           </div>
         </section>
         <section class="settings-pane" id="settingsReportsPane" role="tabpanel" hidden>
