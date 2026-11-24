@@ -291,7 +291,7 @@ function captureHardwareDraft() {
     const color = card.querySelector("[data-handle-color]").value;
     handle.color = /^#[0-9a-fA-F]{6}$/.test(color) ? color : "#d5dde6";
     const style = card.querySelector("[data-handle-style]").value;
-    handle.style = HANDLE_STYLES[style] ? style : "bar";
+    handle.style = normalizeHandleStyle(style);
     handle.price = readHardwareNumber(card.querySelector("[data-handle-price]"), handle.price);
     handle.hardwareIds = [...card.querySelectorAll("[data-handle-hardware]:checked")].map((box) => box.value).filter((id) => ids.has(id));
   });
@@ -353,7 +353,7 @@ function renderHardwareCatalog() {
         <label class="catalog-field"><span>Название</span><input data-handle-name value="${escapeHtml(handle.name)}" maxlength="80" required /></label>
         <label class="catalog-field"><span>Цвет</span><input data-handle-color type="color" value="${escapeHtml(handle.color)}" /></label>
         <label class="catalog-field"><span>Вид на эскизе</span>
-          <select data-handle-style>${Object.entries(HANDLE_STYLES).map(([id, label]) => `<option value="${id}" ${handle.style === id ? "selected" : ""}>${label}</option>`).join("")}</select>
+          <select data-handle-style>${Object.entries(HANDLE_STYLES).map(([id, label]) => `<option value="${id}" ${handle.style === id ? "selected" : ""}>${label}, ${HANDLE_LENGTHS[id]} мм</option>`).join("")}</select>
         </label>
         <label class="catalog-field"><span>Цена, ₽</span><input data-handle-price type="number" min="0" step="10" value="${handle.price}" /></label>
         <button class="catalog-remove-button" type="button" data-hardware-action="remove-handle">Удалить</button>
@@ -414,7 +414,7 @@ function handleHardwareAction(event) {
       id: createCatalogId("handle"),
       name: "Новая ручка",
       color: "#d5dde6",
-      style: "bar",
+      style: "window",
       price: 0,
       hardwareIds: hardwareDraft.sets.map((set) => set.id),
     });
