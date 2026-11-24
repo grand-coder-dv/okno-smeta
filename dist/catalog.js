@@ -1,4 +1,4 @@
-// Справочники: профили, стеклопакеты, цены, технология и чтение localStorage.
+// Справочники: профили, стеклопакеты, цены, технология, фурнитура и чтение localStorage.
 const DEFAULT_MATERIALS = {
   pvc: {
     label: "ПВХ",
@@ -301,3 +301,122 @@ function captureGlassDraft() {
 }
 
 let technology = readStoredTechnology();
+
+const HARDWARE_STORAGE_KEY = "oknoSmetaHardware";
+const HANDLE_STYLES = {
+  bar: "Прямая",
+  lever: "Рычаг",
+  offset: "Со смещением",
+  knob: "Кнопка",
+  lock: "С ключом",
+  long: "Удлинённая",
+};
+const MATERIAL_TITLES = { pvc: "Пластик", aluminum: "Алюминий", wood: "Дерево" };
+
+function hardwareBound(value, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(10000000, Math.max(0, number));
+}
+
+function linksForMaterials(materials, productTypes) {
+  const links = [];
+  materials.forEach((material) => {
+    (MATERIALS[material]?.profiles || []).forEach((profile) => {
+      links.push({ material, profileId: profile.id, productTypes: [...productTypes] });
+    });
+  });
+  return links;
+}
+
+function defaultHardwareCatalog() {
+  const windowTypes = ["window", "balconyDoor"];
+  return {
+    sets: [
+      { id: "hw-roto-nt", name: "ROTO NT", minWidth: 250, maxWidth: 1600, minHeight: 280, maxHeight: 2600, price: 4650, links: linksForMaterials(["pvc"], windowTypes) },
+      { id: "hw-futurus", name: "Футурус", minWidth: 350, maxWidth: 1300, minHeight: 400, maxHeight: 2200, price: 4380, links: linksForMaterials(["pvc"], windowTypes) },
+      { id: "hw-maco", name: "MACO Multi-Matic", minWidth: 280, maxWidth: 1500, minHeight: 320, maxHeight: 2500, price: 5100, links: linksForMaterials(["aluminum"], windowTypes) },
+      { id: "hw-roto-wood", name: "ROTO NT для дерева", minWidth: 280, maxWidth: 1500, minHeight: 320, maxHeight: 2500, price: 5400, links: linksForMaterials(["wood"], windowTypes) },
+      { id: "hw-door", name: "Дверная фурнитура", minWidth: 400, maxWidth: 1300, minHeight: 1400, maxHeight: 2700, price: 8900, links: linksForMaterials(["pvc", "aluminum", "wood"], ["entranceDoor"]) },
+    ],
+    handles: [
+      { id: "hdl-white", name: "Стандарт белая", color: "#d5dde6", style: "bar", price: 520, hardwareIds: ["hw-roto-nt", "hw-futurus", "hw-maco", "hw-roto-wood", "hw-door"] },
+      { id: "hdl-anthracite", name: "Антрацит", color: "#3d4450", style: "lever", price: 690, hardwareIds: ["hw-roto-nt", "hw-futurus", "hw-maco", "hw-roto-wood"] },
+      { id: "hdl-gold", name: "Золото", color: "#b8860b", style: "offset", price: 740, hardwareIds: ["hw-roto-nt", "hw-roto-wood"] },
+      { id: "hdl-lock", name: "С ключом", color: "#e4ebf2", style: "lock", price: 980, hardwareIds: ["hw-door", "hw-roto-nt"] },
+    ],
+  };
+}
+
+function sanitizeHardwareCatalog(raw) {
+  const sets = (Array.isArray(raw?.sets) ? raw.sets : []).filter((set) => set && typeof set.id === "string").map((set) => ({
+    id: set.id,
+    name: String(set.name || "Фурнитура").slice(0, 80),
+    minWidth: hardwareBound(set.minWidth, 250),
+    maxWidth: hardwareBound(set.maxWidth, 1600),
+    minHeight: hardwareBound(set.minHeight, 280),
+    maxHeight: hardwareBound(set.maxHeight, 2400),
+    price: hardwareBound(set.price, 0),
+    links: (Array.isArray(set.links) ? set.links : []).filter((link) => link && MATERIALS[link.material] && typeof link.profileId === "string").map((link) => ({
+      material: link.material,
+      profileId: link.profileId,
+      productTypes: (Array.isArray(link.productTypes) ? link.productTypes : []).filter((type) => PRODUCT_TYPES[type]),
+    })),
+  }));
+  const ids = new Set(sets.map((set) => set.id));
+  const handles = (Array.isArray(raw?.handles) ? raw.handles : []).filter((item) => item && typeof item.id === "string").map((item) => ({
+    id: item.id,
+    name: String(item.name || "Ручка").slice(0, 80),
+    color: /^#[0-9a-fA-F]{6}$/.test(item.color || "") ? item.color : "#d5dde6",
+    style: HANDLE_STYLES[item.style] ? item.style : "bar",
+    price: hardwareBound(item.price, 0),
+    hardwareIds: (Array.isArray(item.hardwareIds) ? item.hardwareIds : []).filter((id) => ids.has(id)),
+  }));
+  return { sets, handles };
+}
+
+function loadHardwareCatalog() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(HARDWARE_STORAGE_KEY) || "null");
+    if (!stored) return defaultHardwareCatalog();
+    return sanitizeHardwareCatalog(stored);
+  } catch {
+    return defaultHardwareCatalog();
+  }
+}
+
+let hardwareCatalog = loadHardwareCatalog();
+let hardwareDraft = null;
+
+function hardwareSetsForProduct(material = state.material, profileId = state.profile, productType = state.productType || "window") {
+  return hardwareCatalog.sets.filter((set) => (set.links || []).some((link) =>
+    link.material === material && link.profileId === profileId && (link.productTypes || []).includes(productType)));
+}
+
+function handlesForSet(hardwareId) {
+  return hardwareCatalog.handles.filter((item) => (item.hardwareIds || []).includes(hardwareId));
+}
+
+function syncHardwareChoice() {
+  const sets = hardwareSetsForProduct();
+  if (!sets.some((set) => set.id === state.hardwareId)) state.hardwareId = sets[0]?.id || "";
+  const handles = handlesForSet(state.hardwareId);
+  if (!handles.some((item) => item.id === state.handleId)) state.handleId = handles[0]?.id || "";
+}
+
+function selectedHardware() {
+  return hardwareCatalog.sets.find((set) => set.id === state.hardwareId) || null;
+}
+
+function selectedHandle() {
+  return hardwareCatalog.handles.find((item) => item.id === state.handleId) || null;
+}
+
+function persistHardwareCatalog() {
+  try {
+    localStorage.setItem(HARDWARE_STORAGE_KEY, JSON.stringify(hardwareCatalog));
+    return true;
+  } catch {
+    return false;
+  }
+}
