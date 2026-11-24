@@ -71,20 +71,25 @@ function primaryBoundaries(orientation) {
 
 function sectionLayout(x = primaryBoundaries("vertical"), y = primaryBoundaries("horizontal")) {
   const entries = [];
-  function visit(pane, rect, [l,r,t,b], rootCol, rootRow, owner = null) {
-    entries.push({ pane, rect, edges: [l,r,t,b], rootCol, rootRow, sashOwner: owner });
+  function visit(pane, rect, [l,r,t,b], rootCol, rootRow, owner = null, slantParents = []) {
+    entries.push({ pane, rect, edges: [l,r,t,b], rootCol, rootRow, sashOwner: owner, slantParents });
     if (!pane.split) return;
     const nextOwner = pane.sashFill && pane.opening !== "fixed" ? {pane,rect,edges:[l,r,t,b]} : owner;
     const [a,c] = pane.children;
     const p = pane.split.position;
+    const split = pane.split;
     if (pane.split.orientation === "vertical") {
       const d = rect.width*p;
-      visit(a,{...rect,width:d},[l,false,t,b],rootCol,rootRow,nextOwner);
-      visit(c,{...rect,x:rect.x+d,width:rect.width-d},[false,r,t,b],rootCol,rootRow,nextOwner);
+      visit(a,{...rect,width:d},[l,false,t,b],rootCol,rootRow,nextOwner,
+        [...slantParents,{item:split,orientation:"vertical",rect,sign:1}]);
+      visit(c,{...rect,x:rect.x+d,width:rect.width-d},[false,r,t,b],rootCol,rootRow,nextOwner,
+        [...slantParents,{item:split,orientation:"vertical",rect,sign:-1}]);
     } else {
       const d = rect.height*p;
-      visit(a,{...rect,height:d},[l,r,t,false],rootCol,rootRow,nextOwner);
-      visit(c,{...rect,y:rect.y+d,height:rect.height-d},[l,r,false,b],rootCol,rootRow,nextOwner);
+      visit(a,{...rect,height:d},[l,r,t,false],rootCol,rootRow,nextOwner,
+        [...slantParents,{item:split,orientation:"horizontal",rect,sign:-1}]);
+      visit(c,{...rect,y:rect.y+d,height:rect.height-d},[l,r,false,b],rootCol,rootRow,nextOwner,
+        [...slantParents,{item:split,orientation:"horizontal",rect,sign:1}]);
     }
   }
   state.panes.forEach((pane,i) => {
@@ -236,6 +241,41 @@ function glassGeometry({pane, rect, edges, sashOwner}, tech = getTechnology()) {
   return {opening,sashBox,fields:ys.flatMap((y,row)=>xs.map((x,col)=>({x:x.start,y:y.start,w:x.size,h:y.size,clearW:x.clear,clearH:y.clear,row,col})))};
 }
 function glassSizeLabel(f) { return f.clearW>0 && f.clearH>0 && f.w>0 && f.h>0 ? `${Math.round(f.w)} × ${Math.round(f.h)} мм` : "—"; }
+
+/** Пролёты видимого импоста: от внутреннего края рамы/створки до грани соседнего импоста (как у стеклопакета). */
+function nestedImpostSpans(entry, item, tech = getTechnology()) {
+  const {pane, rect} = entry;
+  const vertical = item.orientation === "vertical";
+  const geoEntry = pane.split
+    ? {...entry, pane: {...pane, innerImposts: [], split: null}}
+    : entry;
+  const {opening} = glassGeometry(geoEntry, tech);
+  const half = tech.impost / 2;
+  const axis = vertical
+    ? rect.x + item.position * rect.width
+    : rect.y + item.position * rect.height;
+  const lo = vertical ? opening[1] : opening[0];
+  const hi = vertical ? opening[3] : opening[2];
+  const crosses = pane.innerImposts
+    .filter(other => other.orientation !== item.orientation && other.id !== item.id)
+    .map(other => vertical
+      ? rect.y + other.position * rect.height
+      : rect.x + other.position * rect.width)
+    .filter(value => value > lo + half && value < hi - half)
+    .sort((a, b) => a - b);
+  const cuts = [lo, ...crosses, hi];
+  const spans = [];
+  for (let i = 0; i < cuts.length - 1; i += 1) {
+    const start = i === 0 ? cuts[0] : cuts[i] + half;
+    const end = i === cuts.length - 2 ? cuts[cuts.length - 1] : cuts[i + 1] - half;
+    if (end - start > 1e-6) {
+      spans.push(vertical
+        ? {x1: axis, y1: start, x2: axis, y2: end}
+        : {x1: start, y1: axis, x2: end, y2: axis});
+    }
+  }
+  return spans;
+}
 function paneGlazingArea(index, pane, shapeFactor = 1) {
   const entry=sectionLayout()[index], tech=getTechnology(), geo=glassGeometry(entry,tech);
   return geo.fields.reduce((sum,f)=>{
