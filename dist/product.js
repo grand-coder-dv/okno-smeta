@@ -191,6 +191,7 @@ function setWindowShapeMode(mode) {
   multiSections.clear();
   activeProfileEdge=null;
   sharedAxis=null;
+  if(mode==="skew") state.framePolygon=[[0,0],[1,0],[1,1],[0,1]];
   if(mode==="circle")state.height=state.width;
 }
 
