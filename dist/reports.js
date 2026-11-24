@@ -124,12 +124,16 @@
       const key = [OPENINGS[pane.opening]?.name || pane.opening, HINGES[pane.hingeSide]].filter(Boolean).join(", ");
       groups.set(key, (groups.get(key) || 0) + 1);
     });
-    const glass = [...new Set(leaves.map(pane => pane.glass).filter(Boolean))]
-      .map(id => GLASS[id] ? `${GLASS[id].name}, ${GLASS[id].detail}` : id).join("; ");
+    // Каталог стеклопакетов хранится отдельно для каждого материала (в нём и добавленные пользователем).
+    const catalog = (typeof glassCatalog !== "undefined" && glassCatalog?.[c.material]) || GLASS;
+    const glass = [...new Set(leaves.map(pane => {
+      const entry = catalog[pane.glass] ?? catalog[c.defaultGlass] ?? Object.values(catalog)[0];
+      return entry ? [entry.name, entry.detail].filter(Boolean).join(", ") : "";
+    }).filter(Boolean))].join("; ");
     const shape = p.shape || SHAPES[c.shape] || c.shape;
     const rows = [
-      ["Изделие", [p.productType || PRODUCT_TYPES[c.productType || "window"] || "Окно", shape !== SHAPES.rect ? shape : ""].filter(Boolean).join(" · ")],
-      ["Профиль", `${info.material}, ${info.profile}`],
+      ["Изделие", [p.productType || PRODUCT_TYPES[c.productType || "window"] || "Окно", info.material, shape !== SHAPES.rect ? shape : ""].filter(Boolean).join(" · ")],
+      ["Профиль", info.profile],
       ["Отделка", info.finish],
     ];
     if (glass) rows.push(["Стеклопакет", glass]);
