@@ -64,7 +64,9 @@ function isSelectedImpost(scope, orientation, id, paneIndex = null) {
 }
 
 function polygonPoints() {
-  return state.shape === "skew" && state.framePolygon?.map(([x,y])=>[x*state.width,y*state.height]);
+  if(state.shape!=="skew")return;
+  if(state.framePolygon?.length>=3) return state.framePolygon.map(([x,y])=>[x*state.width,y*state.height]);
+  return rectPoints([0,0,state.width,state.height]);
 }
 function hasSlantedImposts() {
   if(state.shape!=="skew")return false;
@@ -73,6 +75,17 @@ function hasSlantedImposts() {
 }
 function constructionPolygon() {
   return polygonPoints();
+}
+function clipByImpostLine(points,a,b,sign,inset=0) {
+  const length=Math.hypot(b[0]-a[0],b[1]-a[1]);
+  if(length<1e-7 || !points.length)return points;
+  const result=[];
+  points.forEach((p,i)=>{
+    const q=points[(i+1)%points.length],v=cross2(a,b,p)*sign-inset*length,w=cross2(a,b,q)*sign-inset*length;
+    if(v>=-1e-7)result.push(p);
+    if((v>1e-7 && w< -1e-7)||(v< -1e-7 && w>1e-7))result.push(p.map((n,k)=>n+(q[k]-n)*v/(v-w)));
+  });
+  return result;
 }
 const cross2=(a,b,c)=>(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
 function polygonClip(subject, boundary, inset=0) {
@@ -92,41 +105,42 @@ function polygonClip(subject, boundary, inset=0) {
 function rectPoints([l,t,r,b]) { return [[l,t],[r,t],[r,b],[l,b]]; }
 function polyPath(points,X,Y) { return points.length>=3 ? `M ${points.map(([x,y])=>`${X(x)} ${Y(y)}`).join(' L ')} Z` : ""; }
 function polyBounds(p) { return [Math.min(...p.map(v=>v[0])),Math.min(...p.map(v=>v[1])),Math.max(...p.map(v=>v[0])),Math.max(...p.map(v=>v[1]))]; }
-function clipSlantedSections(points,entry,inset=0) {
+function clipSlantedSections(points,entry,inset=0,withParents=true) {
   if(!points.length || !entry || !constructionPolygon())return points;
   const full={x:0,y:0,width:state.width,height:state.height},outer=constructionPolygon();
   const borders=[
-    [state.vImposts[entry.rootCol-1],"vertical",-1],
-    [state.vImposts[entry.rootCol],"vertical",1],
-    [state.hImposts[entry.rootRow-1],"horizontal",1],
-    [state.hImposts[entry.rootRow],"horizontal",-1]
+    [state.vImposts[entry.rootCol-1],"vertical",-1,full,true],
+    [state.vImposts[entry.rootCol],"vertical",1,full,true],
+    [state.hImposts[entry.rootRow-1],"horizontal",1,full,true],
+    [state.hImposts[entry.rootRow],"horizontal",-1,full,true],
+    ...(withParents?entry.slantParents||[]:[]).map(parent=>[parent.item,parent.orientation,parent.sign,parent.rect,false])
   ];
   let result=points;
-  for(const [item,orientation,sign] of borders){
+  for(const [item,orientation,sign,rect,root] of borders){
     if(!item?.endOffsets?.some(Boolean))continue;
-    const [a,b]=impostSegment(item,orientation,full,outer,true);
-    const length=Math.hypot(b[0]-a[0],b[1]-a[1]);
-    if(length<1e-7)continue;
-    const input=result;result=[];
-    input.forEach((p,i)=>{
-      const q=input[(i+1)%input.length],v=cross2(a,b,p)*sign-inset*length,w=cross2(a,b,q)*sign-inset*length;
-      if(v>=-1e-7)result.push(p);
-      if((v>1e-7 && w< -1e-7)||(v< -1e-7 && w>1e-7))result.push(p.map((n,k)=>n+(q[k]-n)*v/(v-w)));
-    });
+    const [a,b]=impostSegment(item,orientation,rect,outer,root);
+    result=clipByImpostLine(result,a,b,sign,inset);
   }
   return result;
 }
 function slantedBounds(bounds,entry,field=null) {
   if(!entry || !constructionPolygon())return bounds;
-  const [l,t,r,b]=bounds;
+  let [l,t,r,b]=bounds;
   const tech=getTechnology(),margin=tech.frame+tech.sash+tech.impost;
   const extent=item=>item?.endOffsets?.some(Boolean) ? margin+Math.max(...item.endOffsets.map(Math.abs)) : 0;
   const vertical=entry.pane.innerImposts.filter(i=>i.orientation==="vertical").length;
   const horizontal=entry.pane.innerImposts.filter(i=>i.orientation==="horizontal").length;
-  return [l-(field && field.col!==0?0:extent(state.vImposts[entry.rootCol-1])),
-    t-(field && field.row!==0?0:extent(state.hImposts[entry.rootRow-1])),
-    r+(field && field.col!==vertical?0:extent(state.vImposts[entry.rootCol])),
-    b+(field && field.row!==horizontal?0:extent(state.hImposts[entry.rootRow]))];
+  l-=field && field.col!==0?0:extent(state.vImposts[entry.rootCol-1]);
+  t-=field && field.row!==0?0:extent(state.hImposts[entry.rootRow-1]);
+  r+=field && field.col!==vertical?0:extent(state.vImposts[entry.rootCol]);
+  b+=field && field.row!==horizontal?0:extent(state.hImposts[entry.rootRow]);
+  for(const parent of entry.slantParents||[]){
+    const e=extent(parent.item);
+    if(!e)continue;
+    if(parent.orientation==="vertical"){ if(parent.sign>0) r+=e; else l-=e; }
+    else { if(parent.sign<0) b+=e; else t-=e; }
+  }
+  return [l,t,r,b];
 }
 function sectionContour(entry,poly=constructionPolygon(),frameInset=0) {
   if(!poly)return null;
@@ -150,21 +164,22 @@ function polygonGlass(poly, geometry, f, tech, entry) {
   const rootGlassInset=geometry.sashBox
     ? tech.impost/2+tech.sash-SASH_LAP-tech.bite["створка"]
     : tech.impost/2-tech.bite["импост"];
-  let result=clipSlantedSections(polygonClip(rectPoints([l,t,r,b]),poly,depth),entry,rootGlassInset);
+  let result=clipSlantedSections(polygonClip(rectPoints([l,t,r,b]),poly,depth),entry,rootGlassInset,false);
   const frame=sectionContour(entry,poly,tech.frame);
-  for(const [item,orientation,sign] of [[adjacent[0],"vertical",-1],[adjacent[1],"vertical",1],
-    [adjacent[2],"horizontal",1],[adjacent[3],"horizontal",-1]]){
+  const faceInset=tech.impost/2-tech.bite["импост"];
+  const cuts=[
+    [adjacent[0],"vertical",-1,entry.rect,false],
+    [adjacent[1],"vertical",1,entry.rect,false],
+    [adjacent[2],"horizontal",1,entry.rect,false],
+    [adjacent[3],"horizontal",-1,entry.rect,false],
+    ...(entry.slantParents||[]).map(parent=>[parent.item,parent.orientation,parent.sign,parent.rect,false])
+  ];
+  for(const [item,orientation,sign,rect] of cuts){
     if(!item?.endOffsets?.some(Boolean))continue;
-    const [a,b]=impostSegment(item,orientation,entry.rect,frame);
+    const [a,b]=impostSegment(item,orientation,rect,frame||poly);
     const length=Math.hypot(b[0]-a[0],b[1]-a[1]);
     if(length<1e-7)continue;
-    const face=(tech.impost/2-tech.bite["импост"])*length;
-    const input=result;result=[];
-    input.forEach((p,i)=>{
-      const q=input[(i+1)%input.length],v=cross2(a,b,p)*sign-face,w=cross2(a,b,q)*sign-face;
-      if(v>=-1e-7)result.push(p);
-      if((v>1e-7 && w< -1e-7)||(v< -1e-7 && w>1e-7))result.push(p.map((n,k)=>n+(q[k]-n)*v/(v-w)));
-    });
+    result=clipByImpostLine(result,a,b,sign,faceInset);
   }
   return result;
 }
@@ -201,7 +216,11 @@ function impostSegment(item, orientation, rect, outer = constructionPolygon(), r
     const determinant=dx*ey-dy*ex;
     if(Math.abs(determinant)<1e-8)continue;
     const t=((u[0]-p[0])*ey-(u[1]-p[1])*ex)/determinant;
-    if(t>=0 && t<=1)segment[end]=[p[0]+t*dx,p[1]+t*dy];
+    const length=Math.hypot(dx,dy);
+    if(length<1e-7)continue;
+    const half=getTechnology().impost/2;
+    const tFace=t+(half/length)*(end===0?1:-1);
+    if(tFace>=0 && tFace<=1)segment[end]=[p[0]+tFace*dx,p[1]+tFace*dy];
   }
   return segment;
 }
@@ -218,17 +237,22 @@ function impostRibbon(item, orientation, rect, boundary, face, root = false, out
   if(item.endAnchors?.some(Boolean)){
     const choices=root ? (orientation==="vertical"?state.hImposts:state.vImposts)
       : sectionPanes().find(pane=>pane.innerImposts?.includes(item))?.innerImposts||[];
+    const half=face/2;
     for(let end=0;end<2;end++){
       const target=choices.find(candidate=>candidate.id===item.endAnchors[end] && candidate.orientation!==orientation);
       if(!target)continue;
       const [u,v]=impostSegment(target,target.orientation,rect,outer,root);
+      const targetLength=Math.hypot(v[0]-u[0],v[1]-u[1]);
+      if(targetLength<1e-7)continue;
       const midpoint=end===0?b:a;
       const sign=cross2(u,v,midpoint)>=0?1:-1;
+      const threshold=half*targetLength;
       const input=ribbon;ribbon=[];
       input.forEach((point,i)=>{
         const next=input[(i+1)%input.length],d=cross2(u,v,point)*sign,e=cross2(u,v,next)*sign;
-        if(d>=-1e-7)ribbon.push(point);
-        if((d>1e-7&&e< -1e-7)||(d< -1e-7&&e>1e-7))ribbon.push(point.map((n,k)=>n+(next[k]-n)*d/(d-e)));
+        if(d>=threshold-1e-7)ribbon.push(point);
+        if((d>threshold+1e-7&&e<threshold-1e-7)||(d<threshold-1e-7&&e>threshold+1e-7))
+          ribbon.push(point.map((n,k)=>n+(next[k]-n)*(d-threshold)/(d-e)));
       });
     }
   }
