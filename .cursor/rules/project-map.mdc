@@ -1,0 +1,31 @@
+---
+description: Карта файлов ОкноСмета и куда вносить правку
+alwaysApply: true
+---
+
+# ОкноСмета
+
+Статическое приложение без сборки. Открывать `dist/index.html`. Скрипты обычные, с общими функциями, не модули. Порядок тегов в `index.html` не менять.
+
+Править только файл задачи:
+
+- профили, стекло, цены, технология, localStorage: `dist/catalog.js`
+- состояние изделия, форма, проверки: `dist/product.js`
+- изделия заказа и проекты: `dist/order.js`
+- импосты, секции, площадь: `dist/geometry.js`
+- стоимость и строки сметы: `dist/estimate.js`
+- контуры, дуги, скосы: `dist/drawing.js`
+- рисунок SVG: `dist/canvas.js`
+- мышь и клавиши на холсте: `dist/canvas-input.js`
+- инспектор, итог, кнопки, `renderAll`: `dist/editor-ui.js`
+- прайс и каталог в диалоге: `dist/settings.js`
+- первый запуск: `dist/boot.js`
+- печатные документы: `dist/reports.js`
+- несколько импостов: `dist/impost-selection.js`
+- отмена и повтор: `dist/editor-history.js`
+- кнопки створки и импоста: `dist/editor-tools.js`
+- стили: `dist/styles.css`; печать `proposal-report.css`; каталог `technology-catalog.css`; стекло `glass-profile-style.css`
+
+`dist/sash-imposts.js` в страницу не подключён. Не подключать его без отдельной просьбы.
+
+Общие имена: `state`, `renderAll`, `buildSpecification`, `geometry`.
