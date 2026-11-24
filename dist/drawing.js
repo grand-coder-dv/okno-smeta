@@ -258,6 +258,25 @@ function impostRibbon(item, orientation, rect, boundary, face, root = false, out
   }
   return ribbon;
 }
+function handleGlyph(x, y, inward, handle) {
+  const fill = /^#[0-9a-fA-F]{6}$/.test(handle?.color || "") ? handle.color : "#20384c";
+  const style = HANDLE_STYLES[handle?.style] ? handle.style : "bar";
+  const edge = "#1d3344";
+  const stroke = (d, width) => `<path d="${d}" fill="none" stroke="${edge}" stroke-width="${width + 1.3}" stroke-linecap="round" stroke-linejoin="round"/><path d="${d}" fill="none" stroke="${fill}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round"/>`;
+  if (style === "knob") return `<circle cx="${x}" cy="${y}" r="5.6" fill="${edge}"/><circle cx="${x}" cy="${y}" r="4.2" fill="${fill}"/>`;
+  if (style === "lever") return stroke(`M ${x} ${y - 9} L ${x} ${y + 1} L ${x + inward * 13} ${y + 7}`, 2.5);
+  if (style === "offset") return stroke(`M ${x} ${y - 10} L ${x} ${y + 10} M ${x} ${y - 2} L ${x + inward * 12} ${y - 2}`, 2.6);
+  if (style === "lock") {
+    return `${stroke(`M ${x} ${y - 12} L ${x} ${y + 12}`, 2.6)}<rect x="${x - 4}" y="${y - 2.4}" width="8" height="6.2" rx="1.1" fill="${edge}"/><rect x="${x - 2.9}" y="${y - 1.4}" width="5.8" height="4.2" rx="0.7" fill="${fill}"/>`;
+  }
+  if (style === "long") return stroke(`M ${x} ${y - 16} L ${x} ${y + 16}`, 3);
+  return stroke(`M ${x} ${y - 10} L ${x} ${y + 10}`, 3);
+}
+
+function handlePreviewMarkup(style, color) {
+  return `<svg viewBox="0 0 36 36" width="36" height="36" aria-hidden="true">${handleGlyph(22, 18, -1, { style, color })}</svg>`;
+}
+
 function sashOpeningMark(glass, outer, inner, type, side, X, Y) {
   if(glass.length<3 || type==="fixed")return {dashes:"",handle:""};
   const [l,t,r,b]=polyBounds(glass);
@@ -280,13 +299,12 @@ function sashOpeningMark(glass, outer, inner, type, side, X, Y) {
     const hingeRange = topHinges ? upper : lower;
     if (hingeRange) dashes+=line([pt(hingeRange[0],topHinges?top:bottom),pt(xmid,summit[topHinges?1:0]),pt(hingeRange[1],topHinges?top:bottom)]);
   }
-  const half=Math.min((b-t)*.05,9/Math.max(1e-8,Math.abs(Y(1)-Y(0))));
-  const handlePoints=[ym-half,ym+half].map(y=>{
-    const a=outlineRange(outer,1,y), b=outlineRange(inner,1,y);
-    return a&&b?pt((a[free]+b[free])/2,y):null;
-  });
-  const handle=handlePoints.every(Boolean)?`<path d="M ${handlePoints.join(' L ')}" stroke="#20384c" stroke-width="3" stroke-linecap="round"/>`:"";
-  return {dashes,handle};
+  const outerAt = outlineRange(outer, 1, ym);
+  const innerAt = outlineRange(inner, 1, ym);
+  const handle = outerAt && innerAt
+    ? handleGlyph(X((outerAt[free] + innerAt[free]) / 2), Y(ym), free === 1 ? -1 : 1, selectedHandle())
+    : "";
+  return {dashes, handle};
 }
 function editImpostEndpoint() {
   if(state.shape!=="skew")return;
