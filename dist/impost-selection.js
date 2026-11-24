@@ -73,7 +73,7 @@
     });
     if (!targets.length) return;
     if (targets.some(({pane,item}) => pane?.split?.id === item.id && pane.children.some(child => child.split)) &&
-        !window.confirm("Удалить выбранные импосты? При объединении будут удалены и вложенные секции.")) return;
+        !window.confirm("Удалить выбранные импосты? При объединении будут удалены и вложенные проёмы.")) return;
     targets.sort((a,b) => (b.ref.paneIndex ?? -1) - (a.ref.paneIndex ?? -1));
     for (const {pane,items,item,ref} of targets) {
       if (pane?.split?.id === item.id) {
@@ -118,7 +118,7 @@
     event.preventDefault();
     sashes.forEach(pane => { pane.opening = "fixed"; });
     renderAll();
-    showToast(sashes.length === 1 ? "Секция стала глухой" : `Створок убрано: ${sashes.length}`);
+    showToast(sashes.length === 1 ? "Проём стал глухим" : `Створок убрано: ${sashes.length}`);
   });
   renderAll();
 })();
