@@ -34,7 +34,7 @@ function renderInspector() {
       min = offset + limits.min * size;
       max = offset + limits.max * size;
     }
-    const nestedScope = record.pane?.opening === "fixed" ? "глухой секции" : "створке";
+    const nestedScope = record.pane?.opening === "fixed" ? "глухом проёме" : "створке";
     $("#selectedImpostScope").textContent = isRoot ? "Импост рамы" : `Импост в ${nestedScope} № ${record.selected.paneIndex + 1}`;
     $("#selectedImpostName").textContent = vertical ? "Вертикальный" : "Горизонтальный";
     $("#impostPositionLabel").textContent = "Расстояние от выбранного края, мм";
@@ -80,10 +80,10 @@ function renderInspector() {
   $("#paneInspector").hidden = false;
   $("#impostInspector").hidden = true;
   const selectedCount=selectedSections().length;
-  $(".selected-pane-label span").textContent = selectedCount > 1 ? "Выбрано" : "Секция";
+  $(".selected-pane-label span").textContent = selectedCount > 1 ? "Выбрано" : "Проём";
   $("#selectedPaneName").textContent = selectedCount > 1
-    ? `${selectedCount} ${selectedCount % 10 === 1 && selectedCount % 100 !== 11 ? "секция" :
-        [2,3,4].includes(selectedCount % 10) && ![12,13,14].includes(selectedCount % 100) ? "секции" : "секций"}`
+    ? `${selectedCount} ${selectedCount % 10 === 1 && selectedCount % 100 !== 11 ? "проём" :
+        [2,3,4].includes(selectedCount % 10) && ![12,13,14].includes(selectedCount % 100) ? "проёма" : "проёмов"}`
     : `№ ${sectionNumber(state.selectedPane)}`;
   const openingSelect = $("#openingType");
   const entry=sectionLayout()[state.selectedPane];
@@ -123,8 +123,27 @@ function renderInspector() {
   const geometry=glassGeometry(entry,tech);
   const labels=geometry.fields.map(f=>glassSizeLabel({...f,...fittedGlass(entry,geometry,f,tech)}));
   note.textContent=`${state.shape !== "circle" && !customProfileArcs() && !hasSlantedImposts() ? "Размер" : "Габарит по контуру, ориентировочно"}: ${[...new Set(labels)].join("; ")}`;
+  const hardwareNote = $("#paneHardwareNote");
+  const hardware = selectedHardware();
+  const handleItem = selectedHandle();
+  if (!hardware) {
+    hardwareNote.hidden = true;
+    hardwareNote.textContent = "";
+    hardwareNote.classList.remove("warn");
+  } else if (openingPane.opening === "fixed") {
+    hardwareNote.hidden = false;
+    hardwareNote.classList.remove("warn");
+    hardwareNote.textContent = `На изделие: ${hardware.name}${handleItem ? `, ручка ${handleItem.name}` : ""}`;
+  } else {
+    const outside = sashGlassSizes(openingPane).filter((size) => !hardwareFitsSize(hardware, size.width, size.height));
+    hardwareNote.hidden = false;
+    hardwareNote.classList.toggle("warn", outside.length > 0);
+    hardwareNote.textContent = outside.length
+      ? `${hardware.name}: ${outside.map((size) => `${size.width}×${size.height}`).join(", ")} мм вне диапазона`
+      : `${hardware.name}${handleItem ? ` · ручка ${handleItem.name}` : ""}`;
+  }
   const innerCount = pane.innerImposts.length;
-  const paneKind = pane.opening === "fixed" ? "глухой секции" : "створке";
+  const paneKind = pane.opening === "fixed" ? "глухом проёме" : "створке";
   $("#innerImpostHint").textContent = innerCount
     ? `Установлено: ${innerCount}`
     : "Добавьте вертикальный или горизонтальный";
@@ -146,6 +165,8 @@ function renderSummary(calculation) {
   $("#summaryTechnology").textContent = `рама ${tech.frame} · створка ${tech.sash} · импост ${tech.impost} мм`;
   $("#summaryShape").textContent = SHAPES[state.shape];
   $("#summaryFinish").textContent = calculation.finish.name;
+  $("#summaryHardware").textContent = selectedHardware()?.name || "Тариф прайса";
+  $("#summaryHandle").textContent = selectedHandle()?.name || "Стандартная";
   $("#specTotal").textContent = formatMoney(calculation.total);
   $("#editorDimensions").textContent = overallSizeLabel();
   $("#editorArea").textContent = `${formatNumber(calculation.area)} м²`;
@@ -206,8 +227,34 @@ function updateActiveControls() {
   updateShapeControls();
 }
 
+function renderHardwareChoices() {
+  syncHardwareChoice();
+  const sets = hardwareSetsForProduct();
+  const setSelect = $("#hardwareSet");
+  setSelect.innerHTML = sets.length
+    ? sets.map((set) => `<option value="${escapeHtml(set.id)}">${escapeHtml(set.name)}</option>`).join("")
+    : `<option value="">Нет фурнитуры для этой системы</option>`;
+  setSelect.value = state.hardwareId || "";
+  setSelect.disabled = !sets.length;
+  const handles = handlesForSet(state.hardwareId);
+  const handleSelect = $("#hardwareHandle");
+  handleSelect.innerHTML = handles.length
+    ? handles.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join("")
+    : `<option value="">Нет ручки для этой фурнитуры</option>`;
+  handleSelect.value = state.handleId || "";
+  handleSelect.disabled = !handles.length;
+  const note = $("#hardwareRangeNote");
+  const set = selectedHardware();
+  const problems = hardwareRangeProblems();
+  note.classList.toggle("warn", problems.length > 0);
+  if (!set) note.textContent = "Назначьте комплект этой профильной системе и типу изделия во вкладке «Фурнитура».";
+  else if (problems.length) note.textContent = `Диапазон стеклопакета ${set.minWidth}–${set.maxWidth} × ${set.minHeight}–${set.maxHeight} мм. Вне диапазона: ${problems.join("; ")}.`;
+  else note.textContent = `Для стеклопакета створки: ширина ${set.minWidth}–${set.maxWidth} мм, высота ${set.minHeight}–${set.maxHeight} мм.`;
+}
+
 function renderAll() {
   ensurePanes();
+  renderHardwareChoices();
   $("#editorProductName").textContent=draftProductName;
   syncGlassChoices();
   const calculation = buildSpecification();
@@ -244,7 +291,7 @@ function setSplit(cols, rows) {
   const hasSectionSettings = sectionPanes().some(
     (pane) => pane.opening !== "fixed" || pane.glass !== state.defaultGlass || pane.innerImposts.length > 0,
   );
-  if (hasSectionSettings && !window.confirm("Изменение сетки сбросит створки, стеклопакеты и вложенные импосты секций. Продолжить?")) {
+  if (hasSectionSettings && !window.confirm("Изменение сетки сбросит створки, стеклопакеты и вложенные импосты проёмов. Продолжить?")) {
     $("#columns").value = state.cols;
     $("#rows").value = state.rows;
     updateActiveControls();
@@ -307,6 +354,15 @@ function bindEvents() {
   });
   $("#finish").addEventListener("change", (event) => {
     state.finish = event.target.value;
+    renderAll();
+  });
+  $("#hardwareSet").addEventListener("change", (event) => {
+    state.hardwareId = event.target.value;
+    syncHardwareChoice();
+    renderAll();
+  });
+  $("#hardwareHandle").addEventListener("change", (event) => {
+    state.handleId = event.target.value;
     renderAll();
   });
 
@@ -386,7 +442,7 @@ function bindEvents() {
     sectionPanes().forEach(pane => { pane.glass = glass; });
     $("#defaultGlass").value = glass;
     renderAll();
-    showToast("Стеклопакет применён ко всем секциям");
+    showToast("Стеклопакет применён ко всем проёмам");
   });
 
   $("#addInnerVertical").addEventListener("click", () => addInnerImpost("vertical"));
@@ -469,7 +525,7 @@ function bindEvents() {
       if (!removeRootImpost(record.selected.orientation,record.item.id)) return;
       state.selectedPane=null;
     } else if (record.pane.split) {
-      if (record.pane.children.some(child => child.split) && !window.confirm("Удалить импост и все секции внутри этого деления?")) return;
+      if (record.pane.children.some(child => child.split) && !window.confirm("Удалить импост и все проёмы внутри этого деления?")) return;
       const first = record.pane.children[0];
       if (!record.pane.sashFill) {
         record.pane.opening = first.opening;
@@ -570,6 +626,8 @@ function bindEvents() {
   $("#openPrices").addEventListener("click", () => {
     populatePriceForm();
     populateTechnologyForm();
+    hardwareDraft = cloneData(hardwareCatalog);
+    $("#hardwareCatalogEditor").removeAttribute("data-ready");
     setSettingsTab("prices");
     $("#pricesDialog").showModal();
   });
@@ -611,6 +669,23 @@ function bindEvents() {
     });
   });
   $("#technologyCatalogEditor").addEventListener("click", handleCatalogAction);
+  $("#hardwareCatalogEditor").addEventListener("click", handleHardwareAction);
+  const refreshHandlePreview = (event) => {
+    const card = event.target.closest("[data-handle-id]");
+    if (!card || !event.target.matches("[data-handle-style], [data-handle-color]")) return;
+    card.querySelector("[data-handle-preview]").innerHTML = handlePreviewMarkup(
+      card.querySelector("[data-handle-style]").value,
+      card.querySelector("[data-handle-color]").value,
+    );
+  };
+  $("#hardwareCatalogEditor").addEventListener("input", refreshHandlePreview);
+  $("#hardwareCatalogEditor").addEventListener("change", refreshHandlePreview);
+  $("#saveHardware").addEventListener("click", saveHardwareCatalog);
+  $("#resetHardware").addEventListener("click", () => {
+    hardwareDraft = defaultHardwareCatalog();
+    renderHardwareCatalog();
+    showToast("Стандартная фурнитура подготовлена — нажмите «Сохранить фурнитуру»");
+  });
   $("#profileSettingsEditor").addEventListener("change", event => {
     if (!event.target.matches("[data-type-enabled]")) return;
     event.target.closest("[data-product-type]").querySelector(".profile-type-fields").hidden = !event.target.checked;
