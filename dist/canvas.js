@@ -58,7 +58,7 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
     dimensionGroups.get(key).push({vertical,start,end,absolute,local,item,index,id:item.id});
   };
 
-  let panesMarkup = "", localImpostsMarkup = "", nestedEndpointMarkup = "", sashMarkup = "", glassMarkup = "", selectionMarkup = "";
+  let panesMarkup = "", localImpostsMarkup = "", nestedEndpointMarkup = "", sashMarkup = "", openingMarkup = "", glassMarkup = "", selectionMarkup = "";
   sectionLayout().forEach((entry,index) => {
     const {pane,rect:physical} = entry;
     const px=X(physical.x), py=Y(physical.y), paneWidth=physical.width*sx, paneHeight=physical.height*sy;
@@ -145,7 +145,7 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
           const envelope=fittedGlass({...entry,pane:{...pane,innerImposts:[],split:null}},shell,shell.fields[0],tech,X,Y,sx,sy);
           if(envelope.boundary?.length && innerSash.boundary?.length && outerSash.boundary?.length){
             const mark=sashOpeningMark(envelope.boundary,outerSash.boundary,innerSash.boundary,pane.opening,pane.hingeSide,X,Y);
-            sashMarkup+=`<g clip-path="url(#glassCutClip)">${mark.dashes}</g>${mark.handle}`;
+            openingMarkup+=`<g clip-path="url(#glassCutClip)">${mark.dashes}</g>${mark.handle}`;
           }
         }
         if (innerSash?.path) {
@@ -185,7 +185,7 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
       if(envelope.boundary?.length && innerSash.boundary?.length && outerSash.boundary?.length){
         const mark=sashOpeningMark(envelope.boundary,outerSash.boundary,innerSash.boundary,pane.opening,pane.hingeSide,X,Y);
         const clip=`opening-symbol-${index}`;
-        sashMarkup+=`<clipPath id="${clip}"><path d="${envelope.path}"/></clipPath>
+        openingMarkup+=`<clipPath id="${clip}"><path d="${envelope.path}"/></clipPath>
           <g clip-path="url(#${clip})">${mark.dashes}</g>${mark.handle}`;
       }
     }
@@ -376,6 +376,7 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
     <g clip-path="url(#innerClip)">${panesMarkup}</g>
     <g clip-path="url(#glassCutClip)" pointer-events="none">${sashMarkup}${glassMarkup}</g>
     <g clip-path="url(#innerClip)">${localImpostsMarkup}</g>
+    <g clip-path="url(#glassCutClip)" pointer-events="none">${openingMarkup}</g>
     <g clip-path="url(#innerClip)">${rootImpostsMarkup}</g>
     <g clip-path="url(#glassCutClip)" pointer-events="none">${selectionMarkup}</g>
     <g>${rootEndpointMarkup}${nestedEndpointMarkup}</g>
