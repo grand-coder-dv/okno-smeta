@@ -65,16 +65,19 @@ function setSettingsTab(tab) {
     captureGlassDraft();
     if (tab !== "prices") renderTechnologyCatalog();
   }
+  if ($("#pricesDialog").open) captureHardwareDraft();
   const technologyTab = tab === "technology";
   $("#settingsPricesPane").hidden = tab !== "prices";
   $("#settingsTechnologyPane").hidden = !technologyTab;
   $("#settingsProfilePane").hidden = tab !== "profile";
+  $("#settingsHardwarePane").hidden = tab !== "hardware";
   $("#settingsReportsPane").hidden = tab !== "reports";
   $$("[data-settings-tab]").forEach((button) => {
     const active = button.dataset.settingsTab === tab;
     button.classList.toggle("active", active);
     button.setAttribute("aria-selected", String(active));
   });
+  if (tab === "hardware" && hardwareDraft) renderHardwareCatalog();
 }
 
 function updateCatalogMaterialTabs() {
@@ -248,4 +251,194 @@ function readTechnologyForm() {
   updateMaterialSelects();
   if (state.shape === "circle" && !getProfile().allowCircleShape) setWindowShapeMode("rect");
   normalizeUnsupportedOpenings();
+}
+
+function readHardwareNumber(input, fallback) {
+  const value = Number(input.value);
+  return Number.isFinite(value) ? Math.min(10000000, Math.max(0, value)) : fallback;
+}
+
+function captureHardwareDraft() {
+  const editor = $("#hardwareCatalogEditor");
+  if (!hardwareDraft || editor?.dataset.ready !== "1") return;
+  editor.querySelectorAll("[data-hardware-id]").forEach((card) => {
+    const set = hardwareDraft.sets.find((item) => item.id === card.dataset.hardwareId);
+    if (!set) return;
+    set.name = card.querySelector("[data-hardware-name]").value.trim() || "Новая фурнитура";
+    set.minWidth = readHardwareNumber(card.querySelector("[data-hardware-min-width]"), set.minWidth);
+    set.maxWidth = readHardwareNumber(card.querySelector("[data-hardware-max-width]"), set.maxWidth);
+    set.minHeight = readHardwareNumber(card.querySelector("[data-hardware-min-height]"), set.minHeight);
+    set.maxHeight = readHardwareNumber(card.querySelector("[data-hardware-max-height]"), set.maxHeight);
+    set.price = readHardwareNumber(card.querySelector("[data-hardware-price]"), set.price);
+    const links = [];
+    card.querySelectorAll("[data-hardware-link]:checked").forEach((box) => {
+      const [material, profileId, type] = box.dataset.hardwareLink.split("|");
+      if (!PRODUCT_TYPES[type] || !MATERIALS[material]) return;
+      let link = links.find((item) => item.material === material && item.profileId === profileId);
+      if (!link) {
+        link = { material, profileId, productTypes: [] };
+        links.push(link);
+      }
+      link.productTypes.push(type);
+    });
+    set.links = links;
+  });
+  const ids = new Set(hardwareDraft.sets.map((set) => set.id));
+  editor.querySelectorAll("[data-handle-id]").forEach((card) => {
+    const handle = hardwareDraft.handles.find((item) => item.id === card.dataset.handleId);
+    if (!handle) return;
+    handle.name = card.querySelector("[data-handle-name]").value.trim() || "Новая ручка";
+    const color = card.querySelector("[data-handle-color]").value;
+    handle.color = /^#[0-9a-fA-F]{6}$/.test(color) ? color : "#d5dde6";
+    const style = card.querySelector("[data-handle-style]").value;
+    handle.style = HANDLE_STYLES[style] ? style : "bar";
+    handle.price = readHardwareNumber(card.querySelector("[data-handle-price]"), handle.price);
+    handle.hardwareIds = [...card.querySelectorAll("[data-handle-hardware]:checked")].map((box) => box.value).filter((id) => ids.has(id));
+  });
+}
+
+function hardwareDraftIssue() {
+  for (const set of hardwareDraft.sets) {
+    if (!set.name.trim()) return "Укажите название фурнитуры";
+    if (set.minWidth > set.maxWidth || set.minHeight > set.maxHeight) return `«${set.name}»: минимальный размер не может быть больше максимального`;
+  }
+  for (const handle of hardwareDraft.handles) {
+    if (!handle.name.trim()) return "Укажите название ручки";
+    if (!handle.hardwareIds.length) return `«${handle.name}»: отметьте, в какой фурнитуре применяется ручка`;
+  }
+  return "";
+}
+
+function hardwareAssignmentMarkup(set) {
+  return Object.entries(MATERIALS).map(([material, data]) => `
+    <div class="hardware-assign-group">
+      <p class="hardware-assign-material">${escapeHtml(MATERIAL_TITLES[material] || data.label)}</p>
+      ${data.profiles.map((profile) => `
+        <div class="hardware-assign-row">
+          <b>${escapeHtml(profile.name)}</b>
+          ${Object.entries(PRODUCT_TYPES).map(([type, label]) => {
+            const checked = (set.links || []).some((link) => link.material === material && link.profileId === profile.id && (link.productTypes || []).includes(type));
+            return `<label><input type="checkbox" data-hardware-link="${escapeHtml(`${material}|${profile.id}|${type}`)}" ${checked ? "checked" : ""} /> ${escapeHtml(label)}</label>`;
+          }).join("")}
+        </div>`).join("")}
+    </div>`).join("");
+}
+
+function renderHardwareCatalog() {
+  if (!hardwareDraft) hardwareDraft = cloneData(hardwareCatalog);
+  const editor = $("#hardwareCatalogEditor");
+  const sets = hardwareDraft.sets.map((set) => `
+    <article class="hardware-set-card" data-hardware-id="${escapeHtml(set.id)}">
+      <div class="catalog-section-header">
+        <h3>Комплект</h3>
+        <button class="catalog-remove-button" type="button" data-hardware-action="remove-set">Удалить</button>
+      </div>
+      <div class="hardware-set-grid">
+        <label class="catalog-field catalog-name-field"><span>Название</span><input data-hardware-name value="${escapeHtml(set.name)}" maxlength="80" required /></label>
+        <label class="catalog-field"><span>Ширина от, мм</span><input data-hardware-min-width type="number" min="0" max="5000" step="1" value="${set.minWidth}" /></label>
+        <label class="catalog-field"><span>Ширина до, мм</span><input data-hardware-max-width type="number" min="0" max="5000" step="1" value="${set.maxWidth}" /></label>
+        <label class="catalog-field"><span>Высота от, мм</span><input data-hardware-min-height type="number" min="0" max="5000" step="1" value="${set.minHeight}" /></label>
+        <label class="catalog-field"><span>Высота до, мм</span><input data-hardware-max-height type="number" min="0" max="5000" step="1" value="${set.maxHeight}" /></label>
+        <label class="catalog-field"><span>Цена, ₽/компл.</span><input data-hardware-price type="number" min="0" step="10" value="${set.price}" /></label>
+      </div>
+      <div class="hardware-assign">
+        <span>Устанавливается в профильные системы</span>
+        ${hardwareAssignmentMarkup(set)}
+      </div>
+    </article>`).join("");
+  const handles = hardwareDraft.handles.map((handle) => `
+    <article class="handle-set-card" data-handle-id="${escapeHtml(handle.id)}">
+      <div class="handle-set-grid">
+        <div class="handle-style-preview" data-handle-preview>${handlePreviewMarkup(handle.style, handle.color)}</div>
+        <label class="catalog-field"><span>Название</span><input data-handle-name value="${escapeHtml(handle.name)}" maxlength="80" required /></label>
+        <label class="catalog-field"><span>Цвет</span><input data-handle-color type="color" value="${escapeHtml(handle.color)}" /></label>
+        <label class="catalog-field"><span>Вид на эскизе</span>
+          <select data-handle-style>${Object.entries(HANDLE_STYLES).map(([id, label]) => `<option value="${id}" ${handle.style === id ? "selected" : ""}>${label}</option>`).join("")}</select>
+        </label>
+        <label class="catalog-field"><span>Цена, ₽</span><input data-handle-price type="number" min="0" step="10" value="${handle.price}" /></label>
+        <button class="catalog-remove-button" type="button" data-hardware-action="remove-handle">Удалить</button>
+      </div>
+      <div class="hardware-handle-uses">
+        <span>Применяется в фурнитуре</span>
+        ${hardwareDraft.sets.length
+          ? hardwareDraft.sets.map((set) => `<label><input type="checkbox" data-handle-hardware value="${escapeHtml(set.id)}" ${(handle.hardwareIds || []).includes(set.id) ? "checked" : ""} /> ${escapeHtml(set.name)}</label>`).join("")
+          : "<small>Сначала добавьте комплект фурнитуры</small>"}
+      </div>
+    </article>`).join("");
+  editor.innerHTML = `
+    <section class="catalog-section">
+      <div class="catalog-section-header">
+        <div><h3>Комплекты фурнитуры</h3><span>${hardwareDraft.sets.length} шт.</span></div>
+        <button class="button ghost catalog-add-button" type="button" data-hardware-action="add-set">+ Добавить фурнитуру</button>
+      </div>
+      <div class="hardware-card-list">${sets || "<p class=\"technology-note\">Комплектов пока нет.</p>"}</div>
+    </section>
+    <section class="catalog-section">
+      <div class="catalog-section-header">
+        <div><h3>Ручки</h3><span>${hardwareDraft.handles.length} шт.</span></div>
+        <button class="button ghost catalog-add-button" type="button" data-hardware-action="add-handle">+ Добавить ручку</button>
+      </div>
+      <div class="hardware-card-list">${handles || "<p class=\"technology-note\">Ручек пока нет.</p>"}</div>
+    </section>`;
+  editor.dataset.ready = "1";
+}
+
+function handleHardwareAction(event) {
+  const button = event.target.closest("[data-hardware-action]");
+  if (!button || !hardwareDraft) return;
+  captureHardwareDraft();
+  const action = button.dataset.hardwareAction;
+  if (action === "add-set") {
+    hardwareDraft.sets.push({
+      id: createCatalogId("hardware"),
+      name: "Новая фурнитура",
+      minWidth: 300,
+      maxWidth: 1500,
+      minHeight: 400,
+      maxHeight: 2200,
+      price: 0,
+      links: [],
+    });
+  } else if (action === "remove-set") {
+    const id = button.closest("[data-hardware-id]").dataset.hardwareId;
+    hardwareDraft.sets = hardwareDraft.sets.filter((set) => set.id !== id);
+    hardwareDraft.handles.forEach((handle) => {
+      handle.hardwareIds = handle.hardwareIds.filter((item) => item !== id);
+    });
+  } else if (action === "add-handle") {
+    if (!hardwareDraft.sets.length) {
+      showToast("Сначала добавьте комплект фурнитуры");
+      return;
+    }
+    hardwareDraft.handles.push({
+      id: createCatalogId("handle"),
+      name: "Новая ручка",
+      color: "#d5dde6",
+      style: "bar",
+      price: 0,
+      hardwareIds: hardwareDraft.sets.map((set) => set.id),
+    });
+  } else if (action === "remove-handle") {
+    const id = button.closest("[data-handle-id]").dataset.handleId;
+    hardwareDraft.handles = hardwareDraft.handles.filter((item) => item.id !== id);
+  }
+  renderHardwareCatalog();
+}
+
+function saveHardwareCatalog() {
+  captureHardwareDraft();
+  const issue = hardwareDraftIssue();
+  if (issue) {
+    showToast(issue);
+    return;
+  }
+  hardwareCatalog = sanitizeHardwareCatalog(hardwareDraft);
+  if (!persistHardwareCatalog()) {
+    showToast("Не удалось сохранить фурнитуру в браузере");
+    return;
+  }
+  hardwareDraft = cloneData(hardwareCatalog);
+  $("#pricesDialog").close();
+  renderAll();
+  showToast("Фурнитура сохранена");
 }
