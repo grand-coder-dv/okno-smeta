@@ -258,23 +258,76 @@ function impostRibbon(item, orientation, rect, boundary, face, root = false, out
   }
   return ribbon;
 }
-function handleGlyph(x, y, inward, handle) {
-  const fill = /^#[0-9a-fA-F]{6}$/.test(handle?.color || "") ? handle.color : "#20384c";
-  const style = HANDLE_STYLES[handle?.style] ? handle.style : "bar";
-  const edge = "#1d3344";
-  const stroke = (d, width) => `<path d="${d}" fill="none" stroke="${edge}" stroke-width="${width + 1.3}" stroke-linecap="round" stroke-linejoin="round"/><path d="${d}" fill="none" stroke="${fill}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round"/>`;
-  if (style === "knob") return `<circle cx="${x}" cy="${y}" r="5.6" fill="${edge}"/><circle cx="${x}" cy="${y}" r="4.2" fill="${fill}"/>`;
-  if (style === "lever") return stroke(`M ${x} ${y - 9} L ${x} ${y + 1} L ${x + inward * 13} ${y + 7}`, 2.5);
-  if (style === "offset") return stroke(`M ${x} ${y - 10} L ${x} ${y + 10} M ${x} ${y - 2} L ${x + inward * 12} ${y - 2}`, 2.6);
-  if (style === "lock") {
-    return `${stroke(`M ${x} ${y - 12} L ${x} ${y + 12}`, 2.6)}<rect x="${x - 4}" y="${y - 2.4}" width="8" height="6.2" rx="1.1" fill="${edge}"/><rect x="${x - 2.9}" y="${y - 1.4}" width="5.8" height="4.2" rx="0.7" fill="${fill}"/>`;
+function roundedRectPath(x, y, w, h, r) {
+  const radius = Math.max(0, Math.min(r, w / 2, h / 2));
+  return `M ${x + radius} ${y} H ${x + w - radius} A ${radius} ${radius} 0 0 1 ${x + w} ${y + radius} V ${y + h - radius} A ${radius} ${radius} 0 0 1 ${x + w - radius} ${y + h} H ${x + radius} A ${radius} ${radius} 0 0 1 ${x} ${y + h - radius} V ${y + radius} A ${radius} ${radius} 0 0 1 ${x + radius} ${y} Z`;
+}
+
+function handleTone(color) {
+  const fill = /^#[0-9a-fA-F]{6}$/.test(color || "") ? color : "#f4f7f8";
+  const n = parseInt(fill.slice(1), 16);
+  const channels = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  const light = (channels[0] * 299 + channels[1] * 587 + channels[2] * 114) / 1000 > 150;
+  const mix = (factor) => `#${channels.map((channel) => Math.max(0, Math.min(255, Math.round(channel * factor))).toString(16).padStart(2, "0")).join("")}`;
+  return { fill, edge: light ? "#7e8c9b" : mix(1.45), mark: light ? "#8ea0b0" : "#d5dee8", shade: light ? mix(0.94) : mix(1.12) };
+}
+
+function handleFace(d, fill, edge) {
+  return `<path d="${d}" fill="${fill}" stroke="${edge}" stroke-width=".8" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>`;
+}
+
+function handleDisc(cx, cy, r, fill, edge, cap) {
+  return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${fill}" stroke="${edge}" stroke-width=".8" vector-effect="non-scaling-stroke"/>
+    <circle cx="${cx}" cy="${cy}" r="${r * .42}" fill="${cap}" stroke="${edge}" stroke-width=".6" vector-effect="non-scaling-stroke"/>`;
+}
+
+function handleParts(style, color) {
+  const tone = handleTone(color);
+  const plate = (x, y, w, h, r) => handleFace(roundedRectPath(x, y, w, h, r), tone.fill, tone.edge);
+  const ring = (cx, cy, r) => `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${tone.edge}" stroke-width="1.15" vector-effect="non-scaling-stroke"/>`;
+  if (style === "turn") {
+    return `${plate(-16, -55, 32, 110, 11)}${plate(2, -11, 157, 22, 11)}${ring(0, 0, 12)}`;
   }
-  if (style === "long") return stroke(`M ${x} ${y - 16} L ${x} ${y + 16}`, 3);
-  return stroke(`M ${x} ${y - 10} L ${x} ${y + 10}`, 3);
+  if (style === "cylinder") {
+    const keyhole = `M -4.6 -2 a 4.6 4.6 0 1 0 9.2 0 a 4.6 4.6 0 1 0 -9.2 0 M -2.1 1.6 H 2.1 L 3.3 16 Q 0 18.6 -3.3 16 Z`;
+    return `${plate(-17, -125, 34, 250, 12)}${plate(2, -46, 138, 22, 11)}${ring(0, -35, 12)}
+      <g transform="translate(0 38)">${handleFace(keyhole, tone.mark, tone.edge)}</g>`;
+  }
+  if (style === "bow") {
+    return `${plate(6, -150, 42, 16, 8)}${plate(32, -142, 16, 284, 8)}${plate(6, 134, 42, 16, 8)}
+      ${handleDisc(0, -142, 14, tone.fill, tone.edge, tone.shade)}${handleDisc(0, 142, 14, tone.fill, tone.edge, tone.shade)}`;
+  }
+  if (style === "rod") {
+    return `${plate(30, -500, 20, 1000, 10)}${plate(2, -408, 36, 16, 8)}${plate(2, 392, 36, 16, 8)}
+      ${handleDisc(0, -400, 16, tone.fill, tone.edge, tone.shade)}${handleDisc(0, 400, 16, tone.fill, tone.edge, tone.shade)}`;
+  }
+  return `${plate(-15, -87, 30, 74, 9)}${plate(-8.5, -51, 17, 138, 8.5)}${ring(0, -50, 10.5)}`;
 }
 
 function handlePreviewMarkup(style, color) {
-  return `<svg viewBox="0 0 36 36" width="36" height="36" aria-hidden="true">${handleGlyph(22, 18, -1, { style, color })}</svg>`;
+  const kind = normalizeHandleStyle(style);
+  const boxes = {
+    window: "-28 -100 56 200",
+    turn: "-28 -68 206 136",
+    cylinder: "-28 -138 186 276",
+    bow: "-22 -166 84 332",
+    rod: "-26 -520 88 1040",
+  };
+  return `<svg viewBox="${boxes[kind]}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">${handleParts(kind, color)}</svg>`;
+}
+
+function placedHandle(anchorX, anchorY, inward, availableH, availableW, X, Y, handle) {
+  const style = normalizeHandleStyle(handle?.style);
+  const nominal = HANDLE_LENGTHS[style] || 175;
+  const reach = { window: 20, turn: 175, cylinder: 158, bow: 52, rod: 54 }[style] || 40;
+  const heightFit = Math.max(70, availableH - 16) / nominal;
+  const widthFit = Math.max(24, availableW * 0.58) / reach;
+  const scale = Math.min(1, heightFit, widthFit);
+  const px = X(anchorX);
+  const py = Y(anchorY);
+  const ux = (X(anchorX + inward) - px) * scale;
+  const uy = (Y(anchorY + 1) - py) * scale;
+  return `<g transform="translate(${px} ${py}) scale(${ux} ${uy})" pointer-events="none">${handleParts(style, handle?.color)}</g>`;
 }
 
 function sashOpeningMark(glass, outer, inner, type, side, X, Y) {
@@ -301,8 +354,9 @@ function sashOpeningMark(glass, outer, inner, type, side, X, Y) {
   }
   const outerAt = outlineRange(outer, 1, ym);
   const innerAt = outlineRange(inner, 1, ym);
+  const [leftEdge, topEdge, rightEdge, bottomEdge] = polyBounds(outer);
   const handle = outerAt && innerAt
-    ? handleGlyph(X((outerAt[free] + innerAt[free]) / 2), Y(ym), free === 1 ? -1 : 1, selectedHandle())
+    ? placedHandle((outerAt[free] + innerAt[free]) / 2, ym, free === 1 ? -1 : 1, bottomEdge - topEdge, rightEdge - leftEdge, X, Y, selectedHandle())
     : "";
   return {dashes, handle};
 }
