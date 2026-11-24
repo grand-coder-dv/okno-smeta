@@ -1973,6 +1973,126 @@ tbody tr:hover {
   font-size: 0.72rem;
 }
 
+.price-settings-grid .technology-note {
+  margin: 0 0 8px;
+}
+
+.hardware-catalog-editor {
+  display: grid;
+  gap: 14px;
+  max-height: min(58vh, 640px);
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.hardware-card-list {
+  display: grid;
+  gap: 10px;
+}
+
+.hardware-set-card,
+.handle-set-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  background: white;
+  border: 1px solid #dde3ea;
+  border-radius: 10px;
+}
+
+.hardware-set-grid,
+.handle-set-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: 8px;
+  align-items: end;
+}
+
+.hardware-set-grid .catalog-name-field {
+  grid-column: span 2;
+}
+
+.handle-set-grid {
+  grid-template-columns: 42px repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.handle-style-preview {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  background: #f4f7fa;
+  border: 1px solid #dde3ea;
+  border-radius: 8px;
+}
+
+.hardware-set-card select,
+.handle-set-card select {
+  width: 100%;
+  min-height: 37px;
+}
+
+.hardware-assign {
+  display: grid;
+  gap: 4px;
+}
+
+.hardware-assign > span,
+.hardware-handle-uses > span {
+  color: #5c687b;
+  font-size: 0.72rem;
+}
+
+.hardware-assign-material {
+  margin: 8px 0 0;
+  color: #31445c;
+  font-size: 0.75rem;
+  font-weight: 750;
+}
+
+.hardware-assign-row,
+.hardware-handle-uses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  align-items: center;
+  padding-top: 6px;
+}
+
+.hardware-assign-row {
+  border-top: 1px solid #eef2f6;
+}
+
+.hardware-assign-row b {
+  min-width: min(100%, 180px);
+  font-size: 0.8rem;
+}
+
+.hardware-assign-row label,
+.hardware-handle-uses label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #31445c;
+  font-size: 0.78rem;
+}
+
+.hardware-range-note {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.hardware-range-note.warn {
+  color: #9a4d12;
+}
+
+#paneHardwareNote {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
 .dialog-actions {
   margin-top: 19px;
   display: flex;
@@ -2327,6 +2447,14 @@ tbody tr:hover {
 
   .catalog-profile-card {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hardware-set-grid .catalog-name-field {
+    grid-column: auto;
+  }
+
+  .handle-set-grid {
+    grid-template-columns: 1fr;
   }
 
   .catalog-name-field,
