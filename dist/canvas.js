@@ -91,31 +91,45 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
       const endB=segment ? [X(segment[1][0]),Y(segment[1][1])] : null;
       const ribbon=segment && poly ? polyPath(impostRibbon(item,item.orientation,physical,sectionPolygon,tech.impost,false,sectionPolygon),X,Y) : "";
       if(active && segment)nestedEndpointMarkup += segment.map((point,end)=>`<circle class="impost-endpoint" style="cursor:pointer" data-endpoint="${end}" data-scope="pane" data-pane="${index}" data-orientation="${item.orientation}" data-id="${item.id}" cx="${X(point[0])}" cy="${Y(point[1])}" r="5" fill="#fff" stroke="#ef8b25" stroke-width="2.5" role="button" tabindex="0" aria-label="Изменить ${end?'второй':'первый'} край импоста"/>`).join("");
-      const y1=Y(border(0,physical.x+item.position*physical.width,physical.y));
-      const y2=Y(border(2,physical.x+item.position*physical.width,physical.y+physical.height));
-      const x1=X(border(3,physical.y+item.position*physical.height,physical.x));
-      const x2=X(border(1,physical.y+item.position*physical.height,physical.x+physical.width));
+      const spans = poly ? null : nestedImpostSpans(entry, item, tech);
+      const visible = ribbon ? "" : (spans || []).map(span => {
+        const x1=X(span.x1), y1=Y(span.y1), x2=X(span.x2), y2=Y(span.y2);
+        return `<line class="impost-visible inner-impost-visible${active ? " selected" : ""}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${profileColor}" stroke-width="${paneImpostFace}" />
+          <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${material.edge}" stroke-width="1.2" opacity=".55" pointer-events="none" />`;
+      }).join("");
+      const hit = spans?.length
+        ? {x1:X(spans[0].x1), y1:Y(spans[0].y1), x2:X(spans.at(-1).x2), y2:Y(spans.at(-1).y2)}
+        : null;
+      const endOffsets=item.endOffsets||[0,0];
+      const slanted=endOffsets.some(Boolean);
       if (isVertical) {
-        addDimension(false, px, lineX, physical.x, physicalPosition, item, index);
+        if(slanted){
+          [0,1].forEach(end=>{
+            const abs=physical.x+physicalPosition+(endOffsets[end]||0);
+            addDimension(false, px, X(abs), physical.x, abs-physical.x, item, index);
+          });
+        } else addDimension(false, px, lineX, physical.x, physicalPosition, item, index);
         innerImpostsMarkup += `
-          ${ribbon ? `<path class="impost-visible inner-impost-visible${active ? " selected" : ""}" d="${ribbon}" fill="${active ? "#ef8b25" : profileColor}" stroke="${material.edge}" stroke-width="1" />` : `<line class="impost-visible inner-impost-visible${active ? " selected" : ""}" x1="${endA?.[0]??lineX}" y1="${endA?.[1]??y1}" x2="${endB?.[0]??lineX}" y2="${endB?.[1]??y2}" stroke="${profileColor}" stroke-width="${paneImpostFace}" />`}
-          <line x1="${endA?.[0]??lineX}" y1="${endA?.[1]??y1}" x2="${endB?.[0]??lineX}" y2="${endB?.[1]??y2}" stroke="${material.edge}" stroke-width="1.2" opacity=".55" pointer-events="none" />
+          ${ribbon ? `<path class="impost-visible inner-impost-visible${active ? " selected" : ""}" d="${ribbon}" fill="${active ? "#ef8b25" : profileColor}" stroke="${material.edge}" stroke-width="1" />` : visible}
           <rect class="impost-grip${active ? " selected" : ""}" x="${lineX - 7}" y="${Y(clippedCenter(0,physical.x+physicalPosition,physical.y+physical.height/2)) - 14}" width="14" height="28" rx="7" />
-          <line class="impost-hit" data-scope="pane" data-pane="${index}" data-orientation="vertical" data-id="${item.id}" x1="${endA?.[0]??lineX}" y1="${endA?.[1]??y1}" x2="${endB?.[0]??lineX}" y2="${endB?.[1]??y2}" tabindex="0" role="slider" aria-label="Вертикальный импост в ${paneKind} ${index + 1}" aria-valuenow="${Math.round(physicalPosition)}" />
+          <line class="impost-hit" data-scope="pane" data-pane="${index}" data-orientation="vertical" data-id="${item.id}" x1="${endA?.[0]??hit?.x1??lineX}" y1="${endA?.[1]??hit?.y1??py}" x2="${endB?.[0]??hit?.x2??lineX}" y2="${endB?.[1]??hit?.y2??py+paneHeight}" tabindex="0" role="slider" aria-label="Вертикальный импост в ${paneKind} ${index + 1}" aria-valuenow="${Math.round(physicalPosition)}" />
           `;
       } else {
-        addDimension(true, py, lineY, physical.y, physicalPosition, item, index);
+        if(slanted){
+          [0,1].forEach(end=>{
+            const abs=physical.y+physicalPosition+(endOffsets[end]||0);
+            addDimension(true, py, Y(abs), physical.y, abs-physical.y, item, index);
+          });
+        } else addDimension(true, py, lineY, physical.y, physicalPosition, item, index);
         innerImpostsMarkup += `
-          ${ribbon ? `<path class="impost-visible inner-impost-visible${active ? " selected" : ""}" d="${ribbon}" fill="${active ? "#ef8b25" : profileColor}" stroke="${material.edge}" stroke-width="1" />` : `<line class="impost-visible inner-impost-visible${active ? " selected" : ""}" x1="${endA?.[0]??x1}" y1="${endA?.[1]??lineY}" x2="${endB?.[0]??x2}" y2="${endB?.[1]??lineY}" stroke="${profileColor}" stroke-width="${paneImpostFace}" />`}
-          <line x1="${endA?.[0]??x1}" y1="${endA?.[1]??lineY}" x2="${endB?.[0]??x2}" y2="${endB?.[1]??lineY}" stroke="${material.edge}" stroke-width="1.2" opacity=".55" pointer-events="none" />
+          ${ribbon ? `<path class="impost-visible inner-impost-visible${active ? " selected" : ""}" d="${ribbon}" fill="${active ? "#ef8b25" : profileColor}" stroke="${material.edge}" stroke-width="1" />` : visible}
           <rect class="impost-grip${active ? " selected" : ""}" x="${X(clippedCenter(1,physical.y+physicalPosition,physical.x+physical.width/2)) - 14}" y="${lineY - 7}" width="28" height="14" rx="7" />
-          <line class="impost-hit horizontal" data-scope="pane" data-pane="${index}" data-orientation="horizontal" data-id="${item.id}" x1="${endA?.[0]??x1}" y1="${endA?.[1]??lineY}" x2="${endB?.[0]??x2}" y2="${endB?.[1]??lineY}" tabindex="0" role="slider" aria-label="Горизонтальный импост в ${paneKind} ${index + 1}" aria-valuenow="${Math.round(physicalPosition)}" />
+          <line class="impost-hit horizontal" data-scope="pane" data-pane="${index}" data-orientation="horizontal" data-id="${item.id}" x1="${endA?.[0]??hit?.x1??px}" y1="${endA?.[1]??hit?.y1??lineY}" x2="${endB?.[0]??hit?.x2??px+paneWidth}" y2="${endB?.[1]??hit?.y2??lineY}" tabindex="0" role="slider" aria-label="Горизонтальный импост в ${paneKind} ${index + 1}" aria-valuenow="${Math.round(physicalPosition)}" />
           `;
       }
     });
 
     if (pane.split) {
-      localImpostsMarkup += innerImpostsMarkup;
       if (pane.sashFill && pane.opening !== "fixed") {
         const shell=glassGeometry({...entry,pane:{...pane,innerImposts:[],split:null}},tech);
         const sashBox=shell.sashBox, opening=shell.opening;
@@ -134,7 +148,11 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
             sashMarkup+=`<g clip-path="url(#glassCutClip)">${mark.dashes}</g>${mark.handle}`;
           }
         }
-      }
+        if (innerSash?.path) {
+          const id=`sashImpostClip-${index}`;
+          localImpostsMarkup += `<clipPath id="${id}"><path d="${innerSash.path}"/></clipPath><g clip-path="url(#${id})">${innerImpostsMarkup}</g>`;
+        } else localImpostsMarkup += innerImpostsMarkup;
+      } else localImpostsMarkup += innerImpostsMarkup;
       return;
     }
     const {opening,sashBox,fields} = glassGeometry(entry,tech);
@@ -186,8 +204,15 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
       const fieldY=center ? Y(center[1])+4 : Y(f.y)+h/2+Math.min(26,h/3);
       const labelY=poly && (fields.length===1 || (Math.abs(labelX-paneCx)<48 && Math.abs(fieldY-paneCy)<24)) ? paneCy+27 : fieldY;
       const font=Math.min(10,(poly?fitted.w*sx:w)/8,(poly?fitted.h*sy:h)/4);
-      if (font>=4) glassMarkup += `<text x="${labelX}" y="${labelY}"
-        text-anchor="middle" font-size="${font}" fill="#20384c" paint-order="stroke" stroke="#edf6fa" stroke-width="2">${state.shape !== "circle" && !customProfileArcs() ? "" : "≈ "}${glassSizeLabel({...f,w:fitted.w,h:fitted.h})}</text>`;
+      if (font>=4) {
+        const sizeText=`${state.shape !== "circle" && !customProfileArcs() && !hasSlantedImposts() ? "" : "≈ "}${glassSizeLabel({...f,w:fitted.w,h:fitted.h})}`;
+        const detail=(glass?.detail || "").trim();
+        const detailFont=Math.min(font*0.9,9,(poly?fitted.h*sy:h)/5);
+        glassMarkup += `<text x="${labelX}" y="${labelY}"
+          text-anchor="middle" font-size="${font}" fill="#20384c" paint-order="stroke" stroke="#edf6fa" stroke-width="2">${sizeText}</text>`;
+        if (detail && detailFont>=3.5) glassMarkup += `<text x="${labelX}" y="${labelY + font + 2}"
+          text-anchor="middle" font-size="${detailFont}" fill="#355069" paint-order="stroke" stroke="#edf6fa" stroke-width="2">${escapeHtml(detail)}</text>`;
+      }
     }
     if (poly && sectionPolygon.length<3) return;
     const paneOutline=poly ? polyPath(sectionPolygon,X,Y) : hasFrameArc ? fit([physical.x,physical.y,physical.x+physical.width,physical.y+physical.height],0).path : null;
@@ -219,10 +244,15 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
     const lineTop=skewRange ? Y(skewRange[0])-impostFace : state.shape==="arch" && state.frameArcs?.[0] ? Y(frameCurve(0,0)?.(item.position) ?? 0) : box.y-2;
     const lineBottom=skewRange ? Y(skewRange[1])+impostFace : state.shape==="arch" && state.frameArcs?.[2] ? Y(frameCurve(2,0)?.(item.position) ?? state.height) : box.y+box.height+2;
     if(!poly){ax=bx=lineX;ay=lineTop;by=lineBottom;}
-    addDimension(false, x, lineX, 0, item.position, item);
+    const vEnds=item.endOffsets||[0,0];
+    if(vEnds.some(Boolean))[0,1].forEach(end=>{
+      const abs=item.position+(vEnds[end]||0);
+      addDimension(false, x, X(abs), 0, abs, item);
+    });
+    else addDimension(false, x, lineX, 0, item.position, item);
     if(active && poly) rootEndpointMarkup += segment.map((point,end)=>`<circle class="impost-endpoint" style="cursor:pointer" data-endpoint="${end}" data-scope="root" data-orientation="vertical" data-id="${item.id}" cx="${X(point[0])}" cy="${Y(point[1])}" r="5" fill="#fff" stroke="#ef8b25" stroke-width="2.5" role="button" tabindex="0" aria-label="Изменить ${end?'второй':'первый'} край импоста"/>`).join("");
     rootImpostsMarkup += `
-      ${ribbon ? `<path class="impost-visible${active ? " selected" : ""}" d="${ribbon}" fill="${active ? "#ef8b25" : profileColor}" stroke="${material.edge}" stroke-width="1" />` : `${ribbon ? `<path class="impost-visible${active ? " selected" : ""}" d="${ribbon}" fill="${active ? "#ef8b25" : profileColor}" stroke="${material.edge}" stroke-width="1" />` : `<line class="impost-visible${active ? " selected" : ""}" x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${profileColor}" stroke-width="${impostFace}" />`}`}
+      ${ribbon ? `<path class="impost-visible${active ? " selected" : ""}" d="${ribbon}" fill="${active ? "#ef8b25" : profileColor}" stroke="${material.edge}" stroke-width="1" />` : `<line class="impost-visible${active ? " selected" : ""}" x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${profileColor}" stroke-width="${impostFace}" />`}
       <line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${material.edge}" stroke-width="1.4" opacity=".55" pointer-events="none" />
       <rect class="impost-grip${active ? " selected" : ""}" x="${lineX - 8}" y="${rootGripCenter(0,item.position,box.y+box.height/2) - 18}" width="16" height="36" rx="8" />
       <line class="impost-hit" data-scope="root" data-orientation="vertical" data-id="${item.id}" x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" tabindex="0" role="slider" aria-label="Вертикальный импост рамы" aria-valuemin="0" aria-valuemax="${state.width}" aria-valuenow="${Math.round(item.position)}" />
@@ -238,10 +268,15 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
     const lineLeft=skewRange ? X(skewRange[0])-impostFace : state.shape==="arch" && state.frameArcs?.[3] ? X(frameCurve(3,0)?.(item.position) ?? 0) : box.x-2;
     const lineRight=skewRange ? X(skewRange[1])+impostFace : state.shape==="arch" && state.frameArcs?.[1] ? X(frameCurve(1,0)?.(item.position) ?? state.width) : box.x+box.width+2;
     if(!poly){ay=by=lineY;ax=lineLeft;bx=lineRight;}
-    addDimension(true, y, lineY, 0, item.position, item);
+    const hEnds=item.endOffsets||[0,0];
+    if(hEnds.some(Boolean))[0,1].forEach(end=>{
+      const abs=item.position+(hEnds[end]||0);
+      addDimension(true, y, Y(abs), 0, abs, item);
+    });
+    else addDimension(true, y, lineY, 0, item.position, item);
     if(active && poly) rootEndpointMarkup += segment.map((point,end)=>`<circle class="impost-endpoint" style="cursor:pointer" data-endpoint="${end}" data-scope="root" data-orientation="horizontal" data-id="${item.id}" cx="${X(point[0])}" cy="${Y(point[1])}" r="5" fill="#fff" stroke="#ef8b25" stroke-width="2.5" role="button" tabindex="0" aria-label="Изменить ${end?'второй':'первый'} край импоста"/>`).join("");
     rootImpostsMarkup += `
-      <line class="impost-visible${active ? " selected" : ""}" x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${profileColor}" stroke-width="${impostFace}" />
+      ${ribbon ? `<path class="impost-visible${active ? " selected" : ""}" d="${ribbon}" fill="${active ? "#ef8b25" : profileColor}" stroke="${material.edge}" stroke-width="1" />` : `<line class="impost-visible${active ? " selected" : ""}" x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${profileColor}" stroke-width="${impostFace}" />`}
       <line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${material.edge}" stroke-width="1.4" opacity=".55" pointer-events="none" />
       <rect class="impost-grip${active ? " selected" : ""}" x="${rootGripCenter(1,item.position,box.x+box.width/2) - 18}" y="${lineY - 8}" width="36" height="16" rx="8" />
       <line class="impost-hit horizontal" data-scope="root" data-orientation="horizontal" data-id="${item.id}" x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" tabindex="0" role="slider" aria-label="Горизонтальный импост рамы" aria-valuemin="0" aria-valuemax="${state.height}" aria-valuenow="${Math.round(item.position)}" />
