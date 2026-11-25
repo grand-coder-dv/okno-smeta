@@ -84,6 +84,10 @@ const PRODUCT_TYPES = { window: "Окно", entranceDoor: "Входная две
 function profileTypeSettings(profile, type = state.productType || "window") {
   const legacy = {
     frameWidth: profile.frameWidth, sashWidth: profile.sashWidth, impostWidth: profile.impostWidth,
+    shtulpWidth: profile.shtulpWidth ?? profile.sashWidth ?? 70,
+    extenderWidth: profile.extenderWidth ?? 40,
+    connectorWidth: profile.connectorWidth ?? 20,
+    cornerWidth: profile.cornerWidth ?? profile.frameWidth ?? 70,
     glassBiteFrame: profile.glassBiteFrame ?? profile.glassBite ?? 14,
     glassBiteSash: profile.glassBiteSash ?? profile.glassBite ?? 14,
     glassBiteImpost: profile.glassBiteImpost ?? profile.glassBite ?? 14,
