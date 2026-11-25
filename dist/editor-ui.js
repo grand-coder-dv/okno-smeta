@@ -755,6 +755,7 @@ function bindEvents() {
   });
 
   bindCanvasDragging();
+  bindCanvasZoom();
   window.addEventListener("afterprint", () => document.body.classList.remove("printing-order"));
   window.addEventListener("beforeunload", (event) => {
     if (!hasUnsavedProjectWork()) return;
