@@ -96,12 +96,12 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
       const segment=poly ? impostSegment(item,item.orientation,physical,sectionPolygon) : null;
       const endA=segment ? [X(segment[0][0]),Y(segment[0][1])] : null;
       const endB=segment ? [X(segment[1][0]),Y(segment[1][1])] : null;
-      const ribbon=segment && poly ? polyPath(impostRibbon(item,item.orientation,physical,sectionPolygon,tech.impost,false,sectionPolygon),X,Y) : "";
+      const ribbon=segment && poly ? polyPath(impostRibbon(item,item.orientation,physical,sectionPolygon,barFace(item),false,sectionPolygon),X,Y) : "";
       if(active && segment)nestedEndpointMarkup += segment.map((point,end)=>`<circle class="impost-endpoint" style="cursor:pointer" data-endpoint="${end}" data-scope="pane" data-pane="${index}" data-orientation="${item.orientation}" data-id="${item.id}" cx="${X(point[0])}" cy="${Y(point[1])}" r="5" fill="#fff" stroke="#ef8b25" stroke-width="2.5" role="button" tabindex="0" aria-label="Изменить ${end?'второй':'первый'} край импоста"/>`).join("");
       const spans = poly ? null : nestedImpostSpans(entry, item, tech);
       const visible = ribbon ? "" : (spans || []).map(span => {
         const x1=X(span.x1), y1=Y(span.y1), x2=X(span.x2), y2=Y(span.y2);
-        return impostBandPath(x1, y1, x2, y2, paneImpostFace, active, " inner-impost-visible");
+        return impostBandPath(x1, y1, x2, y2, barFace(item) * canvasScale, active, " inner-impost-visible");
       }).join("");
       const hit = spans?.length
         ? {x1:X(spans[0].x1), y1:Y(spans[0].y1), x2:X(spans.at(-1).x2), y2:Y(spans.at(-1).y2)}
@@ -182,6 +182,8 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
      } else if (state.shape === "skew" && outerSash && innerSash) {
       profileTargets+=poly ? polygonProfileTargets(outerSash.boundary,innerSash.boundary,"skew-sash",index,X,Y)
         : profileEdgeTargets(outerSash,innerSash,"skew-sash",index);
+    } else if (state.shape === "circle" && outerSash?.path && innerSash?.path) {
+      profileTargets+=`<path d="${outerSash.path} ${innerSash.path}" fill="transparent" fill-rule="evenodd" pointer-events="fill" data-profile-edge="circle-sash" data-edge-side="0" data-edge-index="${index}" tabindex="0" role="button" aria-label="Створка" style="cursor:pointer"/>`;
     }
     if (outerSash?.path && innerSash?.path && opening[2]>opening[0] && opening[3]>opening[1]) {
       sashMarkup += `<path d="${outerSash.path} ${innerSash.path}" fill="${profileColor}" fill-rule="evenodd" stroke="${material.edge}" stroke-width=".8" />`;
@@ -243,12 +245,13 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
     const lineX = rootVerticalX[index];
     const active = isSelectedImpost("root", "vertical", item.id);
     const segment=impostSegment(item,"vertical",{x:0,y:0,width:state.width,height:state.height},poly||rectPoints([0,0,state.width,state.height]),true);
-    const ribbon=poly ? polyPath(impostRibbon(item,"vertical",{x:0,y:0,width:state.width,height:state.height},polygonOpening,tech.impost,true,poly),X,Y) : "";
+    const ribbon=poly ? polyPath(impostRibbon(item,"vertical",{x:0,y:0,width:state.width,height:state.height},polygonOpening,barFace(item),true,poly),X,Y) : "";
     let ax=X(segment[0][0]), ay=Y(segment[0][1]), bx=X(segment[1][0]), by=Y(segment[1][1]);
     // Extend through the outer polygon; innerClip trims the visible face exactly at the frame's inner edge.
     const skewRange=poly && outlineRange(poly,0,item.position);
-    const lineTop=skewRange ? Y(skewRange[0])-impostFace : state.shape==="arch" && state.frameArcs?.[0] ? Y(frameCurve(0,0)?.(item.position) ?? 0) : box.y-2;
-    const lineBottom=skewRange ? Y(skewRange[1])+impostFace : state.shape==="arch" && state.frameArcs?.[2] ? Y(frameCurve(2,0)?.(item.position) ?? state.height) : box.y+box.height+2;
+    const verticalFace=barFace(item)*canvasScale;
+    const lineTop=skewRange ? Y(skewRange[0])-verticalFace : state.shape==="arch" && state.frameArcs?.[0] ? Y(frameCurve(0,0)?.(item.position) ?? 0) : box.y-2;
+    const lineBottom=skewRange ? Y(skewRange[1])+verticalFace : state.shape==="arch" && state.frameArcs?.[2] ? Y(frameCurve(2,0)?.(item.position) ?? state.height) : box.y+box.height+2;
     if(!poly){ax=bx=lineX;ay=lineTop;by=lineBottom;}
     const vEnds=item.endOffsets||[0,0];
     if(vEnds.some(Boolean))[0,1].forEach(end=>{
@@ -258,7 +261,7 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
     else addDimension(false, x, lineX, 0, item.position, item);
     if(active && poly) rootEndpointMarkup += segment.map((point,end)=>`<circle class="impost-endpoint" style="cursor:pointer" data-endpoint="${end}" data-scope="root" data-orientation="vertical" data-id="${item.id}" cx="${X(point[0])}" cy="${Y(point[1])}" r="5" fill="#fff" stroke="#ef8b25" stroke-width="2.5" role="button" tabindex="0" aria-label="Изменить ${end?'второй':'первый'} край импоста"/>`).join("");
     rootImpostsMarkup += `
-      ${ribbon ? `<path class="impost-visible${active ? " selected" : ""}" d="${ribbon}" fill="${active ? "#ef8b25" : profileColor}" stroke="${material.edge}" stroke-width=".8" />` : impostBandPath(ax, ay, bx, by, impostFace, active)}
+      ${ribbon ? `<path class="impost-visible${active ? " selected" : ""}" d="${ribbon}" fill="${active ? "#ef8b25" : profileColor}" stroke="${material.edge}" stroke-width=".8" />` : impostBandPath(ax, ay, bx, by, verticalFace, active)}
       <rect class="impost-grip${active ? " selected" : ""}" x="${lineX - 8}" y="${rootGripCenter(0,item.position,box.y+box.height/2) - 18}" width="16" height="36" rx="8" />
       <line class="impost-hit" data-scope="root" data-orientation="vertical" data-id="${item.id}" x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" tabindex="0" role="slider" aria-label="Вертикальный импост рамы" aria-valuemin="0" aria-valuemax="${state.width}" aria-valuenow="${Math.round(item.position)}" />
       `;
@@ -267,11 +270,12 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
     const lineY = rootHorizontalY[index];
     const active = isSelectedImpost("root", "horizontal", item.id);
     const segment=impostSegment(item,"horizontal",{x:0,y:0,width:state.width,height:state.height},poly||rectPoints([0,0,state.width,state.height]),true);
-    const ribbon=poly ? polyPath(impostRibbon(item,"horizontal",{x:0,y:0,width:state.width,height:state.height},polygonOpening,tech.impost,true,poly),X,Y) : "";
+    const ribbon=poly ? polyPath(impostRibbon(item,"horizontal",{x:0,y:0,width:state.width,height:state.height},polygonOpening,barFace(item),true,poly),X,Y) : "";
     let ax=X(segment[0][0]), ay=Y(segment[0][1]), bx=X(segment[1][0]), by=Y(segment[1][1]);
     const skewRange=poly && outlineRange(poly,1,item.position);
-    const lineLeft=skewRange ? X(skewRange[0])-impostFace : state.shape==="arch" && state.frameArcs?.[3] ? X(frameCurve(3,0)?.(item.position) ?? 0) : box.x-2;
-    const lineRight=skewRange ? X(skewRange[1])+impostFace : state.shape==="arch" && state.frameArcs?.[1] ? X(frameCurve(1,0)?.(item.position) ?? state.width) : box.x+box.width+2;
+    const horizontalFace=barFace(item)*canvasScale;
+    const lineLeft=skewRange ? X(skewRange[0])-horizontalFace : state.shape==="arch" && state.frameArcs?.[3] ? X(frameCurve(3,0)?.(item.position) ?? 0) : box.x-2;
+    const lineRight=skewRange ? X(skewRange[1])+horizontalFace : state.shape==="arch" && state.frameArcs?.[1] ? X(frameCurve(1,0)?.(item.position) ?? state.width) : box.x+box.width+2;
     if(!poly){ay=by=lineY;ax=lineLeft;bx=lineRight;}
     const hEnds=item.endOffsets||[0,0];
     if(hEnds.some(Boolean))[0,1].forEach(end=>{
@@ -281,7 +285,7 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
     else addDimension(true, y, lineY, 0, item.position, item);
     if(active && poly) rootEndpointMarkup += segment.map((point,end)=>`<circle class="impost-endpoint" style="cursor:pointer" data-endpoint="${end}" data-scope="root" data-orientation="horizontal" data-id="${item.id}" cx="${X(point[0])}" cy="${Y(point[1])}" r="5" fill="#fff" stroke="#ef8b25" stroke-width="2.5" role="button" tabindex="0" aria-label="Изменить ${end?'второй':'первый'} край импоста"/>`).join("");
     rootImpostsMarkup += `
-      ${ribbon ? `<path class="impost-visible${active ? " selected" : ""}" d="${ribbon}" fill="${active ? "#ef8b25" : profileColor}" stroke="${material.edge}" stroke-width=".8" />` : impostBandPath(ax, ay, bx, by, impostFace, active)}
+      ${ribbon ? `<path class="impost-visible${active ? " selected" : ""}" d="${ribbon}" fill="${active ? "#ef8b25" : profileColor}" stroke="${material.edge}" stroke-width=".8" />` : impostBandPath(ax, ay, bx, by, horizontalFace, active)}
       <rect class="impost-grip${active ? " selected" : ""}" x="${rootGripCenter(1,item.position,box.x+box.width/2) - 18}" y="${lineY - 8}" width="36" height="16" rx="8" />
       <line class="impost-hit horizontal" data-scope="root" data-orientation="horizontal" data-id="${item.id}" x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" tabindex="0" role="slider" aria-label="Горизонтальный импост рамы" aria-valuemin="0" aria-valuemax="${state.height}" aria-valuenow="${Math.round(item.position)}" />
       `;
@@ -365,6 +369,24 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
       }
     }
   }
+  if (state.shape !== "skew") {
+    constructionModel().members.filter((member) => member.role === "frame" && (member.kind === "arc" || member.kind === "ring")).forEach((member) => {
+      let px = state.width / 2;
+      let py = -18;
+      if (member.kind !== "ring") {
+        const chain = frameSideChain(member.side);
+        if (!chain?.length) return;
+        const mid = chain[Math.floor((chain.length - 1) / 2)];
+        const dx = mid[0] - state.width / 2;
+        const dy = mid[1] - state.height / 2;
+        const span = Math.hypot(dx, dy) || 1;
+        px = mid[0] + dx / span * 22;
+        py = mid[1] + dy / span * 22;
+      }
+      shoulderMarkup += `<text class="dimension-text" x="${X(px)}" y="${Y(py)}" text-anchor="middle" font-size="11" fill="#20384c" paint-order="stroke" stroke="#f5f8fb" stroke-width="4">${dimNum(member.lengthMm)}</text>`;
+      extraView.push([X(px), Y(py)]);
+    });
+  }
   const axisGroups = [...dimensionGroups.values()];
   const axisEntries = axisGroups.map((group, i) => {
     const first = group[0], {vertical, end} = first;
@@ -400,6 +422,59 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
   const zoom = thumbnail ? 1 : canvasZoom;
   const viewW = fitWidth / zoom;
   const viewH = fitHeight / zoom;
+  const offsetChain = (points, width) => {
+    if (!points || points.length < 2 || !(width > 0)) return [];
+    const center = [state.width / 2, state.height / 2];
+    return points.map((point, index) => {
+      const previous = points[Math.max(0, index - 1)];
+      const next = points[Math.min(points.length - 1, index + 1)];
+      const dx = next[0] - previous[0];
+      const dy = next[1] - previous[1];
+      const length = Math.hypot(dx, dy) || 1;
+      let nx = -dy / length;
+      let ny = dx / length;
+      if ((point[0] - center[0]) * nx + (point[1] - center[1]) * ny < 0) { nx = -nx; ny = -ny; }
+      return [point[0] + nx * width, point[1] + ny * width];
+    });
+  };
+  let addonMarkup = "";
+  const stacks = {};
+  (state.addons || []).forEach((addon) => {
+    if (addon.role !== "extender" && addon.role !== "connector" && addon.role !== "corner") return;
+    const dash = addon.role === "connector" ? 'stroke-dasharray="4 3"' : "";
+    if (addon.role === "corner") {
+      const corners = state.shape === "skew" ? (polygonPoints() || rectPoints([0, 0, state.width, state.height])) : [[0, 0], [state.width, 0], [state.width, state.height], [0, state.height]];
+      const point = corners[addon.vertex];
+      if (!point) return;
+      const size = pieceWidth("corner");
+      let nx = point[0] - state.width / 2;
+      let ny = point[1] - state.height / 2;
+      const span = Math.hypot(nx, ny) || 1;
+      nx /= span; ny /= span;
+      addonMarkup += `<path d="${polyPath([point, [point[0] - ny * size, point[1] + nx * size], [point[0] + nx * size - ny * size, point[1] + ny * size + nx * size], [point[0] + nx * size, point[1] + ny * size]], X, Y)}" fill="${profileColor}" stroke="${material.edge}" stroke-width=".8"/>`;
+      return;
+    }
+    if (state.shape === "circle" && addon.side === "ring") {
+      const width = pieceWidth(addon.role);
+      const base = stacks.ring || 0;
+      const inner = state.width / 2 + base;
+      const outer = inner + width;
+      stacks.ring = outer - state.width / 2;
+      const cx = X(state.width / 2);
+      const cy = Y(state.height / 2);
+      addonMarkup += `<path d="M ${cx - outer * sx} ${cy} A ${outer * sx} ${outer * sy} 0 1 1 ${cx + outer * sx} ${cy} A ${outer * sx} ${outer * sy} 0 1 1 ${cx - outer * sx} ${cy} M ${cx - inner * sx} ${cy} A ${inner * sx} ${inner * sy} 0 1 0 ${cx + inner * sx} ${cy} A ${inner * sx} ${inner * sy} 0 1 0 ${cx - inner * sx} ${cy} Z" fill="${profileColor}" fill-rule="evenodd" stroke="${material.edge}" stroke-width=".8" ${dash}/>`;
+      return;
+    }
+    const chain = frameSideChain(addon.side);
+    if (!chain) return;
+    const width = pieceWidth(addon.role);
+    const base = stacks[addon.side] || 0;
+    const inner = base ? offsetChain(chain, base) : chain;
+    const outer = offsetChain(chain, base + width);
+    stacks[addon.side] = base + width;
+    if (outer.length < 2 || inner.length < 2) return;
+    addonMarkup += `<path d="${polyPath([...inner, ...outer.slice().reverse()], X, Y)}" fill="${profileColor}" stroke="${material.edge}" stroke-width=".8" ${dash}/>`;
+  });
   svg.setAttribute("viewBox", `${fitCenterX - viewW / 2} ${fitCenterY - viewH / 2} ${viewW} ${viewH}`);
   svg.innerHTML = `
     <defs>
@@ -417,6 +492,7 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
         <path d="M10 5 L0 1.5 L0 8.5 Z" fill="#8996a8" stroke="none" />
       </marker>
     </defs>
+    ${addonMarkup}
     <g filter="url(#windowShadow)" fill="${profileColor}" stroke="${material.edge}" stroke-width="2.2">${paths.outer}</g>
     <g fill="#bfe3ef" stroke="${material.edge}" stroke-width="1.6">${paths.inner}</g>
     <g clip-path="url(#innerClip)">${panesMarkup}</g>
@@ -429,8 +505,8 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
     <g>${profileTargets}${vertices}</g>
     <g class="dimensions">${shoulderMarkup}</g>
     <g class="dimensions">${axisMarkup}
-      ${gostDimension(true,bx0,bx1,by1,bottomDimensionY,`${state.shape === "circle" ? "Ø " : ""}${dimNum(actualWidth)}`,'data-window-dimension="width" tabindex="0" role="button" aria-label="Изменить габаритную ширину"')}
-      ${gostDimension(false,by0,by1,bx0,leftDimensionX,dimNum(actualHeight),`data-window-dimension="${state.shape === "circle" ? "width" : "height"}" tabindex="0" role="button" aria-label="Изменить габаритную высоту"`)}
+      ${gostDimension(true,bx0,bx1,by1,bottomDimensionY,`${state.shape === "circle" ? "Ø " : ""}${dimNum(actualWidth)}`,'data-window-dimension="width" tabindex="0" role="button" aria-label="Изменить габаритную ширину. Верхняя и нижняя поперечины"')}
+      ${gostDimension(false,by0,by1,bx0,leftDimensionX,dimNum(actualHeight),`data-window-dimension="${state.shape === "circle" ? "width" : "height"}" tabindex="0" role="button" aria-label="${state.shape === "circle" ? "Диаметр равен ширине" : "Изменить габаритную высоту. Левая и правая стойки"}"`)}
     </g>`;
 
   if (thumbnail) {
@@ -461,6 +537,7 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
         multiSections.clear();
         state.selectedPane = index;
       }
+      activeProfileEdge = null;
       sharedAxis = null;
       state.selectedImpost = null;
       renderAll();
