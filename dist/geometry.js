@@ -132,6 +132,10 @@ function ensurePanes() {
   });
   if (state.selectedPane !== null) state.selectedPane = clamp(state.selectedPane, 0, Math.max(sectionPanes().length - 1, 0));
   if (state.selectedImpost?.scope === "pane" && !sectionPanes()[state.selectedImpost.paneIndex]?.innerImposts.some(item => item.id === state.selectedImpost.id)) state.selectedImpost = null;
+  const clampBar=(item,orientation,limits)=>item.position=Math.min(limits.max,Math.max(limits.min,item.position));
+  state.vImposts.forEach((item)=>clampBar(item,"vertical",rootImpostLimits(item,"vertical")));
+  state.hImposts.forEach((item)=>clampBar(item,"horizontal",rootImpostLimits(item,"horizontal")));
+  sectionPanes().forEach((pane)=>(pane.innerImposts||[]).forEach((item)=>clampBar(item,item.orientation,nestedImpostLimits(item,pane))));
   if (!state.selectedImpost) while (sectionPanes()[state.selectedPane]?.split) state.selectedPane += 1;
 }
 
@@ -148,14 +152,41 @@ function getSelectedImpostRecord() {
   return item ? { selected, item, collection: pane.innerImposts, pane } : null;
 }
 
+const MIN_SASH_MM = 350;
+function sashOuterSize(entry, tech = getTechnology()) {
+  const owns = entry.pane.split ? entry.pane.sashFill && entry.pane.opening !== "fixed" : entry.pane.opening !== "fixed";
+  if (!owns) return null;
+  const shell = entry.pane.split ? { ...entry, pane: { ...entry.pane, innerImposts: [], split: null } } : entry;
+  const box = glassGeometry(shell, tech).sashBox;
+  if (!box || !(box[2] > box[0]) || !(box[3] > box[1])) return null;
+  return { width: box[2] - box[0], height: box[3] - box[1] };
+}
+function clampImpostToSashes(position, limits, orientation, match) {
+  const vertical = orientation === "vertical";
+  let { min, max } = limits;
+  sectionLayout().forEach((entry) => {
+    if (match && !match(entry)) return;
+    const size = sashOuterSize(entry);
+    if (!size) return;
+    const span = vertical ? size.width : size.height;
+    const room = span - MIN_SASH_MM;
+    const start = vertical ? entry.rect.x : entry.rect.y;
+    const end = start + (vertical ? entry.rect.width : entry.rect.height);
+    if (Math.abs(end - position) < 1.5) min = Math.max(min, position - room);
+    if (Math.abs(start - position) < 1.5) max = Math.min(max, position + room);
+  });
+  if (!(min <= max)) return { min: position, max: position };
+  return { min, max };
+}
 function rootImpostLimits(item, orientation) {
   const collection = orientation === "vertical" ? state.vImposts : state.hImposts;
   const index = collection.findIndex((candidate) => candidate.id === item.id);
   const {min,max,gap}=profileImpostStops(orientation,collection.length);
-  return {
+  const stops = {
     min: index <= 0 ? min : collection[index - 1].position + gap,
     max: index >= collection.length - 1 ? max : collection[index + 1].position - gap,
   };
+  return clampImpostToSashes(item.position, stops, orientation);
 }
 
 function nestedImpostLimits(item, pane) {
@@ -172,7 +203,13 @@ function nestedImpostLimits(item, pane) {
     const half=barFace(item,tech)/2, gap=Math.max(barFace(item,tech), tech.impost)/size;
     const min=index<=0?(box[axis]-origin+half)/size:siblings[index-1].position+gap;
     const max=index>=siblings.length-1?(box[axis+2]-origin-half)/size:siblings[index+1].position-gap;
-    if(min<=max)return {min,max};
+    if(min<=max){
+      const vertical=item.orientation==="vertical";
+      const pos=origin+item.position*size;
+      const limited=clampImpostToSashes(pos,{min:origin+min*size,max:origin+max*size},item.orientation,
+        (candidate)=>(candidate.slantParents||[]).some((parent)=>parent.item===item));
+      return {min:(limited.min-origin)/size,max:(limited.max-origin)/size};
+    }
   }
   const gap = Math.min(0.16, 0.42 / (siblings.length + 1));
   return {
