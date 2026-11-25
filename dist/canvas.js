@@ -94,8 +94,7 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
       const spans = poly ? null : nestedImpostSpans(entry, item, tech);
       const visible = ribbon ? "" : (spans || []).map(span => {
         const x1=X(span.x1), y1=Y(span.y1), x2=X(span.x2), y2=Y(span.y2);
-        return `<line class="impost-visible inner-impost-visible${active ? " selected" : ""}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${profileColor}" stroke-width="${paneImpostFace}" />
-          <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${material.edge}" stroke-width="1.2" opacity=".55" pointer-events="none" />`;
+        return `<line class="impost-visible inner-impost-visible${active ? " selected" : ""}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${profileColor}" stroke-width="${paneImpostFace}" />`;
       }).join("");
       const hit = spans?.length
         ? {x1:X(spans[0].x1), y1:Y(spans[0].y1), x2:X(spans.at(-1).x2), y2:Y(spans.at(-1).y2)}
@@ -253,7 +252,6 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
     if(active && poly) rootEndpointMarkup += segment.map((point,end)=>`<circle class="impost-endpoint" style="cursor:pointer" data-endpoint="${end}" data-scope="root" data-orientation="vertical" data-id="${item.id}" cx="${X(point[0])}" cy="${Y(point[1])}" r="5" fill="#fff" stroke="#ef8b25" stroke-width="2.5" role="button" tabindex="0" aria-label="Изменить ${end?'второй':'первый'} край импоста"/>`).join("");
     rootImpostsMarkup += `
       ${ribbon ? `<path class="impost-visible${active ? " selected" : ""}" d="${ribbon}" fill="${active ? "#ef8b25" : profileColor}" stroke="${material.edge}" stroke-width="1" />` : `<line class="impost-visible${active ? " selected" : ""}" x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${profileColor}" stroke-width="${impostFace}" />`}
-      <line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${material.edge}" stroke-width="1.4" opacity=".55" pointer-events="none" />
       <rect class="impost-grip${active ? " selected" : ""}" x="${lineX - 8}" y="${rootGripCenter(0,item.position,box.y+box.height/2) - 18}" width="16" height="36" rx="8" />
       <line class="impost-hit" data-scope="root" data-orientation="vertical" data-id="${item.id}" x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" tabindex="0" role="slider" aria-label="Вертикальный импост рамы" aria-valuemin="0" aria-valuemax="${state.width}" aria-valuenow="${Math.round(item.position)}" />
       `;
@@ -277,7 +275,6 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
     if(active && poly) rootEndpointMarkup += segment.map((point,end)=>`<circle class="impost-endpoint" style="cursor:pointer" data-endpoint="${end}" data-scope="root" data-orientation="horizontal" data-id="${item.id}" cx="${X(point[0])}" cy="${Y(point[1])}" r="5" fill="#fff" stroke="#ef8b25" stroke-width="2.5" role="button" tabindex="0" aria-label="Изменить ${end?'второй':'первый'} край импоста"/>`).join("");
     rootImpostsMarkup += `
       ${ribbon ? `<path class="impost-visible${active ? " selected" : ""}" d="${ribbon}" fill="${active ? "#ef8b25" : profileColor}" stroke="${material.edge}" stroke-width="1" />` : `<line class="impost-visible${active ? " selected" : ""}" x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${profileColor}" stroke-width="${impostFace}" />`}
-      <line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${material.edge}" stroke-width="1.4" opacity=".55" pointer-events="none" />
       <rect class="impost-grip${active ? " selected" : ""}" x="${rootGripCenter(1,item.position,box.x+box.width/2) - 18}" y="${lineY - 8}" width="36" height="16" rx="8" />
       <line class="impost-hit horizontal" data-scope="root" data-orientation="horizontal" data-id="${item.id}" x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" tabindex="0" role="slider" aria-label="Горизонтальный импост рамы" aria-valuemin="0" aria-valuemax="${state.height}" aria-valuenow="${Math.round(item.position)}" />
       `;
@@ -374,10 +371,10 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
     <g filter="url(#windowShadow)" fill="${profileColor}" stroke="${material.edge}" stroke-width="2.2">${paths.outer}</g>
     <g fill="#bfe3ef" stroke="${material.edge}" stroke-width="1.6">${paths.inner}</g>
     <g clip-path="url(#innerClip)">${panesMarkup}</g>
-    <g clip-path="url(#glassCutClip)" pointer-events="none">${sashMarkup}${glassMarkup}</g>
     <g clip-path="url(#innerClip)">${localImpostsMarkup}</g>
-    <g clip-path="url(#glassCutClip)" pointer-events="none">${openingMarkup}</g>
     <g clip-path="url(#innerClip)">${rootImpostsMarkup}</g>
+    <g clip-path="url(#glassCutClip)" pointer-events="none">${sashMarkup}${glassMarkup}</g>
+    <g clip-path="url(#glassCutClip)" pointer-events="none">${openingMarkup}</g>
     <g clip-path="url(#glassCutClip)" pointer-events="none">${selectionMarkup}</g>
     <g>${rootEndpointMarkup}${nestedEndpointMarkup}</g>
     <g>${profileTargets}${vertices}</g>
