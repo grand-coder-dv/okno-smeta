@@ -172,7 +172,6 @@ function polygonGlass(poly, geometry, f, tech, entry) {
     : tech.impost/2-tech.bite["импост"];
   let result=clipSlantedSections(polygonClip(rectPoints([l,t,r,b]),poly,depth),entry,rootGlassInset,false);
   const frame=sectionContour(entry,poly,tech.frame);
-  const faceInset=tech.impost/2-tech.bite["импост"];
   const cuts=[
     [adjacent[0],"vertical",-1,entry.rect,false],
     [adjacent[1],"vertical",1,entry.rect,false],
@@ -185,6 +184,7 @@ function polygonGlass(poly, geometry, f, tech, entry) {
     const [a,b]=impostSegment(item,orientation,rect,frame||poly);
     const length=Math.hypot(b[0]-a[0],b[1]-a[1]);
     if(length<1e-7)continue;
+    const faceInset=barFace(item)/2-tech.bite["импост"];
     result=clipByImpostLine(result,a,b,sign,faceInset);
   }
   return result;
@@ -536,17 +536,76 @@ function arcRise(chord,radius) {
   const R=Math.max(half,radius);
   return half*half/(R+Math.sqrt(Math.max(0,R*R-half*half)));
 }
+function pieceWidth(role) {
+  const tech = getTechnology();
+  if (role === "extender") return tech.extender;
+  if (role === "connector") return tech.connector;
+  if (role === "corner") return tech.corner;
+  if (role === "shtulp") return tech.shtulp;
+  return 0;
+}
+function sideOutset(side, config = state) {
+  return (config.addons || []).reduce((sum, addon) => (
+    (addon.role === "extender" || addon.role === "connector") && addon.side === side ? sum + pieceWidth(addon.role) : sum
+  ), 0);
+}
+function cornerExtra(vertex, config = state) {
+  return (config.addons || []).some((addon) => addon.role === "corner" && addon.vertex === vertex) ? pieceWidth("corner") : 0;
+}
+function ringOutset(config = state) {
+  return (config.addons || []).reduce((sum, addon) => (
+    (addon.role === "extender" || addon.role === "connector") && addon.side === "ring" ? sum + pieceWidth(addon.role) : sum
+  ), 0);
+}
+function frameSideChain(side) {
+  if (state.shape === "circle" || side == null || side === "ring") return null;
+  const polygon = state.shape === "skew" ? (polygonPoints() || rectPoints([0, 0, state.width, state.height])) : null;
+  if (polygon) {
+    const start = polygon[side];
+    const end = polygon[(side + 1) % polygon.length];
+    return start && end ? [start, end] : null;
+  }
+  const corners = [[0, 0], [state.width, 0], [state.width, state.height], [0, state.height]];
+  const start = corners[side];
+  const end = corners[(side + 1) % 4];
+  if (!start || !end) return null;
+  const arc = state.shape === "arch" && state.frameArcs?.[side];
+  if (!arc) return [start, end];
+  const chord = Math.hypot(end[0] - start[0], end[1] - start[1]);
+  return arcBoundaryPoints(start, end, Math.max(chord / 2, arc.radius), arc.direction === "in" ? 0 : 1);
+}
 function windowOuterBounds(config = state) {
   const mode=inferredShapeMode(config);
-  if(mode === "skew" && config.framePolygon?.length) {
-    return polyBounds(config.framePolygon.map(([x,y])=>[x*config.width,y*config.height]));
+  if (mode === "circle") {
+    const extra = ringOutset(config);
+    return [-extra, -extra, config.width + extra, config.height + extra];
   }
   const rise=(side,span)=> {
     const arc=mode === "arch" && config.frameArcs?.[side];
     return arc && arc.direction !== "in" ? arcRise(span,arc.radius) : 0;
   };
-  return [-rise(3,config.height),-rise(0,config.width),
-    config.width+rise(1,config.height),config.height+rise(2,config.width)];
+  if(mode === "skew" && config.framePolygon?.length) {
+    const points=config.framePolygon.map(([x,y])=>[x*config.width,y*config.height]);
+    const grown=points.slice();
+    points.forEach((point,index)=>{
+      const next=points[(index+1)%points.length];
+      const width=Math.max(sideOutset(index,config),cornerExtra(index,config),cornerExtra((index+1)%points.length,config));
+      if(width<=0)return;
+      const dx=next[0]-point[0], dy=next[1]-point[1], length=Math.hypot(dx,dy)||1;
+      let nx=-dy/length, ny=dx/length;
+      const cx=points.reduce((sum,item)=>sum+item[0],0)/points.length;
+      const cy=points.reduce((sum,item)=>sum+item[1],0)/points.length;
+      const mid=[(point[0]+next[0])/2,(point[1]+next[1])/2];
+      if((mid[0]-cx)*nx+(mid[1]-cy)*ny<0){nx=-nx;ny=-ny;}
+      grown.push([point[0]+nx*width,point[1]+ny*width],[next[0]+nx*width,next[1]+ny*width]);
+    });
+    return polyBounds(grown);
+  }
+  const left=rise(3,config.height)+Math.max(sideOutset(3,config),cornerExtra(0,config),cornerExtra(3,config));
+  const top=rise(0,config.width)+Math.max(sideOutset(0,config),cornerExtra(0,config),cornerExtra(1,config));
+  const right=rise(1,config.height)+Math.max(sideOutset(1,config),cornerExtra(1,config),cornerExtra(2,config));
+  const bottom=rise(2,config.width)+Math.max(sideOutset(2,config),cornerExtra(2,config),cornerExtra(3,config));
+  return [-left,-top,config.width+right,config.height+bottom];
 }
 function overallSize(config = state) {
   const [l,t,r,b]=windowOuterBounds(config);
