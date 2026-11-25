@@ -5,6 +5,7 @@ let catalogSequence = 0;
 let impostSequence = 10;
 let canvasLayout = null;
 let dragState = null;
+let canvasZoom = 1;
 
 function createDefaultState() {
   return {
