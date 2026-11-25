@@ -109,12 +109,13 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
       const lineX = px + item.position * paneWidth;
       const lineY = py + item.position * paneHeight;
       const physicalPosition = item.position * (isVertical ? physical.width : physical.height);
-      const segment=poly ? impostSegment(item,item.orientation,physical,sectionPolygon) : null;
+      const reach=!poly && (state.shape==="circle" || customProfileArcs()) ? impostHostBoundary(entry,tech,false) : null;
+      const segment=(poly || reach) ? impostSegment(item,item.orientation,physical,poly ? sectionPolygon : reach) : null;
       const endA=segment ? [X(segment[0][0]),Y(segment[0][1])] : null;
       const endB=segment ? [X(segment[1][0]),Y(segment[1][1])] : null;
-      const ribbon=segment && poly ? polyPath(impostRibbon(item,item.orientation,physical,sectionPolygon,barFace(item),false,sectionPolygon),X,Y) : "";
+      const ribbon=segment ? polyPath(impostRibbon(item,item.orientation,physical,poly ? sectionPolygon : reach,barFace(item),false,poly ? sectionPolygon : reach),X,Y) : "";
       if(active && segment)nestedEndpointMarkup += segment.map((point,end)=>`<circle class="impost-endpoint" style="cursor:pointer" data-endpoint="${end}" data-scope="pane" data-pane="${index}" data-orientation="${item.orientation}" data-id="${item.id}" cx="${X(point[0])}" cy="${Y(point[1])}" r="5" fill="#fff" stroke="#ef8b25" stroke-width="2.5" role="button" tabindex="0" aria-label="Изменить ${end?'второй':'первый'} край импоста"/>`).join("");
-      const spans = poly ? null : nestedImpostSpans(entry, item, tech);
+      const spans = poly || reach ? null : nestedImpostSpans(entry, item, tech);
       const visible = ribbon ? "" : (spans || []).map(span => {
         const x1=X(span.x1), y1=Y(span.y1), x2=X(span.x2), y2=Y(span.y2);
         return impostBandPath(x1, y1, x2, y2, barFace(item) * canvasScale, active, " inner-impost-visible");
