@@ -3,32 +3,18 @@ function hardwareFitsSize(set, width, height) {
   return width >= set.minWidth && width <= set.maxWidth && height >= set.minHeight && height <= set.maxHeight;
 }
 
-function sashGlassSizes(sashPane) {
+function sashProfileSize(sashPane) {
   const tech = getTechnology();
-  const leaves = [];
-  sectionLayout().forEach((entry) => {
-    if (entry.pane.split) return;
-    if (entry.pane === sashPane || entry.sashOwner?.pane === sashPane) leaves.push(entry);
-  });
-  const own = leaves.filter((entry) => entry.pane === sashPane);
-  const sizes = [];
-  (own.length ? own : leaves).forEach((entry) => {
-    const geo = glassGeometry(entry, tech);
-    geo.fields.forEach((field) => {
-      if (!(field.clearW > 1e-6 && field.clearH > 1e-6 && field.w > 0 && field.h > 0)) return;
-      let width = field.w;
-      let height = field.h;
-      if (state.shape === "circle" || state.shape === "skew" || hasSlantedImposts() || customProfileArcs()) {
-        const fitted = fittedGlass(entry, geo, field, tech);
-        if (fitted?.w > 0 && fitted?.h > 0) {
-          width = fitted.w;
-          height = fitted.h;
-        }
-      }
-      sizes.push({ width: Math.round(width), height: Math.round(height) });
-    });
-  });
-  return sizes;
+  const entry = sectionLayout().find((item) => item.pane === sashPane);
+  if (!entry) return null;
+  const shell = sashPane.split ? { ...entry, pane: { ...sashPane, innerImposts: [], split: null } } : entry;
+  const box = glassGeometry(shell, tech).sashBox;
+  if (!box || box[2] <= box[0] || box[3] <= box[1]) return null;
+  if (state.shape === "circle") {
+    const diameter = Math.max(0, state.width - 2 * (tech.frame - SASH_LAP));
+    return { width: Math.round(diameter), height: Math.round(diameter) };
+  }
+  return { width: Math.round(box[2] - box[0]), height: Math.round(box[3] - box[1]) };
 }
 
 function hardwareRangeProblems() {
@@ -40,7 +26,8 @@ function hardwareRangeProblems() {
     const pane = entry.sashOwner?.pane || entry.pane;
     if (!pane || seen.has(pane) || pane.opening === "fixed" || (pane.split && !pane.sashFill)) return;
     seen.add(pane);
-    const outside = sashGlassSizes(pane).filter((size) => !hardwareFitsSize(set, size.width, size.height));
+    const size = sashProfileSize(pane);
+    const outside = size && !hardwareFitsSize(set, size.width, size.height) ? [size] : [];
     const leafIndex = sectionLayout().findIndex((item) => !item.pane.split && (item.pane === pane || item.sashOwner?.pane === pane));
     if (outside.length) problems.push(`створка ${sectionNumber(leafIndex >= 0 ? leafIndex : index)} (${outside.map((size) => `${size.width}×${size.height}`).join(", ")} мм)`);
   });
@@ -171,19 +158,22 @@ function buildSpecification() {
     return groups;
   }, {});
   Object.entries(openingGroups).forEach(([openingKey, count]) => {
-    const outside = hardware
-      ? sectionPanes().filter((pane) => !(pane.split && !pane.sashFill) && pane.opening === openingKey
-        && sashGlassSizes(pane).some((size) => !hardwareFitsSize(hardware, size.width, size.height))).length
-      : 0;
+    const sashes = sectionPanes().filter((pane) => !(pane.split && !pane.sashFill) && pane.opening === openingKey);
+    const outside = hardware ? sashes.filter((pane) => {
+      const size = sashProfileSize(pane);
+      return size && !hardwareFitsSize(hardware, size.width, size.height);
+    }).length : 0;
+    const measured = sashes.map((pane) => sashProfileSize(pane)).filter(Boolean);
     addLine({
       name: hardware
         ? `Фурнитура ${hardware.name}: ${OPENINGS[openingKey].name.toLowerCase()}`
         : `Фурнитура: ${OPENINGS[openingKey].name.toLowerCase()}`,
       note: hardware
-        ? `Комплект ${hardware.name}; стеклопакет створки ${hardware.minWidth}–${hardware.maxWidth} × ${hardware.minHeight}–${hardware.maxHeight} мм`
+        ? `Комплект ${hardware.name}; створка ${hardware.minWidth}–${hardware.maxWidth} × ${hardware.minHeight}–${hardware.maxHeight} мм`
         : "Комплект петель, запоров и ответных планок",
       characteristic: [
-        `Комплект на створку; ширина профиля ${tech.sash} мм`,
+        measured.length ? `Створка ${measured.map((size) => `${size.width}×${size.height}`).join(", ")} мм` : "Комплект на створку",
+        `ширина профиля ${tech.sash} мм`,
         outside ? `вне диапазона: ${outside}` : "",
       ].filter(Boolean).join("; "),
       qty: count * quantity,
