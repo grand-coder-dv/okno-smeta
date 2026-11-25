@@ -259,7 +259,7 @@
 
           <div class="canvas-note">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM12 10v6M12 7h.01" /></svg>
-            Перетаскивайте импосты мышью. Нажмите на импост для точного размера или на проём для настройки створки.
+            Перетаскивайте импосты мышью. Нажмите профиль, чтобы увидеть ширину и длину. Форма включает углы, дуги или окружность.
           </div>
 
           <div class="pane-inspector" id="paneInspector">
@@ -329,9 +329,32 @@
               <p id="impostEndSize0"></p>
               <p id="impostEndSize1"></p>
             </div>
+            <p id="impostProfileFacts" class="impost-end-sizes"></p>
             <div class="impost-actions">
               <button class="button secondary" id="centerImpost" type="button">По центру</button>
+              <button class="button secondary" id="toggleShtulp" type="button">Сделать штульпом</button>
               <button class="button danger" id="removeImpost" type="button">Удалить импост</button>
+            </div>
+          </div>
+
+          <div class="profile-inspector" id="profileInspector" hidden>
+            <div class="selected-pane-label">
+              <span id="profileRole">Рама</span>
+              <strong id="profileKind">Поперечина</strong>
+            </div>
+            <dl class="profile-facts">
+              <div><dt>Ширина</dt><dd id="profileWidth">—</dd></div>
+              <div><dt>Длина</dt><dd id="profileLength">—</dd></div>
+              <div><dt>Стыки</dt><dd id="profileJoints">—</dd></div>
+              <div><dt>Форма стороны</dt><dd id="profileShape">Прямая</dd></div>
+            </dl>
+            <p id="profileHint" class="hardware-range-note"></p>
+            <div class="profile-actions">
+              <button class="button secondary" id="profileEditGeometry" type="button" hidden>Изменить геометрию</button>
+              <button class="button secondary" id="profileAddExtender" type="button" hidden>Расширитель</button>
+              <button class="button secondary" id="profileAddConnector" type="button" hidden>Соединитель</button>
+              <button class="button secondary" id="profileAddCorner" type="button" hidden>Угловой профиль</button>
+              <button class="button secondary" id="profileAddShtulp" type="button" hidden>Штульп</button>
             </div>
           </div>
         </section>
