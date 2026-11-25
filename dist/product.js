@@ -137,6 +137,10 @@ function getTechnology() {
     frame: clamp(profile.frameWidth ?? fallback.frame, 20, 250),
     sash: clamp(profile.sashWidth ?? fallback.sash, 20, 250),
     impost: clamp(profile.impostWidth ?? fallback.impost, 20, 250),
+    shtulp: clamp(profile.shtulpWidth ?? profile.sashWidth ?? fallback.sash, 20, 250),
+    extender: clamp(profile.extenderWidth ?? 40, 10, 250),
+    connector: clamp(profile.connectorWidth ?? 20, 10, 250),
+    corner: clamp(profile.cornerWidth ?? profile.frameWidth ?? fallback.frame, 10, 250),
     bite: Object.fromEntries(GLASS_BITE_FIELDS.map(([field, part]) =>
       [part, clamp(profile[field] ?? profile.glassBite ?? 14, 0, 100)])),
   };
@@ -184,6 +188,7 @@ function setWindowShapeMode(mode) {
   // and section settings must not carry over to it.
   delete state.frameArcs;
   delete state.framePolygon;
+  state.addons=[];
   state.vImposts=[];
   state.hImposts=[];
   state.cols=1;
