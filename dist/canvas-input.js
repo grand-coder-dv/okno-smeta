@@ -32,6 +32,7 @@ function bindCanvasZoom() {
 }
 function selectImpostFromNode(node) {
   if(activeImpostEndpoint && (activeImpostEndpoint.id!==node.dataset.id || activeImpostEndpoint.scope!==node.dataset.scope)) activeImpostEndpoint=null;
+  activeProfileEdge = null;
   multiSections.clear();
   sharedAxis = null;
   const scope = node.dataset.scope;
