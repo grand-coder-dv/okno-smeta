@@ -1,4 +1,35 @@
 // Холст: выбор, перетаскивание импостов и выравнивание стеклопакетов.
+const CANVAS_ZOOM_MIN = 0.5;
+const CANVAS_ZOOM_MAX = 4;
+const CANVAS_ZOOM_STEP = 1.25;
+
+function clampCanvasZoom(value) {
+  return Math.min(CANVAS_ZOOM_MAX, Math.max(CANVAS_ZOOM_MIN, value));
+}
+
+function updateCanvasZoomButtons() {
+  const zoomIn = $("#canvasZoomIn");
+  const zoomOut = $("#canvasZoomOut");
+  if (!zoomIn || !zoomOut) return;
+  zoomIn.disabled = canvasZoom >= CANVAS_ZOOM_MAX - 1e-6;
+  zoomOut.disabled = canvasZoom <= CANVAS_ZOOM_MIN + 1e-6;
+}
+
+function bindCanvasZoom() {
+  $("#canvasZoomIn")?.addEventListener("click", () => {
+    const next = clampCanvasZoom(canvasZoom * CANVAS_ZOOM_STEP);
+    if (next === canvasZoom) return;
+    canvasZoom = next;
+    renderCanvas();
+  });
+  $("#canvasZoomOut")?.addEventListener("click", () => {
+    const next = clampCanvasZoom(canvasZoom / CANVAS_ZOOM_STEP);
+    if (next === canvasZoom) return;
+    canvasZoom = next;
+    renderCanvas();
+  });
+  updateCanvasZoomButtons();
+}
 function selectImpostFromNode(node) {
   if(activeImpostEndpoint && (activeImpostEndpoint.id!==node.dataset.id || activeImpostEndpoint.scope!==node.dataset.scope)) activeImpostEndpoint=null;
   multiSections.clear();
