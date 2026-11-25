@@ -240,6 +240,20 @@
           </div>
 
           <div class="canvas-wrap" id="canvasWrap">
+            <div class="canvas-zoom" aria-label="Масштаб чертежа">
+              <button type="button" class="canvas-zoom-btn" id="canvasZoomOut" title="Отдалить" aria-label="Отдалить чертёж">
+                <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="M21 21l-4.35-4.35M8 11h6" />
+                </svg>
+              </button>
+              <button type="button" class="canvas-zoom-btn" id="canvasZoomIn" title="Приблизить" aria-label="Приблизить чертёж">
+                <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="M21 21l-4.35-4.35M8 11h6M11 8v6" />
+                </svg>
+              </button>
+            </div>
             <svg id="windowCanvas" viewBox="0 0 640 500" role="img" aria-label="Схема окна"></svg>
           </div>
 
