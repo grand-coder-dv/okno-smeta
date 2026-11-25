@@ -420,8 +420,10 @@ function impostHostBoundary(entry, tech, root) {
   let host = rectPoints(opening);
   const polygon = constructionPolygon();
   if (polygon) {
-    const contour = sectionContour(entry, polygon, 0);
-    if (contour?.length >= 3) host = polygonClip(host, contour);
+    const sash = hostPane.opening !== "fixed";
+    const depth = tech.frame + (sash ? tech.sash - SASH_LAP : 0);
+    const contour = sectionContour(entry, polygon, depth);
+    if (contour?.length >= 3) host = contour;
   } else if (state.shape === "circle") {
     const inner = innerFrameBoundary(tech);
     if (inner.length >= 3) host = polygonClip(host, inner);
