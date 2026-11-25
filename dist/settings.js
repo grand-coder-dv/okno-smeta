@@ -107,6 +107,8 @@ function renderTechnologyCatalog() {
           <label class="profile-type-toggle"><input type="checkbox" data-type-enabled ${settings.enabled ? "checked" : ""} /> ${label}</label>
           <div class="profile-type-fields" ${settings.enabled ? "" : "hidden"}>
             ${[["frameWidth","Рама, мм",20,250],["sashWidth","Створка, мм",20,250],["impostWidth","Импост, мм",20,250],
+              ["shtulpWidth","Штульп, мм",20,250],["extenderWidth","Расширитель, мм",10,250],
+              ["connectorWidth","Соединитель, мм",10,250],["cornerWidth","Угловой профиль, мм",10,250],
               ["glassBiteFrame","Заход стекла: рама, мм",0,100],["glassBiteSash","Заход стекла: створка, мм",0,100],
               ["glassBiteImpost","Заход стекла: импост, мм",0,100],["factor","Коэффициент цены",0.1,5],["seals","Контуры уплотнения",1,5]]
               .map(([field,title,min,max]) => `<label class="catalog-field"><span>${title}</span><input type="number" data-type-field="${field}"
