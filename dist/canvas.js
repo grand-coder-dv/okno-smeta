@@ -248,30 +248,32 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
       </g>`;
   });
 
+  const frameInner=!poly && state.shape==="arch" && Object.values(state.frameArcs||{}).some(Boolean) ? innerFrameBoundary(tech) : null;
+  const rootHost=poly || (frameInner && frameInner.length>=3 ? frameInner : null);
+  const rootRect={x:0,y:0,width:state.width,height:state.height};
   const rootGripCenter=(axis,at,fallback)=>{
-    const range=polygonOpening && outlineRange(polygonOpening,axis,at);
+    const range=(polygonOpening || frameInner) && outlineRange(polygonOpening || frameInner,axis,at);
     return range ? (axis===0?Y:X)((range[0]+range[1])/2) : fallback;
   };
   let rootImpostsMarkup = "", rootEndpointMarkup = "";
   state.vImposts.forEach((item, index) => {
     const lineX = rootVerticalX[index];
     const active = isSelectedImpost("root", "vertical", item.id);
-    const segment=impostSegment(item,"vertical",{x:0,y:0,width:state.width,height:state.height},poly||rectPoints([0,0,state.width,state.height]),true);
-    const ribbon=poly ? polyPath(impostRibbon(item,"vertical",{x:0,y:0,width:state.width,height:state.height},polygonOpening,barFace(item),true,poly),X,Y) : "";
+    const segment=impostSegment(item,"vertical",rootRect,rootHost||rectPoints([0,0,state.width,state.height]),true);
+    const ribbon=rootHost ? polyPath(impostRibbon(item,"vertical",rootRect,rootHost,barFace(item),true,rootHost),X,Y) : "";
     let ax=X(segment[0][0]), ay=Y(segment[0][1]), bx=X(segment[1][0]), by=Y(segment[1][1]);
-    // Extend through the outer polygon; innerClip trims the visible face exactly at the frame's inner edge.
     const skewRange=poly && outlineRange(poly,0,item.position);
     const verticalFace=barFace(item)*canvasScale;
-    const lineTop=skewRange ? Y(skewRange[0])-verticalFace : state.shape==="arch" && state.frameArcs?.[0] ? Y(frameCurve(0,0)?.(item.position) ?? 0) : box.y-2;
-    const lineBottom=skewRange ? Y(skewRange[1])+verticalFace : state.shape==="arch" && state.frameArcs?.[2] ? Y(frameCurve(2,0)?.(item.position) ?? state.height) : box.y+box.height+2;
-    if(!poly){ax=bx=lineX;ay=lineTop;by=lineBottom;}
+    const lineTop=skewRange ? Y(skewRange[0])-verticalFace : box.y-2;
+    const lineBottom=skewRange ? Y(skewRange[1])+verticalFace : box.y+box.height+2;
+    if(!rootHost){ax=bx=lineX;ay=lineTop;by=lineBottom;}
     const vEnds=item.endOffsets||[0,0];
     if(vEnds.some(Boolean))[0,1].forEach(end=>{
       const abs=item.position+(vEnds[end]||0);
       addDimension(false, x, X(abs), 0, abs, item);
     });
     else addDimension(false, x, lineX, 0, item.position, item);
-    if(active && poly) rootEndpointMarkup += segment.map((point,end)=>`<circle class="impost-endpoint" style="cursor:pointer" data-endpoint="${end}" data-scope="root" data-orientation="vertical" data-id="${item.id}" cx="${X(point[0])}" cy="${Y(point[1])}" r="5" fill="#fff" stroke="#ef8b25" stroke-width="2.5" role="button" tabindex="0" aria-label="Изменить ${end?'второй':'первый'} край импоста"/>`).join("");
+    if(active && rootHost) rootEndpointMarkup += segment.map((point,end)=>`<circle class="impost-endpoint" style="cursor:pointer" data-endpoint="${end}" data-scope="root" data-orientation="vertical" data-id="${item.id}" cx="${X(point[0])}" cy="${Y(point[1])}" r="5" fill="#fff" stroke="#ef8b25" stroke-width="2.5" role="button" tabindex="0" aria-label="Изменить ${end?'второй':'первый'} край импоста"/>`).join("");
     rootImpostsMarkup += `
       ${ribbon ? `<path class="impost-visible${active ? " selected" : ""}" d="${ribbon}" fill="${active ? "#ef8b25" : profileColor}" stroke="${material.edge}" stroke-width=".8" />` : impostBandPath(ax, ay, bx, by, verticalFace, active)}
       <rect class="impost-grip${active ? " selected" : ""}" x="${lineX - 8}" y="${rootGripCenter(0,item.position,box.y+box.height/2) - 18}" width="16" height="36" rx="8" />
@@ -281,21 +283,21 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
   state.hImposts.forEach((item, index) => {
     const lineY = rootHorizontalY[index];
     const active = isSelectedImpost("root", "horizontal", item.id);
-    const segment=impostSegment(item,"horizontal",{x:0,y:0,width:state.width,height:state.height},poly||rectPoints([0,0,state.width,state.height]),true);
-    const ribbon=poly ? polyPath(impostRibbon(item,"horizontal",{x:0,y:0,width:state.width,height:state.height},polygonOpening,barFace(item),true,poly),X,Y) : "";
+    const segment=impostSegment(item,"horizontal",rootRect,rootHost||rectPoints([0,0,state.width,state.height]),true);
+    const ribbon=rootHost ? polyPath(impostRibbon(item,"horizontal",rootRect,rootHost,barFace(item),true,rootHost),X,Y) : "";
     let ax=X(segment[0][0]), ay=Y(segment[0][1]), bx=X(segment[1][0]), by=Y(segment[1][1]);
     const skewRange=poly && outlineRange(poly,1,item.position);
     const horizontalFace=barFace(item)*canvasScale;
-    const lineLeft=skewRange ? X(skewRange[0])-horizontalFace : state.shape==="arch" && state.frameArcs?.[3] ? X(frameCurve(3,0)?.(item.position) ?? 0) : box.x-2;
-    const lineRight=skewRange ? X(skewRange[1])+horizontalFace : state.shape==="arch" && state.frameArcs?.[1] ? X(frameCurve(1,0)?.(item.position) ?? state.width) : box.x+box.width+2;
-    if(!poly){ay=by=lineY;ax=lineLeft;bx=lineRight;}
+    const lineLeft=skewRange ? X(skewRange[0])-horizontalFace : box.x-2;
+    const lineRight=skewRange ? X(skewRange[1])+horizontalFace : box.x+box.width+2;
+    if(!rootHost){ay=by=lineY;ax=lineLeft;bx=lineRight;}
     const hEnds=item.endOffsets||[0,0];
     if(hEnds.some(Boolean))[0,1].forEach(end=>{
       const abs=item.position+(hEnds[end]||0);
       addDimension(true, y, Y(abs), 0, abs, item);
     });
     else addDimension(true, y, lineY, 0, item.position, item);
-    if(active && poly) rootEndpointMarkup += segment.map((point,end)=>`<circle class="impost-endpoint" style="cursor:pointer" data-endpoint="${end}" data-scope="root" data-orientation="horizontal" data-id="${item.id}" cx="${X(point[0])}" cy="${Y(point[1])}" r="5" fill="#fff" stroke="#ef8b25" stroke-width="2.5" role="button" tabindex="0" aria-label="Изменить ${end?'второй':'первый'} край импоста"/>`).join("");
+    if(active && rootHost) rootEndpointMarkup += segment.map((point,end)=>`<circle class="impost-endpoint" style="cursor:pointer" data-endpoint="${end}" data-scope="root" data-orientation="horizontal" data-id="${item.id}" cx="${X(point[0])}" cy="${Y(point[1])}" r="5" fill="#fff" stroke="#ef8b25" stroke-width="2.5" role="button" tabindex="0" aria-label="Изменить ${end?'второй':'первый'} край импоста"/>`).join("");
     rootImpostsMarkup += `
       ${ribbon ? `<path class="impost-visible${active ? " selected" : ""}" d="${ribbon}" fill="${active ? "#ef8b25" : profileColor}" stroke="${material.edge}" stroke-width=".8" />` : impostBandPath(ax, ay, bx, by, horizontalFace, active)}
       <rect class="impost-grip${active ? " selected" : ""}" x="${rootGripCenter(1,item.position,box.x+box.width/2) - 18}" y="${lineY - 8}" width="36" height="16" rx="8" />
