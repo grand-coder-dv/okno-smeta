@@ -297,16 +297,49 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
   const leftDimensionX=bx0-(showShoulderHeight?70:39);
   const bottomDimensionY=by1+(showShoulderWidth?70:39);
   const extraView=[];
-  const mm=v=>`${numberFormatter.format(Math.round(v))} мм`;
+  const dimNum=v=>numberFormatter.format(Math.round(v));
+  const DIM_EXT=4, DIM_ROW=40, DIM_LABEL_MIN=24, DIM_LABEL_GAP=11, DIM_LABEL_ASCENT=16;
+  const dimLabelHalf=text=>Math.max(DIM_LABEL_MIN,String(text).length*4.2);
+  const dimPerp=(dx,dy)=>{const l=Math.hypot(dx,dy)||1;return[-dy/l,dx/l];};
+  const dimLine=(x1,y1,x2,y2)=>`<line class="dimension-line" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" marker-start="url(#dimArrow)" marker-end="url(#dimArrow)" />`;
+  const dimTextAt=(cx,cy,text,angle=0)=>`<text class="dimension-text" x="${cx}" y="${cy}" transform="${angle?`rotate(${angle} ${cx} ${cy})`:""}" paint-order="stroke" stroke="#f5f8fb" stroke-width="4" pointer-events="none">${text}</text>`;
+  const gostDimension=(horizontal,from,to,contourCoord,dimCoord,text,attrs="")=>{
+    const lo=Math.min(from,to), hi=Math.max(from,to), mid=(lo+hi)/2;
+    const away=dimCoord>=contourCoord?1:-1;
+    const extFar=dimCoord+away*DIM_EXT;
+    let body="", tx, ty, tAngle=0;
+    if(horizontal){
+      body+=`<line class="dimension-line dimension-extension" x1="${lo}" y1="${contourCoord}" x2="${lo}" y2="${extFar}" />
+        <line class="dimension-line dimension-extension" x1="${hi}" y1="${contourCoord}" x2="${hi}" y2="${extFar}" />`;
+      body+=dimLine(lo,dimCoord,hi,dimCoord);
+      tx=mid; ty=dimCoord-DIM_LABEL_GAP;
+      extraView.push([lo,extFar],[hi,extFar],[tx,ty-DIM_LABEL_ASCENT-4]);
+    } else {
+      body+=`<line class="dimension-line dimension-extension" x1="${contourCoord}" y1="${lo}" x2="${extFar}" y2="${lo}" />
+        <line class="dimension-line dimension-extension" x1="${contourCoord}" y1="${hi}" x2="${extFar}" y2="${hi}" />`;
+      body+=dimLine(dimCoord,lo,dimCoord,hi);
+      tAngle=-90;
+      tx=away<0?dimCoord-DIM_LABEL_GAP:dimCoord+DIM_LABEL_GAP+DIM_LABEL_ASCENT;
+      ty=mid;
+      extraView.push([extFar,lo],[extFar,hi],[dimCoord+away*(DIM_LABEL_GAP+DIM_LABEL_ASCENT+4),ty]);
+    }
+    const half=dimLabelHalf(text);
+    const hit=`${attrs?`<g ${attrs} style="cursor:pointer">`:""}<rect x="${horizontal?mid-half:tx-DIM_LABEL_ASCENT-4}" y="${horizontal?ty-DIM_LABEL_ASCENT-2:mid-half}" width="${horizontal?half*2:DIM_LABEL_ASCENT+8}" height="${horizontal?DIM_LABEL_ASCENT+6:half*2}" fill="transparent" pointer-events="all" />${attrs?"</g>":""}`;
+    return `${body}${dimTextAt(tx,ty,text,tAngle)}${hit}`;
+  };
   const shoulderDimension=(a,b,c,d,value,title,side=null,angle=0)=>{
     const mx=(c[0]+d[0])/2,my=(c[1]+d[1])/2;
     extraView.push(c,d,[mx-61,my-61],[mx+61,my+61]);
-    const line=(p,q,arrows=false)=>`<line class="dimension-line" x1="${p[0]}" y1="${p[1]}" x2="${q[0]}" y2="${q[1]}" ${arrows?'marker-start="url(#dimArrow)" marker-end="url(#dimArrow)"':'opacity=".45"'}/>`;
-    return `${line(a,c)}${line(b,d)}${line(c,d,true)}
+    const ext=(p,q)=>`<line class="dimension-line dimension-extension" x1="${p[0]}" y1="${p[1]}" x2="${q[0]}" y2="${q[1]}" />`;
+    const dx=d[0]-c[0], dy=d[1]-c[1];
+    const [nx,ny]=dimPerp(dx,dy);
+    const label=dimNum(value);
+    const textAbove = -11;
+    const tx = mx - nx * textAbove, ty = my - ny * textAbove;
+    return `${ext(a,c)}${ext(b,d)}${dimLine(c[0],c[1],d[0],d[1])}${dimTextAt(tx,ty,label,angle)}
       <g transform="translate(${mx} ${my}) rotate(${angle})"
         ${side===null?'pointer-events="none"':`data-profile-length="${side}" tabindex="0" role="button" aria-label="${title}" style="cursor:pointer"`}>
-        <title>${title}</title><rect x="-56" y="-13" width="112" height="24" rx="6" fill="#eef2f6"/>
-        <text class="dimension-text" x="0" y="5">${mm(value)}</text></g>`;
+        <title>${title}</title><rect x="-56" y="-14" width="112" height="28" fill="transparent" /></g>`;
   };
   let shoulderMarkup="";
   if(showShoulderWidth) shoulderMarkup+=shoulderDimension([x,y+height],[x+width,y+height],[x,by1+37],[x+width,by1+37],state.width,"Ширина по плечам");
@@ -333,32 +366,41 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
     }
   }
   const axisGroups = [...dimensionGroups.values()];
-  const tracks = [[], []];
-  const axisMarkup = axisGroups.map((group, i) => {
+  const axisEntries = axisGroups.map((group, i) => {
     const first = group[0], {vertical, end} = first;
-    const common = group.length > 1;
     const start = vertical ? y + height : x;
-    const mid = (start + end) / 2;
-    const rows = tracks[Number(vertical)];
-    const range = [Math.min(start,end,mid-45), Math.max(start,end,mid+45)];
-    let level = rows.findIndex(row => row.every(([a,b])=>b<range[0]||a>range[1]));
-    if(level<0){level=rows.length;rows.push([]);} rows[level].push(range);
-    const edge = vertical ? bx1+5 : by0-5;
-    const track = edge+(vertical?1:-1)*(25+level*29);
-    const line=(a,b,c,d,arrows=false)=>`<line class="dimension-line" x1="${vertical?b:a}" y1="${vertical?a:b}" x2="${vertical?d:c}" y2="${vertical?c:d}" ${arrows?'marker-start="url(#dimArrow)" marker-end="url(#dimArrow)"':'opacity=".45"'}/>`;
-    const text=`${Math.round(vertical ? state.height-first.absolute : first.absolute)} мм`;
-    return `<g>${line(start,edge,start,track)}${line(end,edge,end,track)}${line(start,track,end,track,true)}
-      <g transform="translate(${vertical?track:mid} ${vertical?mid:track}) ${vertical?'rotate(-90)':''}"
-      data-axis-group="${i}" tabindex="0" role="button" aria-label="Изменить ${common?'общий ':''}осевой размер ${text}" style="cursor:pointer">
-      <rect x="-43" y="-12" width="86" height="24" rx="6" fill="#eef2f6"/>
-      <text class="dimension-text" x="0" y="5" pointer-events="none">${text}</text></g></g>`;
-  }).join("");
+    const lo = Math.min(start, end), hi = Math.max(start, end);
+    const value = Math.round(vertical ? state.height - first.absolute : first.absolute);
+    return {group, i, vertical, start, end, lo, hi, span: hi - lo, value, common: group.length > 1};
+  });
+  const axisMarkup = [false, true].flatMap(vertical =>
+    axisEntries.filter(e => e.vertical === vertical).sort((a, b) => a.span - b.span || a.value - b.value)
+      .map((entry, level) => {
+        const text = `${entry.value}`;
+        const edge = vertical ? bx1 + 5 : by0 - 5;
+        const track = edge + (vertical ? 1 : -1) * (18 + level * DIM_ROW);
+        const attrs = `data-axis-group="${entry.i}" tabindex="0" role="button" aria-label="Изменить ${entry.common ? "общий " : ""}осевой размер ${text} мм"`;
+        return `<g>${gostDimension(!vertical, entry.start, entry.end, edge, track, text, attrs)}</g>`;
+      })
+  ).join("");
+  const trackDepth = [0, 0];
+  [false, true].forEach(vertical => {
+    const n = axisEntries.filter(e => e.vertical === vertical).length;
+    if (n) trackDepth[Number(vertical)] = n - 1;
+  });
   canvasLayout.axisGroups = axisGroups;
-  const viewTop=Math.min(0,by0-46-Math.max(0,tracks[0].length-1)*29,...extraView.map(p=>p[1]));
-  const viewRight=Math.max(640,bx1+46+Math.max(0,tracks[1].length-1)*29,...extraView.map(p=>p[0]));
+  const viewTop=Math.min(0,by0-40-trackDepth[0]*DIM_ROW,...extraView.map(p=>p[1]));
+  const viewRight=Math.max(640,bx1+40+trackDepth[1]*DIM_ROW,...extraView.map(p=>p[0]));
   const viewLeft=Math.min(0,leftDimensionX-21,...extraView.map(p=>p[0]));
   const viewBottom=Math.max(500,bottomDimensionY+21,...extraView.map(p=>p[1]));
-  svg.setAttribute("viewBox",`${viewLeft} ${viewTop} ${viewRight-viewLeft} ${viewBottom-viewTop}`);
+  const fitWidth = viewRight - viewLeft;
+  const fitHeight = viewBottom - viewTop;
+  const fitCenterX = (viewLeft + viewRight) / 2;
+  const fitCenterY = (viewTop + viewBottom) / 2;
+  const zoom = thumbnail ? 1 : canvasZoom;
+  const viewW = fitWidth / zoom;
+  const viewH = fitHeight / zoom;
+  svg.setAttribute("viewBox", `${fitCenterX - viewW / 2} ${fitCenterY - viewH / 2} ${viewW} ${viewH}`);
   svg.innerHTML = `
     <defs>
       <filter id="windowShadow" x="-30%" y="-30%" width="160%" height="170%">
@@ -371,8 +413,8 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
       </linearGradient>
       <clipPath id="innerClip">${paths.inner}</clipPath>
       <clipPath id="glassCutClip">${paths.outer}</clipPath>
-      <marker id="dimArrow" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto-start-reverse">
-        <path d="M 8 1 L 1 4 L 8 7" fill="none" stroke="#8996a8" stroke-width="1.2" />
+      <marker id="dimArrow" viewBox="0 0 10 10" markerWidth="7" markerHeight="7" refX="10" refY="5" orient="auto-start-reverse">
+        <path d="M10 5 L0 1.5 L0 8.5 Z" fill="#8996a8" stroke="none" />
       </marker>
     </defs>
     <g filter="url(#windowShadow)" fill="${profileColor}" stroke="${material.edge}" stroke-width="2.2">${paths.outer}</g>
@@ -387,18 +429,8 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
     <g>${profileTargets}${vertices}</g>
     <g class="dimensions">${shoulderMarkup}</g>
     <g class="dimensions">${axisMarkup}
-      <line class="dimension-line" x1="${bx0}" y1="${by1 + 6}" x2="${bx0}" y2="${bottomDimensionY + 7}" opacity=".45" />
-      <line class="dimension-line" x1="${bx1}" y1="${by1 + 6}" x2="${bx1}" y2="${bottomDimensionY + 7}" opacity=".45" />
-      <line class="dimension-line" x1="${bx0 + 4}" y1="${bottomDimensionY}" x2="${bx1 - 4}" y2="${bottomDimensionY}" marker-start="url(#dimArrow)" marker-end="url(#dimArrow)" />
-      <g data-window-dimension="width" tabindex="0" role="button" aria-label="Изменить габаритную ширину" style="cursor:pointer"><rect x="${(bx0 + bx1) / 2 - 48}" y="${bottomDimensionY - 13}" width="96" height="24" rx="6" fill="#eef2f6" />
-      <text class="dimension-text" x="${(bx0 + bx1) / 2}" y="${bottomDimensionY + 5}">${state.shape === "circle" ? "Ø " : ""}${numberFormatter.format(Math.round(actualWidth))} мм</text></g>
-      <line class="dimension-line" x1="${bx0 - 6}" y1="${by0}" x2="${leftDimensionX - 7}" y2="${by0}" opacity=".45" />
-      <line class="dimension-line" x1="${bx0 - 6}" y1="${by1}" x2="${leftDimensionX - 7}" y2="${by1}" opacity=".45" />
-      <line class="dimension-line" x1="${leftDimensionX}" y1="${by0 + 4}" x2="${leftDimensionX}" y2="${by1 - 4}" marker-start="url(#dimArrow)" marker-end="url(#dimArrow)" />
-      <g transform="translate(${leftDimensionX - 1} ${(by0 + by1) / 2}) rotate(-90)" data-window-dimension="${state.shape === "circle" ? "width" : "height"}" tabindex="0" role="button" aria-label="Изменить габаритную высоту" style="cursor:pointer">
-        <rect x="-48" y="-13" width="96" height="24" rx="6" fill="#eef2f6" />
-        <text class="dimension-text" x="0" y="5">${numberFormatter.format(Math.round(actualHeight))} мм</text>
-      </g>
+      ${gostDimension(true,bx0,bx1,by1,bottomDimensionY,`${state.shape === "circle" ? "Ø " : ""}${dimNum(actualWidth)}`,'data-window-dimension="width" tabindex="0" role="button" aria-label="Изменить габаритную ширину"')}
+      ${gostDimension(false,by0,by1,bx0,leftDimensionX,dimNum(actualHeight),`data-window-dimension="${state.shape === "circle" ? "width" : "height"}" tabindex="0" role="button" aria-label="Изменить габаритную высоту"`)}
     </g>`;
 
   if (thumbnail) {
@@ -414,6 +446,8 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
     svg.setAttribute("viewBox", `${X(minX)-padding} ${Y(minY)-padding} ${(maxX-minX)*sx+padding*2} ${(maxY-minY)*sy+padding*2}`);
     return;
   }
+
+  updateCanvasZoomButtons();
 
   $$("#windowCanvas .pane-hit").forEach((node) => {
     const choose = event => {
