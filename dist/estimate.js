@@ -62,37 +62,63 @@ function buildSpecification() {
     return total;
   };
 
+  const frameParts = dimensions.members.filter((member) => member.role === "frame");
+  const lengthNote = (parts) => {
+    const shown = parts.slice(0, 12).map((member) => String(Math.round(member.lengthMm)));
+    return `${shown.join(" + ")}${parts.length > 12 ? ` + ещё ${parts.length - 12}` : ""} мм`;
+  };
   const frameRate = rates.frame[state.material] * profile.factor;
   const frameUnitTotal = dimensions.perimeter * frameRate;
   addLine({
     name: "Профиль рамы",
-    note: `${PRODUCT_TYPES[state.productType || "window"]}; наружный габарит: ${overallSizeLabel()}`,
-    characteristic: `${profile.name}; ${finish.name}; ширина ${tech.frame} мм`,
+    note: `${PRODUCT_TYPES[state.productType || "window"]}; наружный габарит: ${overallSizeLabel()}; ${lengthNote(frameParts)}`,
+    characteristic: `${profile.name}; ${finish.name}; ширина ${tech.frame} мм; ${frameParts.length} шт.`,
     qty: dimensions.perimeter * quantity,
     unit: "пог. м",
     rate: frameRate,
   });
 
+  const profileMeters = (role) => dimensions.members.filter((member) => member.role === role);
+  const addProfileMeters = (role, name, rate, widthMm, note) => {
+    const parts = profileMeters(role);
+    const meters = parts.reduce((sum, member) => sum + member.lengthMm, 0) / 1000;
+    if (meters <= 0.001) return 0;
+    const unitTotal = meters * rate;
+    addLine({
+      name,
+      note: `${note ? `${note}; ` : ""}${lengthNote(parts)}`,
+      characteristic: `${profile.name}; ${finish.name}; ширина ${Math.round(widthMm)} мм; ${parts.length} шт.`,
+      qty: meters * quantity,
+      unit: "пог. м",
+      rate,
+    });
+    return unitTotal;
+  };
+  const sashUnitTotal = addProfileMeters("sash", "Профиль створки", frameRate, tech.sash, "Стойки и поперечины створки по наружному контуру");
+  const impostRate = rates.impost[state.material] * profile.factor;
   let impostUnitTotal = 0;
   if (dimensions.impost > 0.001) {
-    const impostRate = rates.impost[state.material] * profile.factor;
     impostUnitTotal = dimensions.impost * impostRate;
     addLine({
       name: "Импост",
-      note: "Профиль разбивки светового проёма",
-      characteristic: `Ширина ${tech.impost} мм; в раме: ${state.vImposts.length + state.hImposts.length}; в секциях: ${dimensions.nestedCount}`,
+      note: `Ось внутри рамы или створки; ${lengthNote(profileMeters("impost"))}`,
+      characteristic: `Ширина ${tech.impost} мм; в раме: ${profileMeters("impost").filter((member) => member.scope === "root").length}; в секциях: ${dimensions.nestedCount}`,
       qty: dimensions.impost * quantity,
       unit: "пог. м",
       rate: impostRate,
     });
   }
+  const shtulpUnitTotal = addProfileMeters("shtulp", "Штульп", impostRate, tech.shtulp, "Профиль притвора створок");
+  const extenderUnitTotal = addProfileMeters("extender", "Расширитель", frameRate, tech.extender, "Добор по наружной стороне рамы");
+  const connectorUnitTotal = addProfileMeters("connector", "Соединитель", frameRate, tech.connector, "Стыковочный профиль по стороне рамы");
+  const cornerUnitTotal = addProfileMeters("corner", "Угловой профиль", frameRate, tech.corner, "Угловой соединитель на вершине рамы");
 
   if (state.material === "pvc") {
     addLine({
       name: "Стальное армирование",
-      note: "Усиление рамы и импостов",
+      note: "Усиление рамы, створки, импостов и доборных профилей",
       characteristic: "Оцинкованный профиль",
-      qty: (dimensions.perimeter + dimensions.impost) * quantity,
+      qty: (dimensions.perimeter + dimensions.sash + dimensions.impost + dimensions.shtulp + dimensions.extender + dimensions.connector + dimensions.corner) * quantity,
       unit: "пог. м",
       rate: rates.reinforcement,
     });
@@ -107,10 +133,10 @@ function buildSpecification() {
     rate: rates.seal[state.material],
   });
 
-  const beadLength = dimensions.perimeter * 0.78 + dimensions.impost * 2;
+  const beadLength = dimensions.bead;
   addLine({
     name: "Штапик",
-    note: "Фиксация стеклопакета в створке и раме",
+    note: "По контуру стеклопакетов",
     characteristic: `Системный, ${material.label}`,
     qty: beadLength * quantity,
     unit: "пог. м",
@@ -189,7 +215,8 @@ function buildSpecification() {
     rate: rates.assembly[state.material],
   });
 
-  const finishUnitTotal = (frameUnitTotal + impostUnitTotal) * Math.max(0, finish.factor - 1);
+  const profileBase = frameUnitTotal + sashUnitTotal + impostUnitTotal + shtulpUnitTotal + extenderUnitTotal + connectorUnitTotal + cornerUnitTotal;
+  const finishUnitTotal = profileBase * Math.max(0, finish.factor - 1);
   if (finishUnitTotal > 0.01) {
     addLine({
       name: "Декоративная отделка профиля",
