@@ -422,9 +422,16 @@ function impostHostBoundary(entry, tech, root) {
   if (polygon) {
     const contour = sectionContour(entry, polygon, 0);
     if (contour?.length >= 3) host = polygonClip(host, contour);
-  } else if (state.shape === "circle" || customProfileArcs()) {
+  } else if (state.shape === "circle") {
     const inner = innerFrameBoundary(tech);
     if (inner.length >= 3) host = polygonClip(host, inner);
+  } else if (customProfileArcs()) {
+    const touch = [entry.edges[2], entry.edges[1], entry.edges[3], entry.edges[0]];
+    const sash = hostPane.opening !== "fixed";
+    const depth = tech.frame + (sash ? tech.sash - SASH_LAP : 0);
+    const outline = fittedOutline(opening, touch.map((flag) => flag ? depth : null), sash ? hostPane.sashArcs : null, (value) => value, (value) => value, 1, 1);
+    const boundary = outline.boundary || outline.pts;
+    if (boundary?.length >= 3) host = boundary;
   }
   return host;
 }
