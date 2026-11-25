@@ -37,7 +37,13 @@ function openingSymbol(type, x, y, width, height, side) {
     paths += `<path d="M ${left} ${bottom} L ${cx} ${top} L ${right} ${bottom}" fill="none" stroke="${stroke}" stroke-width="1.7" stroke-dasharray="5 4" />`;
   }
   if (type !== "fixed") {
-    paths += `<line x1="${handle}" y1="${cy - 10}" x2="${handle}" y2="${cy + 10}" stroke="#20384c" stroke-width="3" stroke-linecap="round" />`;
+    const topHinges = side === "top";
+    if (type === "tilt") {
+      const hy = topHinges ? bottom - 4 : top + 4;
+      paths += `<line x1="${cx - 10}" y1="${hy}" x2="${cx + 10}" y2="${hy}" stroke="#20384c" stroke-width="3" stroke-linecap="round" />`;
+    } else {
+      paths += `<line x1="${handle}" y1="${cy - 10}" x2="${handle}" y2="${cy + 10}" stroke="#20384c" stroke-width="3" stroke-linecap="round" />`;
+    }
   }
   return paths;
 }
@@ -316,17 +322,26 @@ function handlePreviewMarkup(style, color) {
   return `<svg viewBox="${boxes[kind]}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">${handleParts(kind, color)}</svg>`;
 }
 
-function placedHandle(anchorX, anchorY, inward, availableH, availableW, X, Y, handle) {
+function placedHandle(anchorX, anchorY, inward, availableH, availableW, X, Y, handle, verticalIn = 1, horizontal = false, profileDepth = 0) {
   const style = normalizeHandleStyle(handle?.style);
   const nominal = HANDLE_LENGTHS[style] || 175;
   const reach = { window: 20, turn: 175, cylinder: 158, bow: 52, rod: 54 }[style] || 40;
+  const px = X(anchorX);
+  const py = Y(anchorY);
+  if (horizontal) {
+    const alongFit = Math.max(24, availableW * 0.58) / nominal;
+    const intoFit = Math.max(8, profileDepth || 16) / reach;
+    const scale = Math.min(1, alongFit, intoFit);
+    const along = (X(anchorX + 1) - px) * scale;
+    const into = (Y(anchorY + verticalIn) - py) * scale;
+    const twist = verticalIn < 0 ? -90 : 90;
+    return `<g transform="translate(${px} ${py}) rotate(${twist}) scale(${into} ${along})" pointer-events="none">${handleParts(style, handle?.color)}</g>`;
+  }
   const heightFit = Math.max(70, availableH - 16) / nominal;
   const widthFit = Math.max(24, availableW * 0.58) / reach;
   const scale = Math.min(1, heightFit, widthFit);
-  const px = X(anchorX);
-  const py = Y(anchorY);
-  const ux = (X(anchorX + inward) - px) * scale;
-  const uy = (Y(anchorY + 1) - py) * scale;
+  const ux = (inward === 0 ? X(anchorX + 1) - px : X(anchorX + inward) - px) * scale;
+  const uy = (Y(anchorY + verticalIn) - py) * scale;
   return `<g transform="translate(${px} ${py}) scale(${ux} ${uy})" pointer-events="none">${handleParts(style, handle?.color)}</g>`;
 }
 
@@ -352,12 +367,25 @@ function sashOpeningMark(glass, outer, inner, type, side, X, Y) {
     const hingeRange = topHinges ? upper : lower;
     if (hingeRange) dashes+=line([pt(hingeRange[0],topHinges?top:bottom),pt(xmid,summit[topHinges?1:0]),pt(hingeRange[1],topHinges?top:bottom)]);
   }
-  const outerAt = outlineRange(outer, 1, ym);
-  const innerAt = outlineRange(inner, 1, ym);
   const [leftEdge, topEdge, rightEdge, bottomEdge] = polyBounds(outer);
-  const handle = outerAt && innerAt
-    ? placedHandle((outerAt[free] + innerAt[free]) / 2, ym, free === 1 ? -1 : 1, bottomEdge - topEdge, rightEdge - leftEdge, X, Y, selectedHandle())
-    : "";
+  let handle = "";
+  if (type === "tilt") {
+    const topHinges = side === "top";
+    const crossOuter = outlineRange(outer, 0, xmid);
+    const crossInner = outlineRange(inner, 0, xmid);
+    if (crossOuter && crossInner) {
+      const edge = topHinges ? 1 : 0;
+      const anchorY = (crossOuter[edge] + crossInner[edge]) / 2;
+      const depth = Math.abs(crossOuter[edge] - crossInner[edge]);
+      handle = placedHandle(xmid, anchorY, 0, bottomEdge - topEdge, rightEdge - leftEdge, X, Y, selectedHandle(), topHinges ? -1 : 1, true, depth);
+    }
+  } else {
+    const outerAt = outlineRange(outer, 1, ym);
+    const innerAt = outlineRange(inner, 1, ym);
+    if (outerAt && innerAt) {
+      handle = placedHandle((outerAt[free] + innerAt[free]) / 2, ym, free === 1 ? -1 : 1, bottomEdge - topEdge, rightEdge - leftEdge, X, Y, selectedHandle());
+    }
+  }
   return {dashes, handle};
 }
 function editImpostEndpoint() {
