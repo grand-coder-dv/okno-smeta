@@ -29,6 +29,22 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
   };
   const paths = shapePaths(x, y, width, height, frame);
   let profileTargets = state.shape === "circle" ? circleFrameTargets(x+width/2,y+height/2,width/2,height/2,frame) : "";
+  const appendSashTargets = (outerSash, innerSash, index) => {
+    if (!outerSash || !innerSash) return;
+    if (state.shape === "circle" && outerSash.path && innerSash.path) {
+      profileTargets += `<path d="${outerSash.path} ${innerSash.path}" fill="transparent" fill-rule="evenodd" pointer-events="fill" data-profile-edge="circle-sash" data-edge-side="0" data-edge-index="${index}" tabindex="0" role="button" aria-label="Створка" style="cursor:pointer"/>`;
+      return;
+    }
+    if (!poly && (state.shape === "arch" || state.shape === "rect") && outerSash.edges && innerSash.edges) {
+      profileTargets += profileEdgeTargets(outerSash, innerSash, "sash", index);
+      return;
+    }
+    if (state.shape === "skew" && outerSash.boundary && innerSash.boundary) {
+      profileTargets += poly
+        ? polygonProfileTargets(outerSash.boundary, innerSash.boundary, "skew-sash", index, X, Y)
+        : profileEdgeTargets(outerSash, innerSash, "skew-sash", index);
+    }
+  };
   const poly=constructionPolygon();
   const polygonOpening=poly ? polygonClip(poly,poly,tech.frame) : null;
   if(poly){
@@ -140,14 +156,17 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
         const shell=glassGeometry({...entry,pane:{...pane,innerImposts:[],split:null}},tech);
         const sashBox=shell.sashBox, opening=shell.opening;
         const depth=tech.frame-SASH_LAP;
+        const outerBoundary=poly?clipSlantedSections(polygonClip(rectPoints(slantedBounds(sashBox,entry)),poly,depth),entry,Math.max(0,tech.impost/2-SASH_LAP)):null;
+        const innerBoundary=poly?clipSlantedSections(polygonClip(rectPoints(slantedBounds(opening,entry)),poly,depth+tech.sash),entry,Math.max(0,tech.impost/2+tech.sash-SASH_LAP)):null;
         const outerSash=state.shape==="circle"?circularOutline(sashBox,depth,X,Y)
           : !poly ? fit(sashBox,depth,pane.sashArcs)
-          : {path:polyPath(clipSlantedSections(polygonClip(rectPoints(slantedBounds(sashBox,entry)),poly,depth),entry,Math.max(0,tech.impost/2-SASH_LAP)),X,Y)};
+          : {path:polyPath(outerBoundary,X,Y),boundary:outerBoundary};
         const innerSash=state.shape==="circle"?circularOutline(opening,depth+tech.sash,X,Y)
           : !poly ? fit(opening,depth+tech.sash,pane.sashArcs)
-          : {path:polyPath(clipSlantedSections(polygonClip(rectPoints(slantedBounds(opening,entry)),poly,depth+tech.sash),entry,Math.max(0,tech.impost/2+tech.sash-SASH_LAP)),X,Y)};
+          : {path:polyPath(innerBoundary,X,Y),boundary:innerBoundary};
         if(outerSash?.path && innerSash?.path){
           sashMarkup+=`<path d="${outerSash.path} ${innerSash.path}" fill="${profileColor}" fill-rule="evenodd" stroke="${material.edge}" stroke-width=".8" />`;
+          appendSashTargets(outerSash, innerSash, index);
           const envelope=fittedGlass({...entry,pane:{...pane,innerImposts:[],split:null}},shell,shell.fields[0],tech,X,Y,sx,sy);
           if(envelope.boundary?.length && innerSash.boundary?.length && outerSash.boundary?.length){
             const mark=sashOpeningMark(envelope.boundary,outerSash.boundary,innerSash.boundary,pane.opening,pane.hingeSide,X,Y);
@@ -177,14 +196,7 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
       const id=`sashImpostClip-${index}`;
       localImpostsMarkup += `<clipPath id="${id}"><path d="${innerSash.path}"/></clipPath><g clip-path="url(#${id})">${innerImpostsMarkup}</g>`;
     } else localImpostsMarkup += innerImpostsMarkup;
-    if (!poly && sashBox && (state.shape==="arch" || state.shape==="rect") && opening[2]>opening[0] && opening[3]>opening[1]) {
-      profileTargets+=profileEdgeTargets(outerSash,innerSash,"sash",index);
-     } else if (state.shape === "skew" && outerSash && innerSash) {
-      profileTargets+=poly ? polygonProfileTargets(outerSash.boundary,innerSash.boundary,"skew-sash",index,X,Y)
-        : profileEdgeTargets(outerSash,innerSash,"skew-sash",index);
-    } else if (state.shape === "circle" && outerSash?.path && innerSash?.path) {
-      profileTargets+=`<path d="${outerSash.path} ${innerSash.path}" fill="transparent" fill-rule="evenodd" pointer-events="fill" data-profile-edge="circle-sash" data-edge-side="0" data-edge-index="${index}" tabindex="0" role="button" aria-label="Створка" style="cursor:pointer"/>`;
-    }
+    appendSashTargets(outerSash, innerSash, index);
     if (outerSash?.path && innerSash?.path && opening[2]>opening[0] && opening[3]>opening[1]) {
       sashMarkup += `<path d="${outerSash.path} ${innerSash.path}" fill="${profileColor}" fill-rule="evenodd" stroke="${material.edge}" stroke-width=".8" />`;
       const envelopeEntry={...entry,pane:{...pane,innerImposts:[]}};
