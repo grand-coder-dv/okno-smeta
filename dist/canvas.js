@@ -20,6 +20,13 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
   const X=mm=>x+mm*sx, Y=mm=>y+mm*sy;
   const material = MATERIALS[state.material];
   const profileColor = getFinish().color || material.frame;
+  const impostBandPath = (x1, y1, x2, y2, face, active, extraClass = "") => {
+    const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy);
+    if (len < 1e-6) return "";
+    const nx = -dy / len * face / 2, ny = dx / len * face / 2;
+    const d = `M ${x1 + nx} ${y1 + ny} L ${x1 - nx} ${y1 - ny} L ${x2 - nx} ${y2 - ny} L ${x2 + nx} ${y2 + ny} Z`;
+    return `<path class="impost-visible${extraClass}${active ? " selected" : ""}" d="${d}" fill="${active ? "#ef8b25" : profileColor}" stroke="${material.edge}" stroke-width=".8" />`;
+  };
   const paths = shapePaths(x, y, width, height, frame);
   let profileTargets = state.shape === "circle" ? circleFrameTargets(x+width/2,y+height/2,width/2,height/2,frame) : "";
   const poly=constructionPolygon();
@@ -94,7 +101,7 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
       const spans = poly ? null : nestedImpostSpans(entry, item, tech);
       const visible = ribbon ? "" : (spans || []).map(span => {
         const x1=X(span.x1), y1=Y(span.y1), x2=X(span.x2), y2=Y(span.y2);
-        return `<line class="impost-visible inner-impost-visible${active ? " selected" : ""}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${profileColor}" stroke-width="${paneImpostFace}" />`;
+        return impostBandPath(x1, y1, x2, y2, paneImpostFace, active, " inner-impost-visible");
       }).join("");
       const hit = spans?.length
         ? {x1:X(spans[0].x1), y1:Y(spans[0].y1), x2:X(spans.at(-1).x2), y2:Y(spans.at(-1).y2)}
@@ -109,7 +116,7 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
           });
         } else addDimension(false, px, lineX, physical.x, physicalPosition, item, index);
         innerImpostsMarkup += `
-          ${ribbon ? `<path class="impost-visible inner-impost-visible${active ? " selected" : ""}" d="${ribbon}" fill="${active ? "#ef8b25" : profileColor}" stroke="${material.edge}" stroke-width="1" />` : visible}
+          ${ribbon ? `<path class="impost-visible inner-impost-visible${active ? " selected" : ""}" d="${ribbon}" fill="${active ? "#ef8b25" : profileColor}" stroke="${material.edge}" stroke-width=".8" />` : visible}
           <rect class="impost-grip${active ? " selected" : ""}" x="${lineX - 7}" y="${Y(clippedCenter(0,physical.x+physicalPosition,physical.y+physical.height/2)) - 14}" width="14" height="28" rx="7" />
           <line class="impost-hit" data-scope="pane" data-pane="${index}" data-orientation="vertical" data-id="${item.id}" x1="${endA?.[0]??hit?.x1??lineX}" y1="${endA?.[1]??hit?.y1??py}" x2="${endB?.[0]??hit?.x2??lineX}" y2="${endB?.[1]??hit?.y2??py+paneHeight}" tabindex="0" role="slider" aria-label="Вертикальный импост в ${paneKind} ${index + 1}" aria-valuenow="${Math.round(physicalPosition)}" />
           `;
@@ -121,7 +128,7 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
           });
         } else addDimension(true, py, lineY, physical.y, physicalPosition, item, index);
         innerImpostsMarkup += `
-          ${ribbon ? `<path class="impost-visible inner-impost-visible${active ? " selected" : ""}" d="${ribbon}" fill="${active ? "#ef8b25" : profileColor}" stroke="${material.edge}" stroke-width="1" />` : visible}
+          ${ribbon ? `<path class="impost-visible inner-impost-visible${active ? " selected" : ""}" d="${ribbon}" fill="${active ? "#ef8b25" : profileColor}" stroke="${material.edge}" stroke-width=".8" />` : visible}
           <rect class="impost-grip${active ? " selected" : ""}" x="${X(clippedCenter(1,physical.y+physicalPosition,physical.x+physical.width/2)) - 14}" y="${lineY - 7}" width="28" height="14" rx="7" />
           <line class="impost-hit horizontal" data-scope="pane" data-pane="${index}" data-orientation="horizontal" data-id="${item.id}" x1="${endA?.[0]??hit?.x1??px}" y1="${endA?.[1]??hit?.y1??lineY}" x2="${endB?.[0]??hit?.x2??px+paneWidth}" y2="${endB?.[1]??hit?.y2??lineY}" tabindex="0" role="slider" aria-label="Горизонтальный импост в ${paneKind} ${index + 1}" aria-valuenow="${Math.round(physicalPosition)}" />
           `;
@@ -251,7 +258,7 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
     else addDimension(false, x, lineX, 0, item.position, item);
     if(active && poly) rootEndpointMarkup += segment.map((point,end)=>`<circle class="impost-endpoint" style="cursor:pointer" data-endpoint="${end}" data-scope="root" data-orientation="vertical" data-id="${item.id}" cx="${X(point[0])}" cy="${Y(point[1])}" r="5" fill="#fff" stroke="#ef8b25" stroke-width="2.5" role="button" tabindex="0" aria-label="Изменить ${end?'второй':'первый'} край импоста"/>`).join("");
     rootImpostsMarkup += `
-      ${ribbon ? `<path class="impost-visible${active ? " selected" : ""}" d="${ribbon}" fill="${active ? "#ef8b25" : profileColor}" stroke="${material.edge}" stroke-width="1" />` : `<line class="impost-visible${active ? " selected" : ""}" x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${profileColor}" stroke-width="${impostFace}" />`}
+      ${ribbon ? `<path class="impost-visible${active ? " selected" : ""}" d="${ribbon}" fill="${active ? "#ef8b25" : profileColor}" stroke="${material.edge}" stroke-width=".8" />` : impostBandPath(ax, ay, bx, by, impostFace, active)}
       <rect class="impost-grip${active ? " selected" : ""}" x="${lineX - 8}" y="${rootGripCenter(0,item.position,box.y+box.height/2) - 18}" width="16" height="36" rx="8" />
       <line class="impost-hit" data-scope="root" data-orientation="vertical" data-id="${item.id}" x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" tabindex="0" role="slider" aria-label="Вертикальный импост рамы" aria-valuemin="0" aria-valuemax="${state.width}" aria-valuenow="${Math.round(item.position)}" />
       `;
@@ -274,7 +281,7 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
     else addDimension(true, y, lineY, 0, item.position, item);
     if(active && poly) rootEndpointMarkup += segment.map((point,end)=>`<circle class="impost-endpoint" style="cursor:pointer" data-endpoint="${end}" data-scope="root" data-orientation="horizontal" data-id="${item.id}" cx="${X(point[0])}" cy="${Y(point[1])}" r="5" fill="#fff" stroke="#ef8b25" stroke-width="2.5" role="button" tabindex="0" aria-label="Изменить ${end?'второй':'первый'} край импоста"/>`).join("");
     rootImpostsMarkup += `
-      ${ribbon ? `<path class="impost-visible${active ? " selected" : ""}" d="${ribbon}" fill="${active ? "#ef8b25" : profileColor}" stroke="${material.edge}" stroke-width="1" />` : `<line class="impost-visible${active ? " selected" : ""}" x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${profileColor}" stroke-width="${impostFace}" />`}
+      ${ribbon ? `<path class="impost-visible${active ? " selected" : ""}" d="${ribbon}" fill="${active ? "#ef8b25" : profileColor}" stroke="${material.edge}" stroke-width=".8" />` : impostBandPath(ax, ay, bx, by, impostFace, active)}
       <rect class="impost-grip${active ? " selected" : ""}" x="${rootGripCenter(1,item.position,box.x+box.width/2) - 18}" y="${lineY - 8}" width="36" height="16" rx="8" />
       <line class="impost-hit horizontal" data-scope="root" data-orientation="horizontal" data-id="${item.id}" x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" tabindex="0" role="slider" aria-label="Горизонтальный импост рамы" aria-valuemin="0" aria-valuemax="${state.height}" aria-valuenow="${Math.round(item.position)}" />
       `;
