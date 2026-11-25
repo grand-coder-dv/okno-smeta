@@ -169,7 +169,7 @@ function nestedImpostLimits(item, pane) {
     const depth=tech.frame+(sashBox?tech.sash-SASH_LAP:0);
     const edge=poly?polygonClip(rectPoints(opening),poly,depth):null;
     const box=edge?.length>=3?polyBounds(edge):opening;
-    const half=tech.impost/2, gap=tech.impost/size;
+    const half=barFace(item,tech)/2, gap=Math.max(barFace(item,tech), tech.impost)/size;
     const min=index<=0?(box[axis]-origin+half)/size:siblings[index-1].position+gap;
     const max=index>=siblings.length-1?(box[axis+2]-origin-half)/size:siblings[index+1].position-gap;
     if(min<=max)return {min,max};
@@ -200,8 +200,28 @@ function updateMaterialSelects(reset = false, preserveProfile = false) {
     .join("");
 }
 
-function glassGeometry({pane, rect, edges, sashOwner}, tech = getTechnology()) {
-  const [fl,fr,ft,fb] = edges.map(outer => outer ? tech.frame : tech.impost/2);
+function barFace(item, tech = getTechnology()) {
+  if (!item) return tech.impost;
+  return item.shtulp ? tech.shtulp : tech.impost;
+}
+function adjacentBar(entry, edgeIndex) {
+  if (!entry || entry.edges?.[edgeIndex]) return null;
+  const parents = entry.slantParents || [];
+  const nested = parents.find((parent) => {
+    if (edgeIndex === 1) return parent.orientation === "vertical" && parent.sign > 0;
+    if (edgeIndex === 0) return parent.orientation === "vertical" && parent.sign < 0;
+    if (edgeIndex === 3) return parent.orientation === "horizontal" && parent.sign < 0;
+    return parent.orientation === "horizontal" && parent.sign > 0;
+  });
+  if (nested) return nested.item;
+  if (edgeIndex === 0) return state.vImposts[entry.rootCol - 1] || null;
+  if (edgeIndex === 1) return state.vImposts[entry.rootCol] || null;
+  if (edgeIndex === 2) return state.hImposts[entry.rootRow - 1] || null;
+  return state.hImposts[entry.rootRow] || null;
+}
+function glassGeometry(entry, tech = getTechnology()) {
+  const {pane, rect, edges, sashOwner} = entry;
+  const [fl,fr,ft,fb] = [0,1,2,3].map((side) => edges[side] ? tech.frame : barFace(adjacentBar(entry, side), tech) / 2);
   const ownerEdges=sashOwner && [
     Math.abs(rect.x-sashOwner.rect.x)<0.01,
     Math.abs(rect.x+rect.width-sashOwner.rect.x-sashOwner.rect.width)<0.01,
@@ -227,11 +247,12 @@ function glassGeometry({pane, rect, edges, sashOwner}, tech = getTechnology()) {
   const opening = [l+d,t+d,r-d,b-d];
   const bites = edges.map((outer,i) => tech.bite[sash || ownerEdges?.[i] ? "створка" : outer ? "рама" : "импост"]);
   const intervals = (axis, lo, hi, origin, size, first, last) => {
-    const marks = pane.innerImposts.filter(i => !pane.split && i.orientation === axis)
-      .map(i => origin + i.position*size).sort((a,b) => a-b);
+    const items = pane.innerImposts.filter(i => !pane.split && i.orientation === axis)
+      .slice().sort((a,b) => a.position-b.position);
+    const marks = items.map(i => origin + i.position*size);
     return Array.from({length:marks.length+1},(_,i)=>{
-      const start=i ? marks[i-1]+tech.impost/2 : lo;
-      const end=i<marks.length ? marks[i]-tech.impost/2 : hi;
+      const start=i ? marks[i-1]+barFace(items[i-1], tech)/2 : lo;
+      const end=i<marks.length ? marks[i]-barFace(items[i], tech)/2 : hi;
       const a=i ? tech.bite["импост"] : first, b=i<marks.length ? tech.bite["импост"] : last;
       return {start:start-a, size:end-start+a+b, clear:end-start};
     });
@@ -284,85 +305,389 @@ function paneGlazingArea(index, pane, shapeFactor = 1) {
   },0)/1e6;
 }
 
-function geometry() {
-  const widthM = state.width / 1000;
-  const heightM = state.height / 1000;
-  let area;
-  let perimeter;
-  let verticalFactor = 1;
-  let horizontalFactor = 1;
-
-  if (state.shape === "circle") {
-    area = Math.PI * (widthM / 2) ** 2;
-    perimeter = Math.PI * widthM;
-    verticalFactor = 0.78;
-    horizontalFactor = 0.78;
-  } else {
-    area = widthM * heightM;
-    perimeter = 2 * (widthM + heightM);
+function contourLength(points) {
+  if (!points || points.length < 2) return 0;
+  let sum = 0;
+  for (let i = 0; i < points.length; i += 1) {
+    const next = points[(i + 1) % points.length];
+    sum += Math.hypot(next[0] - points[i][0], next[1] - points[i][1]);
   }
-
-  const customFrame=customFrameMeasures();
-  if(customFrame){area=customFrame.area;perimeter=customFrame.perimeter;}
-  const shapeFactor = customFrame ? 1 : Math.min(1, area / Math.max(widthM * heightM, 0.001));
-  const curvedLength = (orientation, position, rect) => {
-    const poly=constructionPolygon();
-    if (poly) {
-      const range=outlineRange(poly,orientation === "vertical" ? 0 : 1,position);
-      if (!range) return 0;
-      const low=orientation === "vertical" ? rect.y : rect.x;
-      const high=low+(orientation === "vertical" ? rect.height : rect.width);
-      const bounds=polyBounds(poly);
-      const axis=orientation === "vertical" ? 1 : 0;
-      const clippedLow=low===0 ? Math.min(low,bounds[axis]) : low;
-      const clippedHigh=high===(orientation === "vertical" ? state.height : state.width) ? Math.max(high,bounds[axis+2]) : high;
-      return Math.max(0,Math.min(clippedHigh,range[1])-Math.max(clippedLow,range[0]))/1000;
-    }
-    if (!customProfileArcs()) return (orientation === "vertical" ? rect.height : rect.width) / 1000;
-    if (orientation === "vertical") {
-      const top = rect.y === 0 ? (frameCurve(0,0)?.(position) ?? rect.y) : rect.y;
-      const bottom = rect.y + rect.height === state.height ? (frameCurve(2,0)?.(position) ?? state.height) : rect.y + rect.height;
-      return Math.max(0, Math.min(rect.y+rect.height,bottom)-Math.max(rect.y,top))/1000;
-    }
-    const left = rect.x === 0 ? (frameCurve(3,0)?.(position) ?? rect.x) : rect.x;
-    const right = rect.x + rect.width === state.width ? (frameCurve(1,0)?.(position) ?? state.width) : rect.x+rect.width;
-    return Math.max(0,Math.min(rect.x+rect.width,right)-Math.max(rect.x,left))/1000;
-  };
-  const fullRect={x:0,y:0,width:state.width,height:state.height};
-  const rootLength=(item,orientation)=>{
-    if(constructionPolygon()){
-      const poly=constructionPolygon(),inner=polygonClip(poly,poly,getTechnology().frame);
-      const [a,b]=impostSegment(item,orientation,fullRect,inner,true);
-      return Math.hypot(b[0]-a[0],b[1]-a[1])/1000;
-    }
-    return curvedLength(orientation,item.position,fullRect);
-  };
-  const primaryImpost = customProfileArcs() || constructionPolygon()
-    ? state.vImposts.reduce((sum,item)=>sum+rootLength(item,"vertical"),0)
-      +state.hImposts.reduce((sum,item)=>sum+rootLength(item,"horizontal"),0)
-    : state.vImposts.length * heightM * verticalFactor + state.hImposts.length * widthM * horizontalFactor;
-  let nestedImpost = 0;
-  let nestedCount = 0;
-  let glassUnits = 0;
-  const paneGlazingAreas = [], paneGlassCounts = [];
-  sectionPanes().forEach((pane, index) => {
-    const paneRect = getPanePhysicalRect(index);
-    pane.innerImposts.forEach((item) => {
-      nestedCount += 1;
-      nestedImpost += constructionPolygon()
-        ? (()=>{const [a,b]=impostSegment(item,item.orientation,paneRect,sectionContour(sectionLayout()[index],constructionPolygon(),getTechnology().frame));return Math.hypot(b[0]-a[0],b[1]-a[1])/1000;})()
-        : customProfileArcs()
-        ? curvedLength(item.orientation, item.orientation === "vertical" ? paneRect.x + paneRect.width*item.position : paneRect.y + paneRect.height*item.position, paneRect)
-        : item.orientation === "vertical" ? (paneRect.height / 1000) * verticalFactor : (paneRect.width / 1000) * horizontalFactor;
+  return sum;
+}
+function arcDevelopedLength(chord, radius) {
+  if (!(chord > 0) || !Number.isFinite(radius)) return Math.max(0, chord || 0);
+  const curve = Math.max(chord / 2, radius);
+  return curve * 2 * Math.asin(Math.min(1, chord / (2 * curve)));
+}
+function edgeKindFromDelta(dx, dy, arc) {
+  if (arc) return "arc";
+  const length = Math.hypot(dx, dy);
+  if (length < 1e-6) return "transom";
+  const angle = Math.abs(Math.atan2(dy, dx)) * 180 / Math.PI;
+  if (angle < 12 || angle > 168) return "transom";
+  if (angle > 78 && angle < 102) return "mullion";
+  return "oblique";
+}
+function splitBoundaryLengths(outline) {
+  const boundary = outline?.boundary || outline?.pts;
+  const corners = outline?.pts;
+  if (!boundary || !corners || corners.length < 2) return [];
+  const indexOf = (point) => boundary.findIndex((candidate) => Math.hypot(candidate[0] - point[0], candidate[1] - point[1]) < 0.8);
+  const indices = corners.map(indexOf);
+  if (indices.some((index) => index < 0)) {
+    return corners.map((point, index) => {
+      const next = corners[(index + 1) % corners.length];
+      return Math.hypot(next[0] - point[0], next[1] - point[1]);
     });
-    if (pane.split) return;
-    const entry=sectionLayout()[index], tech=getTechnology(), geo=glassGeometry(entry,tech);
-    paneGlassCounts[index] = geo.fields.filter(f=>f.clearW>1e-6 && f.clearH>1e-6 &&
-      ((state.shape === "circle" || state.shape === "skew" || hasSlantedImposts() || customProfileArcs()) ? (fittedGlass(entry,geo,f,tech).area ?? f.w*f.h)>1e-7 : true)).length;
-    glassUnits += paneGlassCounts[index];
-    paneGlazingAreas[index] = paneGlazingArea(index, pane, shapeFactor);
+  }
+  return indices.map((start, index) => {
+    const end = indices[(index + 1) % indices.length];
+    let length = 0;
+    let cursor = start;
+    let guard = 0;
+    while (cursor !== end && guard <= boundary.length) {
+      const next = (cursor + 1) % boundary.length;
+      length += Math.hypot(boundary[next][0] - boundary[cursor][0], boundary[next][1] - boundary[cursor][1]);
+      cursor = next;
+      guard += 1;
+    }
+    return length;
   });
-  const glazingArea = paneGlazingAreas.reduce((sum, value) => sum + value, 0);
-  const impost = primaryImpost + nestedImpost;
-  return { area, perimeter, glazingArea, paneGlazingAreas, paneGlassCounts, impost, primaryImpost, nestedImpost, nestedCount, glassUnits, overall:overallSize() };
+}
+function innerFrameBoundary(tech) {
+  const inset = tech.frame;
+  if (state.shape === "circle") {
+    const radius = state.width / 2 - inset;
+    if (radius <= 1) return [];
+    const cx = state.width / 2;
+    const cy = state.height / 2;
+    return Array.from({ length: 180 }, (_, index) => {
+      const angle = 2 * Math.PI * index / 180;
+      return [cx + radius * Math.cos(angle), cy + radius * Math.sin(angle)];
+    });
+  }
+  const polygon = constructionPolygon();
+  if (polygon) {
+    const inner = polygonClip(polygon, polygon, inset);
+    return inner.length >= 3 ? inner : [];
+  }
+  if (state.width <= 2 * inset || state.height <= 2 * inset) return [];
+  const outline = fittedOutline([inset, inset, state.width - inset, state.height - inset], [inset, inset, inset, inset], null, (value) => value, (value) => value, 1, 1);
+  const points = outline.boundary || outline.pts;
+  return points?.length >= 3 ? points : [];
+}
+function impostHostBoundary(entry, tech, root) {
+  if (root) return innerFrameBoundary(tech);
+  const hostPane = entry.pane.split ? { ...entry.pane, innerImposts: [], split: null } : entry.pane;
+  const opening = glassGeometry({ ...entry, pane: hostPane }, tech).opening;
+  let host = rectPoints(opening);
+  const polygon = constructionPolygon();
+  if (polygon) {
+    const contour = sectionContour(entry, polygon, 0);
+    if (contour?.length >= 3) host = polygonClip(host, contour);
+  } else if (state.shape === "circle" || customProfileArcs()) {
+    const inner = innerFrameBoundary(tech);
+    if (inner.length >= 3) host = polygonClip(host, inner);
+  }
+  return host;
+}
+function impostAxisLength(item, orientation, root, entry, tech) {
+  if (state.shape === "circle" && root && !item.endOffsets?.some(Boolean)) {
+    const radius = state.width / 2 - tech.frame;
+    const center = orientation === "vertical" ? state.width / 2 : state.height / 2;
+    const delta = item.position - center;
+    return Math.abs(delta) >= radius ? 0 : 2 * Math.sqrt(radius * radius - delta * delta);
+  }
+  const boundary = impostHostBoundary(entry, tech, root);
+  if (!boundary || boundary.length < 3) return 0;
+  const rect = root ? { x: 0, y: 0, width: state.width, height: state.height } : entry.rect;
+  const [start, end] = impostSegment(item, orientation, rect, boundary, root);
+  return Math.hypot(end[0] - start[0], end[1] - start[1]);
+}
+function memberRecord(fields) {
+  return {
+    kindLabel: { transom: "Поперечина", mullion: "Стойка", oblique: "Косой профиль", arc: "Арочный профиль", ring: "Кольцо" }[fields.kind] || "Профиль",
+    roleLabel: { frame: "Рама", sash: "Створка", impost: "Импост", shtulp: "Штульп", extender: "Расширитель", connector: "Соединитель", corner: "Угловой профиль" }[fields.role] || "Профиль",
+    ...fields,
+  };
+}
+function frameMemberList(tech) {
+  if (state.shape === "circle") {
+    return [memberRecord({
+      id: "frame-ring", role: "frame", kind: "ring", side: null, index: null, vertex: null,
+      lengthMm: Math.PI * state.width, widthMm: tech.frame, arcRadius: state.width / 2,
+      label: "Рама", shapeLabel: "Окружность", joints: "непрерывный гиб",
+      select: { type: "circle-frame", side: null, index: null },
+    })];
+  }
+  const polygon = state.shape === "skew" ? (polygonPoints() || rectPoints([0, 0, state.width, state.height])) : null;
+  if (polygon) {
+    return polygon.map((point, index) => {
+      const next = polygon[(index + 1) % polygon.length];
+      const dx = next[0] - point[0];
+      const dy = next[1] - point[1];
+      const kind = edgeKindFromDelta(dx, dy, false);
+      const previous = polygon[(index + polygon.length - 1) % polygon.length];
+      const following = polygon[(index + 2) % polygon.length];
+      const turn = (a, b, c) => {
+        const ux = a[0] - b[0];
+        const uy = a[1] - b[1];
+        const vx = c[0] - b[0];
+        const vy = c[1] - b[1];
+        const denom = Math.hypot(ux, uy) * Math.hypot(vx, vy);
+        if (denom < 1e-8) return 45;
+        return Math.acos(Math.max(-1, Math.min(1, (ux * vx + uy * vy) / denom))) * 90 / Math.PI;
+      };
+      return memberRecord({
+        id: `frame-${index}`, role: "frame", kind, side: index, index: null, vertex: null,
+        lengthMm: Math.hypot(dx, dy), widthMm: tech.frame,
+        label: `Рама, сторона ${index + 1}`,
+        shapeLabel: kind === "oblique" ? "Косая" : "Прямая",
+        joints: `${formatNumber(turn(previous, point, next), 1)}° / ${formatNumber(turn(point, next, following), 1)}°`,
+        select: { type: "polygon", side: index, index: null },
+      });
+    });
+  }
+  const names = ["верхняя поперечина", "правая стойка", "нижняя поперечина", "левая стойка"];
+  const chords = [state.width, state.height, state.width, state.height];
+  const arcs = state.shape === "arch" ? state.frameArcs : null;
+  const outline = profileOutline([0, 0, state.width, state.height], arcs, (value) => value, (value) => value, 1, 1);
+  const joints = outline.edges.map((edge, index) => {
+    const previous = outline.edges[(index + 3) % 4];
+    const delta = edge.startAngle - (previous.endAngle + Math.PI);
+    return Math.acos(Math.max(-1, Math.min(1, Math.cos(delta)))) * 90 / Math.PI;
+  });
+  return names.map((name, side) => {
+    const arc = arcs?.[side];
+    const kind = arc ? "arc" : (side % 2 ? "mullion" : "transom");
+    return memberRecord({
+      id: `frame-${side}`, role: "frame", kind, side, index: null, vertex: null,
+      lengthMm: arc ? arcDevelopedLength(chords[side], arc.radius) : chords[side],
+      widthMm: tech.frame,
+      arcRadius: arc ? Math.max(chords[side] / 2, arc.radius) : null,
+      label: `Рама, ${name}`,
+      shapeLabel: arc ? (arc.direction === "in" ? "Дуга внутрь" : "Дуга наружу") : "Прямая",
+      joints: `${formatNumber(joints[side], 1)}° / ${formatNumber(joints[(side + 1) % 4], 1)}°`,
+      select: { type: "frame", side, index: null },
+    });
+  });
+}
+function sashMemberList(tech, layout) {
+  const members = [];
+  layout.forEach((entry, index) => {
+    const pane = entry.pane;
+    const ownsSash = pane.split ? pane.sashFill && pane.opening !== "fixed" : pane.opening !== "fixed";
+    if (!ownsSash) return;
+    const shell = pane.split ? { ...entry, pane: { ...pane, innerImposts: [], split: null } } : entry;
+    const box = glassGeometry(shell, tech).sashBox;
+    if (!box) return;
+    const width = tech.sash;
+    if (state.shape === "circle") {
+      const depth = tech.frame - SASH_LAP;
+      const radius = state.width / 2 - depth;
+      const fitted = circularOutline(box, depth, (value) => value, (value) => value);
+      const full = !state.vImposts.length && !state.hImposts.length && entry.edges.every(Boolean);
+      members.push(memberRecord({
+        id: `sash-${index}`, role: "sash", kind: full ? "ring" : "arc", side: null, index, vertex: null,
+        lengthMm: full && radius > 0 ? 2 * Math.PI * radius : contourLength(fitted.boundary),
+        widthMm: width, label: `Створка ${sectionNumber(index)}`, shapeLabel: full ? "Окружность" : "Сектор",
+        joints: full ? "непрерывный гиб" : "стык с импостом",
+        select: { type: "circle-sash", side: null, index },
+      }));
+      return;
+    }
+    const polygon = constructionPolygon();
+    if (polygon) {
+      const depth = tech.frame - SASH_LAP;
+      const boundary = clipSlantedSections(polygonClip(rectPoints(slantedBounds(box, entry)), polygon, depth), entry, Math.max(0, tech.impost / 2 - SASH_LAP));
+      if (!boundary || boundary.length < 3) return;
+      boundary.forEach((point, side) => {
+        const next = boundary[(side + 1) % boundary.length];
+        const dx = next[0] - point[0];
+        const dy = next[1] - point[1];
+        const kind = edgeKindFromDelta(dx, dy, false);
+        members.push(memberRecord({
+          id: `sash-${index}-${side}`, role: "sash", kind, side, index, vertex: null,
+          lengthMm: Math.hypot(dx, dy), widthMm: width,
+          label: `Створка ${sectionNumber(index)}, сторона ${side + 1}`,
+          shapeLabel: kind === "oblique" ? "Косая" : "Прямая", joints: "по контуру створки",
+          select: { type: "skew-sash", side, index },
+        }));
+      });
+      return;
+    }
+    const touch = [entry.edges[2], entry.edges[1], entry.edges[3], entry.edges[0]];
+    const arcs = state.shape === "arch" ? (pane.sashArcs || null) : null;
+    const followsFrame = touch.some((flag, side) => flag && state.shape === "arch" && state.frameArcs?.[side]);
+    const ownArc = arcs && Object.values(arcs).some(Boolean);
+    const names = ["верхняя поперечина", "правая стойка", "нижняя поперечина", "левая стойка"];
+    let lengths;
+    if (!followsFrame && !ownArc) {
+      lengths = [box[2] - box[0], box[3] - box[1], box[2] - box[0], box[3] - box[1]];
+    } else {
+      const outline = fittedOutline(box, touch.map((flag) => flag ? tech.frame - SASH_LAP : null), arcs, (value) => value, (value) => value, 1, 1);
+      lengths = splitBoundaryLengths(outline);
+    }
+    lengths.forEach((length, side) => {
+      const arc = arcs?.[side] || (followsFrame && touch[side] && state.frameArcs?.[side]);
+      const kind = arc ? "arc" : (side % 2 ? "mullion" : "transom");
+      members.push(memberRecord({
+        id: `sash-${index}-${side}`, role: "sash", kind, side, index, vertex: null,
+        lengthMm: length, widthMm: width,
+        label: `Створка ${sectionNumber(index)}, ${names[side]}`,
+        shapeLabel: arc ? "Дуга" : "Прямая", joints: "45° / 45°",
+        select: { type: "sash", side, index },
+      }));
+    });
+  });
+  return members;
+}
+function addonMemberList(tech, frames) {
+  const members = [];
+  const stacks = {};
+  (state.addons || []).forEach((addon) => {
+    const width = addon.role === "extender" ? tech.extender : addon.role === "connector" ? tech.connector : tech.corner;
+    if (addon.role === "corner") {
+      const count = Math.max(frames.length, 1);
+      const next = frames.find((member) => member.side === addon.vertex);
+      const previous = frames.find((member) => member.side === (addon.vertex + count - 1) % count);
+      const vertical = [next, previous].find((member) => member && (member.kind === "mullion" || member.side % 2 === 1));
+      const length = (vertical || [next, previous].sort((a, b) => (b?.lengthMm || 0) - (a?.lengthMm || 0))[0])?.lengthMm || 0;
+      members.push(memberRecord({
+        id: addon.id, role: "corner", kind: "mullion", side: null, index: null, vertex: addon.vertex,
+        lengthMm: length, widthMm: width, label: `Угловой профиль, угол ${(addon.vertex ?? 0) + 1}`,
+        shapeLabel: "Наружный угол", joints: "к стойкам рамы", select: { type: "vertex", side: addon.vertex, index: null },
+      }));
+      return;
+    }
+    if (addon.role !== "extender" && addon.role !== "connector") return;
+    let length = 0;
+    let arcRadius = null;
+    if (addon.side === "ring") {
+      const stacked = stacks.ring || 0;
+      length = Math.PI * (state.width + 2 * stacked + width);
+      stacks.ring = stacked + width;
+    } else {
+      const frame = frames.find((member) => member.side === addon.side);
+      const stacked = stacks[addon.side] || 0;
+      arcRadius = frame?.arcRadius || null;
+      length = frame ? (arcRadius ? frame.lengthMm * (arcRadius + stacked + width / 2) / arcRadius : frame.lengthMm) : 0;
+      stacks[addon.side] = stacked + width;
+    }
+    members.push(memberRecord({
+      id: addon.id, role: addon.role, kind: addon.side === "ring" ? "ring" : "transom",
+      side: addon.side, index: null, vertex: null, lengthMm: length, widthMm: width, arcRadius,
+      label: addon.role === "extender" ? "Расширитель" : "Соединитель",
+      shapeLabel: addon.side === "ring" ? "Кольцо" : "По стороне рамы",
+      joints: "встык к раме",
+      select: { type: addon.side === "ring" ? "circle-frame" : state.shape === "skew" ? "polygon" : "frame", side: addon.side === "ring" ? null : addon.side, index: null },
+    }));
+  });
+  return members;
+}
+let constructionCache = null;
+let constructionKey = "";
+function buildConstruction() {
+  const tech = getTechnology();
+  const layout = sectionLayout();
+  const members = frameMemberList(tech);
+  const frames = members.slice();
+  members.push(...sashMemberList(tech, layout));
+  const pushBar = (item, orientation, root, entry) => {
+    const length = impostAxisLength(item, orientation, root, entry, tech);
+    const slanted = item.endOffsets?.some(Boolean);
+    members.push(memberRecord({
+      id: `bar-${item.id}`, role: item.shtulp ? "shtulp" : "impost",
+      kind: slanted ? "oblique" : (orientation === "vertical" ? "mullion" : "transom"),
+      side: null, index: root ? null : entry && layout.indexOf(entry), vertex: null,
+      lengthMm: length, widthMm: barFace(item, tech),
+      label: item.shtulp ? "Штульп" : (root ? "Импост рамы" : "Импост секции"),
+      shapeLabel: slanted ? "Косой" : "Прямой",
+      joints: slanted ? "концы со сдвигом" : "ось внутри профилей",
+      impostId: item.id, scope: root ? "root" : "pane", orientation,
+      select: null,
+    }));
+  };
+  state.vImposts.forEach((item) => pushBar(item, "vertical", true, null));
+  state.hImposts.forEach((item) => pushBar(item, "horizontal", true, null));
+  layout.forEach((entry) => {
+    (entry.pane.innerImposts || []).forEach((item) => pushBar(item, item.orientation, false, entry));
+  });
+  members.push(...addonMemberList(tech, frames));
+  const paneGlazingAreas = [];
+  const paneGlassCounts = [];
+  let glassUnits = 0;
+  let bead = 0;
+  const curved = state.shape === "circle" || state.shape === "skew" || hasSlantedImposts() || customProfileArcs();
+  layout.forEach((entry, index) => {
+    if (entry.pane.split) return;
+    const geo = glassGeometry(entry, tech);
+    let paneArea = 0;
+    let count = 0;
+    geo.fields.forEach((field) => {
+      if (field.clearW <= 1e-6 || field.clearH <= 1e-6 || field.w <= 0 || field.h <= 0) return;
+      const fitted = fittedGlass(entry, geo, field, tech);
+      const area = curved ? (fitted.area ?? field.w * field.h) : field.w * field.h;
+      if (area <= 1e-7) return;
+      count += 1;
+      paneArea += area;
+      bead += fitted.boundary?.length >= 3 ? contourLength(fitted.boundary) : 2 * (field.w + field.h);
+    });
+    paneGlassCounts[index] = count;
+    paneGlazingAreas[index] = paneArea / 1e6;
+    glassUnits += count;
+  });
+  const sum = (role) => members.filter((member) => member.role === role).reduce((total, member) => total + member.lengthMm, 0);
+  const measured = state.shape === "circle" ? null : customFrameMeasures();
+  const area = state.shape === "circle"
+    ? Math.PI * (state.width / 2000) ** 2
+    : measured ? measured.area : state.width * state.height / 1e6;
+  const primaryImpost = members.filter((member) => member.role === "impost" && member.scope === "root").reduce((total, member) => total + member.lengthMm, 0);
+  const nested = members.filter((member) => member.role === "impost" && member.scope === "pane");
+  return {
+    area,
+    members,
+    paneGlazingAreas,
+    paneGlassCounts,
+    glassUnits,
+    glazingArea: paneGlazingAreas.reduce((total, value) => total + (value || 0), 0),
+    nestedCount: nested.length,
+    totals: {
+      frame: sum("frame"), sash: sum("sash"), impost: sum("impost"),
+      primaryImpost, nestedImpost: nested.reduce((total, member) => total + member.lengthMm, 0),
+      shtulp: sum("shtulp"), extender: sum("extender"), connector: sum("connector"), corner: sum("corner"), bead,
+    },
+  };
+}
+function constructionModel() {
+  const tech = getTechnology();
+  const key = `${comparableCurrentState()}|${tech.frame}|${tech.sash}|${tech.impost}|${tech.shtulp}|${tech.extender}|${tech.connector}|${tech.corner}`;
+  if (key === constructionKey && constructionCache) return constructionCache;
+  constructionCache = buildConstruction();
+  constructionKey = key;
+  return constructionCache;
+}
+function geometry() {
+  const model = constructionModel();
+  const meters = (value) => value / 1000;
+  return {
+    area: model.area,
+    perimeter: meters(model.totals.frame),
+    sash: meters(model.totals.sash),
+    bead: meters(model.totals.bead),
+    impost: meters(model.totals.impost),
+    shtulp: meters(model.totals.shtulp),
+    extender: meters(model.totals.extender),
+    connector: meters(model.totals.connector),
+    corner: meters(model.totals.corner),
+    primaryImpost: meters(model.totals.primaryImpost),
+    nestedImpost: meters(model.totals.nestedImpost),
+    nestedCount: model.nestedCount,
+    glassUnits: model.glassUnits,
+    glazingArea: model.glazingArea,
+    paneGlazingAreas: model.paneGlazingAreas,
+    paneGlassCounts: model.paneGlassCounts,
+    members: model.members,
+    overall: overallSize(),
+  };
 }
