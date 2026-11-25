@@ -1,5 +1,85 @@
 // Экран редактора: инспектор, итог, кнопки и общий пересчёт.
+function profileTarget(edge) {
+  if (!edge) return null;
+  if (edge.type === "circle-frame") return { side: "ring", vertex: null };
+  if (edge.type === "frame" || edge.type === "polygon") return { side: edge.side, vertex: null };
+  if (edge.type === "vertex") return { side: null, vertex: edge.side };
+  return null;
+}
+function hasConstructionAddon(role, target) {
+  return Boolean(target && (state.addons || []).some((addon) => addon.role === role && addon.side === target.side && addon.vertex === target.vertex));
+}
+function toggleConstructionAddon(role) {
+  const edge = activeProfileEdge?.owner === state ? activeProfileEdge : null;
+  const target = profileTarget(edge);
+  if (!target) return;
+  state.addons = state.addons || [];
+  const index = state.addons.findIndex((addon) => addon.role === role && addon.side === target.side && addon.vertex === target.vertex);
+  if (index >= 0) state.addons.splice(index, 1);
+  else state.addons.push({ id: createImpostId("addon", role), role, side: target.side, vertex: target.vertex });
+  renderAll();
+}
+function renderProfileInspector(edge) {
+  const model = constructionModel();
+  const sameIndex = (member) => (member.select?.index ?? null) === (edge.index ?? null);
+  let member = model.members.find((item) => item.select && (item.role === "frame" || item.role === "sash") && item.select.type === edge.type && item.select.side === edge.side && sameIndex(item));
+  if (!member && edge.type === "circle-frame") member = model.members.find((item) => item.role === "frame" && item.kind === "ring");
+  if (!member && edge.type === "circle-sash") member = model.members.find((item) => item.role === "sash" && item.select?.type === "circle-sash" && sameIndex(item));
+  const frames = model.members.filter((item) => item.role === "frame");
+  if (!member && edge.type === "vertex") {
+    const next = frames.find((item) => item.side === edge.side);
+    const previous = frames.find((item) => item.side === (edge.side + frames.length - 1) % frames.length);
+    const corner = model.members.find((item) => item.role === "corner" && item.vertex === edge.side);
+    member = {
+      roleLabel: "Рама",
+      kindLabel: `Угол ${edge.side + 1}`,
+      widthMm: corner?.widthMm,
+      lengthMm: corner?.lengthMm,
+      joints: next?.joints || previous?.joints || "—",
+      shapeLabel: "Вершина контура",
+    };
+  }
+  $("#profileInspector").hidden = false;
+  $("#profileRole").textContent = member?.roleLabel || "Профиль";
+  $("#profileKind").textContent = member?.kindLabel || "Сторона";
+  $("#profileWidth").textContent = member?.widthMm ? `${Math.round(member.widthMm)} мм` : "—";
+  $("#profileLength").textContent = Number.isFinite(member?.lengthMm) ? `${Math.round(member.lengthMm)} мм` : "—";
+  $("#profileJoints").textContent = member?.joints || "—";
+  $("#profileShape").textContent = member?.shapeLabel || "Прямая";
+  $("#profileHint").textContent = {
+    rect: "Прямое окно считается тем же контуром: длины стоек и поперечин равны габариту. Косые углы, дуги и окружность включаются формой.",
+    skew: "Поднимите угол, задайте длину стороны или разбейте профиль. Косые концы импоста задаются на выбранном импосте.",
+    arch: "Выберите сторону рамы или створки и включите дугу. В смете длина этой стороны — развёртка дуги.",
+    circle: "Круглое окно построено по диаметру. У кольца можно добавить расширитель или соединитель.",
+  }[state.shape] || "";
+  const edit = $("#profileEditGeometry");
+  edit.hidden = !((state.shape === "arch" && (edge.type === "frame" || edge.type === "sash")) || (state.shape === "skew" && (edge.type === "vertex" || edge.type === "polygon")));
+  edit.textContent = state.shape === "arch" ? "Дуга стороны" : "Изменить геометрию";
+  const sideTools = edge.type === "frame" || edge.type === "polygon" || edge.type === "circle-frame";
+  const target = profileTarget(edge);
+  const extender = $("#profileAddExtender");
+  const connector = $("#profileAddConnector");
+  const corner = $("#profileAddCorner");
+  const shtulp = $("#profileAddShtulp");
+  extender.hidden = !sideTools;
+  connector.hidden = !sideTools;
+  corner.hidden = edge.type !== "vertex";
+  shtulp.hidden = edge.type !== "sash" && edge.type !== "skew-sash";
+  const tech = getTechnology();
+  extender.textContent = `${hasConstructionAddon("extender", target) ? "Убрать расширитель" : "Расширитель"} ${tech.extender} мм`;
+  connector.textContent = `${hasConstructionAddon("connector", target) ? "Убрать соединитель" : "Соединитель"} ${tech.connector} мм`;
+  corner.textContent = `${hasConstructionAddon("corner", target) ? "Убрать угловой" : "Угловой профиль"} ${tech.corner} мм`;
+  shtulp.textContent = "Штульп на этой стороне";
+}
 function renderInspector() {
+  const edge = activeProfileEdge?.owner === state ? activeProfileEdge : null;
+  if (edge && !state.selectedImpost) {
+    $("#paneInspector").hidden = true;
+    $("#impostInspector").hidden = true;
+    renderProfileInspector(edge);
+    return;
+  }
+  $("#profileInspector").hidden = true;
   const pane = sectionPanes()[state.selectedPane];
   const record = getSelectedImpostRecord();
   if (state.selectedImpost && !record) state.selectedImpost = null;
@@ -36,7 +116,9 @@ function renderInspector() {
     }
     const nestedScope = record.pane?.opening === "fixed" ? "глухом проёме" : "створке";
     $("#selectedImpostScope").textContent = isRoot ? "Импост рамы" : `Импост в ${nestedScope} № ${record.selected.paneIndex + 1}`;
-    $("#selectedImpostName").textContent = vertical ? "Вертикальный" : "Горизонтальный";
+    $("#selectedImpostName").textContent = record.item.shtulp
+      ? (vertical ? "Штульп, стойка" : "Штульп, поперечина")
+      : (vertical ? "Вертикальный" : "Горизонтальный");
     $("#impostPositionLabel").textContent = "Расстояние от выбранного края, мм";
     if (sharedAxis) {
       const group = sharedImpostLimits(sharedAxis, record.selected.orientation);
@@ -72,6 +154,14 @@ function renderInspector() {
           $(`#impostEndSize${end}`).textContent=`${labels[end]}: ${axis} = ${shown} мм`;
         });
       }
+    }
+    const bar = constructionModel().members.find((member) => member.impostId === record.item.id && member.scope === record.selected.scope);
+    const facts = $("#impostProfileFacts");
+    if (facts) facts.textContent = bar ? `${bar.roleLabel}, ${bar.kindLabel.toLowerCase()}; ширина ${Math.round(bar.widthMm)} мм; длина ${Math.round(bar.lengthMm)} мм` : "";
+    const shtulpButton = $("#toggleShtulp");
+    if (shtulpButton) {
+      shtulpButton.textContent = record.item.shtulp ? "Сделать импостом" : "Сделать штульпом";
+      shtulpButton.setAttribute("aria-pressed", String(Boolean(record.item.shtulp)));
     }
     return;
   }
@@ -162,7 +252,12 @@ function renderSummary(calculation) {
   $("#summaryProductType").textContent = PRODUCT_TYPES[state.productType || "window"];
   $("#summaryProfile").textContent = calculation.profile.name;
   const tech = getTechnology();
-  $("#summaryTechnology").textContent = `рама ${tech.frame} · створка ${tech.sash} · импост ${tech.impost} мм`;
+  const extras = [];
+  if (calculation.shtulp > 0) extras.push(`штульп ${tech.shtulp}`);
+  if (calculation.extender > 0) extras.push(`расширитель ${tech.extender}`);
+  if (calculation.connector > 0) extras.push(`соединитель ${tech.connector}`);
+  if (calculation.corner > 0) extras.push(`угол ${tech.corner}`);
+  $("#summaryTechnology").textContent = `рама ${tech.frame} · створка ${tech.sash} · импост ${tech.impost}${extras.length ? ` · ${extras.join(" · ")}` : ""} мм`;
   $("#summaryShape").textContent = SHAPES[state.shape];
   $("#summaryFinish").textContent = calculation.finish.name;
   $("#summaryHardware").textContent = selectedHardware()?.name || "Тариф прайса";
@@ -756,6 +851,36 @@ function bindEvents() {
 
   bindCanvasDragging();
   bindCanvasZoom();
+  $("#profileEditGeometry").addEventListener("click", () => {
+    const edge = activeProfileEdge?.owner === state ? activeProfileEdge : null;
+    if (!edge) return;
+    if (edge.type === "vertex" || edge.type === "polygon") editPolygon(edge);
+    else editProfileSide({ dataset: { profileEdge: edge.type, edgeIndex: edge.index ?? "", edgeSide: edge.side } });
+  });
+  $("#profileAddExtender").addEventListener("click", () => toggleConstructionAddon("extender"));
+  $("#profileAddConnector").addEventListener("click", () => toggleConstructionAddon("connector"));
+  $("#profileAddCorner").addEventListener("click", () => toggleConstructionAddon("corner"));
+  $("#profileAddShtulp").addEventListener("click", () => {
+    const edge = activeProfileEdge?.owner === state ? activeProfileEdge : null;
+    if (!edge || edge.type === "skew-sash") {
+      showToast("На косом контуре штульп включается на выбранном импосте.");
+      return;
+    }
+    const entry = sectionLayout()[edge.index];
+    const item = entry && adjacentBar(entry, [2, 1, 3, 0][edge.side]);
+    if (!item) {
+      showToast("Штульп ставится на импост между створками, а не на сторону рамы.");
+      return;
+    }
+    item.shtulp = !item.shtulp;
+    renderAll();
+  });
+  $("#toggleShtulp").addEventListener("click", () => {
+    const record = getSelectedImpostRecord();
+    if (!record) return;
+    record.item.shtulp = !record.item.shtulp;
+    renderAll();
+  });
   window.addEventListener("afterprint", () => document.body.classList.remove("printing-order"));
   window.addEventListener("beforeunload", (event) => {
     if (!hasUnsavedProjectWork()) return;
