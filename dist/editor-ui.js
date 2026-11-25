@@ -225,11 +225,12 @@ function renderInspector() {
     hardwareNote.classList.remove("warn");
     hardwareNote.textContent = `На изделие: ${hardware.name}${handleItem ? `, ручка ${handleItem.name}` : ""}`;
   } else {
-    const outside = sashGlassSizes(openingPane).filter((size) => !hardwareFitsSize(hardware, size.width, size.height));
+    const size = sashProfileSize(openingPane);
+    const outside = size && !hardwareFitsSize(hardware, size.width, size.height);
     hardwareNote.hidden = false;
-    hardwareNote.classList.toggle("warn", outside.length > 0);
-    hardwareNote.textContent = outside.length
-      ? `${hardware.name}: ${outside.map((size) => `${size.width}×${size.height}`).join(", ")} мм вне диапазона`
+    hardwareNote.classList.toggle("warn", Boolean(outside));
+    hardwareNote.textContent = size
+      ? `${hardware.name}: створка ${size.width}×${size.height} мм${outside ? ` вне диапазона ${hardware.minWidth}–${hardware.maxWidth} × ${hardware.minHeight}–${hardware.maxHeight}` : ""}${handleItem ? ` · ручка ${handleItem.name}` : ""}`
       : `${hardware.name}${handleItem ? ` · ручка ${handleItem.name}` : ""}`;
   }
   const innerCount = pane.innerImposts.length;
@@ -343,8 +344,8 @@ function renderHardwareChoices() {
   const problems = hardwareRangeProblems();
   note.classList.toggle("warn", problems.length > 0);
   if (!set) note.textContent = "Назначьте комплект этой профильной системе и типу изделия во вкладке «Фурнитура».";
-  else if (problems.length) note.textContent = `Диапазон стеклопакета ${set.minWidth}–${set.maxWidth} × ${set.minHeight}–${set.maxHeight} мм. Вне диапазона: ${problems.join("; ")}.`;
-  else note.textContent = `Для стеклопакета створки: ширина ${set.minWidth}–${set.maxWidth} мм, высота ${set.minHeight}–${set.maxHeight} мм.`;
+  else if (problems.length) note.textContent = `Диапазон створки ${set.minWidth}–${set.maxWidth} × ${set.minHeight}–${set.maxHeight} мм. Вне диапазона: ${problems.join("; ")}.`;
+  else note.textContent = `Для створки: ширина ${set.minWidth}–${set.maxWidth} мм, высота ${set.minHeight}–${set.maxHeight} мм.`;
 }
 
 function renderAll() {
