@@ -834,6 +834,19 @@ h3 {
   stroke-width: 1.4;
 }
 
+.canvas-delete svg {
+  fill: none;
+  stroke: #c5362b;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.canvas-delete {
+  color: #c5362b;
+  border-color: rgba(197, 54, 43, 0.35);
+}
+
 .equal-glass-btn:hover {
   color: var(--accent);
   border-color: rgba(242, 138, 46, 0.45);
