@@ -567,6 +567,12 @@ h3 {
   border-radius: 12px 12px 1px 1px;
 }
 
+.shape-icon.skew {
+  border: 0;
+  background: currentColor;
+  clip-path: path(evenodd, "M0 5 L22 0 L22 18 L0 18 Z M2 6.6 L2 16 L20 16 L20 2.5 Z");
+}
+
 .shape-icon.circle {
   width: 19px;
   height: 19px;
