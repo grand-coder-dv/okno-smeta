@@ -822,6 +822,20 @@ h3 {
   opacity: 0.45;
 }
 
+#inlineDimension {
+  position: absolute;
+  z-index: 4;
+  margin: 0;
+  padding: 0 6px;
+  color: #20384c;
+  font: 750 15px/28px inherit;
+  text-align: center;
+  background: #fff;
+  border: 1px solid #24384f;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(24, 38, 58, 0.16);
+}
+
 #windowCanvas .dimension-text {
   fill: #526078;
   font-size: 15px;
