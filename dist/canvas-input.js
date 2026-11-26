@@ -155,21 +155,38 @@ function bindCanvasDragging() {
     const target = event.target.closest?.("[data-axis-group], [data-window-dimension], [data-profile-length]");
     if (!target) return;
     event.preventDefault();
+    event.stopPropagation();
     if(target.hasAttribute("data-profile-length")){editPolygon({type:"length",side:Number(target.dataset.profileLength)});return;}
-    let field = target.dataset.windowDimension;
+    const field = target.dataset.windowDimension;
+    const box = target.getBoundingClientRect();
     if (!field) {
       const group = canvasLayout.axisGroups[Number(target.dataset.axisGroup)];
       if (!group?.length) return;
       const first = group[0];
+      const verticalLine = first.vertical;
+      const shown = Math.round(verticalLine ? state.height - first.absolute : first.absolute);
       selectImpostFromNode({dataset:{scope:first.index == null ? "root" : "pane", pane:first.index,
         orientation:first.item.orientation, id:first.id}});
       sharedAxis = group;
-      renderAll();
-      field = "impostPosition";
+      openInlineDimension(box, shown, verticalLine, value => {
+        const orientation = first.item.orientation;
+        const verticalImpost = orientation === "vertical";
+        const dimension = verticalImpost ? state.width : state.height;
+        const absolute = verticalImpost ? value : dimension - value;
+        const reverse = impostPositionOrigin[orientation] === "end";
+        const form = $("#impostPosition");
+        form.value = String(Math.round(reverse ? dimension - absolute : absolute));
+        form.dispatchEvent(new Event("change"));
+      });
+      return;
     }
-    const input = $(`#${field}`);
-    input.focus();
-    try { input.select(); } catch {}
+    const verticalLine = field === "height";
+    const shown = Math.round(overallSize()[field]);
+    openInlineDimension(box, shown, verticalLine, value => {
+      const form = $(`#${field}`);
+      form.value = String(Math.round(value));
+      commitOverallDimension(field, form);
+    });
   };
   svg.addEventListener("click", editDimension);
   svg.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === " ") editDimension(event); });
@@ -212,6 +229,46 @@ function bindCanvasDragging() {
   };
   svg.addEventListener("pointerup", finishDrag);
   svg.addEventListener("pointercancel", finishDrag);
+}
+
+function openInlineDimension(box, value, vertical, commit) {
+  const wrap = $("#canvasWrap");
+  let input = $("#inlineDimension");
+  if (!input) {
+    input = document.createElement("input");
+    input.id = "inlineDimension";
+    input.type = "number";
+    input.step = "1";
+    input.inputMode = "numeric";
+    wrap.append(input);
+    input.addEventListener("keydown", event => {
+      if (event.key === "Enter") { event.preventDefault(); input.blur(); }
+      if (event.key === "Escape") { event.preventDefault(); input.dataset.skip = "1"; input.blur(); }
+    });
+    input.addEventListener("blur", () => {
+      const apply = input._commit;
+      const skip = input.dataset.skip === "1";
+      const next = input.valueAsNumber;
+      input.hidden = true;
+      input._commit = null;
+      if (!skip && apply && Number.isFinite(next)) apply(next);
+    });
+  }
+  input.dataset.skip = "";
+  input._commit = commit;
+  input.value = String(Math.round(value));
+  const host = wrap.getBoundingClientRect();
+  const long = Math.max(76, (vertical ? box.height : box.width) + 16);
+  input.style.width = `${long}px`;
+  input.style.height = "28px";
+  const cx = box.left - host.left + box.width / 2;
+  const cy = box.top - host.top + box.height / 2;
+  input.style.left = `${cx - long / 2}px`;
+  input.style.top = `${cy - 14}px`;
+  input.style.transform = vertical ? "rotate(-90deg)" : "";
+  input.hidden = false;
+  input.focus({ preventScroll: true });
+  input.select();
 }
 
 function largestGapPosition(items) {
