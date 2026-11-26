@@ -17,7 +17,7 @@
   let settings = load();
   function load() {
     try {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+      const saved = JSON.parse(programStorageGet(STORAGE_KEY) || "null");
       if (!saved || typeof saved !== "object") return copy(defaults);
       const result = copy(defaults);
       for (const key of Object.keys(result.company)) if (typeof saved.company?.[key] === "string") result.company[key] = saved.company[key].slice(0, 500);
@@ -226,11 +226,12 @@
   });
   document.querySelector("#saveReportTemplates").addEventListener("click",()=>{
     collectEditor();
-    try{localStorage.setItem(STORAGE_KEY,JSON.stringify(settings));showToast("Настройки отчётов сохранены");}
+    try{programStorageSet(STORAGE_KEY,JSON.stringify(settings));showToast("Настройки отчётов сохранены");}
     catch{showToast("Не удалось сохранить настройки отчётов в браузере");}
   });
   document.querySelector("#resetReportTemplates").addEventListener("click",()=>{
     settings=copy(defaults);renderEditor();showToast("Шаблоны восстановлены. Нажмите «Сохранить отчёты».");
   });
+  window.reloadReportSettings = () => { settings = load(); renderEditor(); };
   renderEditor();
 })();
