@@ -52,9 +52,73 @@ const DEFAULT_MATERIALS = {
 
 const cloneMaterials = (source = DEFAULT_MATERIALS) => JSON.parse(JSON.stringify(source));
 
+const RATES_STORAGE_KEY = "oknoSmetaRates";
+const PROJECTS_STORAGE_KEY = "oknoSmetaProjectsV1";
+const APP_DATABASE_KEY = "oknoSmetaAppDatabase";
+const PROFILE_STORAGE_KEY = "oknoSmetaProfileCatalog";
+const TECHNOLOGY_STORAGE_KEY = "oknoSmetaTechnology";
+const REPORTS_STORAGE_KEY = "okno-smeta-report-templates-v1";
+const TECHNICAL_STORAGE_KEYS = [
+  PROFILE_STORAGE_KEY,
+  RATES_STORAGE_KEY,
+  TECHNOLOGY_STORAGE_KEY,
+  "oknoSmetaGlassCatalog",
+  "oknoSmetaHardware",
+  REPORTS_STORAGE_KEY,
+];
+
+function readRawAppDatabase() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(APP_DATABASE_KEY) || "null");
+    if (parsed?.version === 1 && parsed.technical && typeof parsed.technical === "object" && Array.isArray(parsed.projects)) return parsed;
+  } catch {}
+  return null;
+}
+
+function migrateLegacyDatabase() {
+  const technical = {};
+  TECHNICAL_STORAGE_KEYS.forEach((key) => {
+    const raw = localStorage.getItem(key);
+    if (raw == null) return;
+    try { technical[key] = JSON.parse(raw); } catch {}
+  });
+  let projects = [];
+  try {
+    const stored = JSON.parse(localStorage.getItem(PROJECTS_STORAGE_KEY) || "[]");
+    if (Array.isArray(stored)) projects = stored;
+  } catch {}
+  return { version: 1, technical, projects };
+}
+
+let appDatabase = readRawAppDatabase() || migrateLegacyDatabase();
+try { localStorage.setItem(APP_DATABASE_KEY, JSON.stringify(appDatabase)); } catch {}
+
+function saveAppDatabase() {
+  localStorage.setItem(APP_DATABASE_KEY, JSON.stringify(appDatabase));
+}
+
+function programStorageGet(key) {
+  if (key === PROJECTS_STORAGE_KEY) return JSON.stringify(appDatabase.projects);
+  const value = appDatabase.technical[key];
+  return value === undefined ? null : JSON.stringify(value);
+}
+
+function programStorageSet(key, json) {
+  const parsed = JSON.parse(json);
+  if (key === PROJECTS_STORAGE_KEY) appDatabase.projects = parsed;
+  else appDatabase.technical[key] = parsed;
+  saveAppDatabase();
+}
+
+function programStorageRemove(key) {
+  if (key === PROJECTS_STORAGE_KEY) appDatabase.projects = [];
+  else delete appDatabase.technical[key];
+  saveAppDatabase();
+}
+
 function readStoredMaterials() {
   try {
-    const stored = JSON.parse(localStorage.getItem("oknoSmetaProfileCatalog") || "null");
+    const stored = JSON.parse(programStorageGet(PROFILE_STORAGE_KEY) || "null");
     const next = cloneMaterials();
     Object.keys(next).forEach((materialKey) => {
       const storedMaterial = stored?.[materialKey];
@@ -147,13 +211,11 @@ const DEFAULT_TECHNOLOGY = Object.freeze({
 const cloneRates = () => JSON.parse(JSON.stringify(DEFAULT_RATES));
 const cloneTechnology = () => JSON.parse(JSON.stringify(DEFAULT_TECHNOLOGY));
 const cloneData = (value) => JSON.parse(JSON.stringify(value));
-const RATES_STORAGE_KEY = "oknoSmetaRates";
-const PROJECTS_STORAGE_KEY = "oknoSmetaProjectsV1";
 
 function readStoredRates() {
   const next = cloneRates();
   try {
-    const stored = JSON.parse(localStorage.getItem(RATES_STORAGE_KEY) || "null");
+    const stored = JSON.parse(programStorageGet(RATES_STORAGE_KEY) || "null");
     if (!stored || typeof stored !== "object") return next;
     Object.keys(next).forEach((group) => {
       if (typeof next[group] === "object") {
@@ -174,7 +236,7 @@ function readStoredRates() {
 
 function persistRates() {
   try {
-    localStorage.setItem(RATES_STORAGE_KEY, JSON.stringify(rates));
+    programStorageSet(RATES_STORAGE_KEY, JSON.stringify(rates));
     return true;
   } catch {
     return false;
@@ -183,7 +245,7 @@ function persistRates() {
 
 function readStoredProjects() {
   try {
-    const stored = JSON.parse(localStorage.getItem(PROJECTS_STORAGE_KEY) || "[]");
+    const stored = JSON.parse(programStorageGet(PROJECTS_STORAGE_KEY) || "[]");
     if (!Array.isArray(stored)) return [];
     return stored.filter(
       (project) => project && typeof project.id === "string" && typeof project.name === "string" && Array.isArray(project.items),
@@ -202,12 +264,12 @@ async function changeStoredProjects(change) {
   projectWritePending = true;
   try {
     return await navigator.locks.request(PROJECTS_STORAGE_KEY, () => {
-      const raw = localStorage.getItem(PROJECTS_STORAGE_KEY);
+      const raw = programStorageGet(PROJECTS_STORAGE_KEY);
       const latest = JSON.parse(raw ?? "[]");
       if (!Array.isArray(latest)) throw new Error("Неверный формат заказов");
       const next = change(latest);
       if (!next) return false;
-      localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(next));
+      programStorageSet(PROJECTS_STORAGE_KEY, JSON.stringify(next));
       return true;
     });
   } catch {
@@ -222,7 +284,7 @@ async function changeStoredProjects(change) {
 
 function readStoredTechnology() {
   try {
-    const stored = JSON.parse(localStorage.getItem("oknoSmetaTechnology") || "null");
+    const stored = JSON.parse(programStorageGet(TECHNOLOGY_STORAGE_KEY) || "null");
     const next = cloneTechnology();
     Object.keys(next).forEach((material) => {
       ["frame", "sash", "impost"].forEach((part) => {
@@ -244,7 +306,7 @@ function standardGlassCatalog() {
 function loadGlassCatalog() {
   const defaults = standardGlassCatalog();
   try {
-    const saved = JSON.parse(localStorage.getItem(glassCatalogKey));
+    const saved = JSON.parse(programStorageGet(glassCatalogKey));
     for (const material of Object.keys(defaults)) {
       if (saved?.[material] && Object.keys(saved[material]).length) defaults[material] = saved[material];
     }
@@ -387,7 +449,7 @@ function sanitizeHardwareCatalog(raw) {
 
 function loadHardwareCatalog() {
   try {
-    const stored = JSON.parse(localStorage.getItem(HARDWARE_STORAGE_KEY) || "null");
+    const stored = JSON.parse(programStorageGet(HARDWARE_STORAGE_KEY) || "null");
     if (!stored) return defaultHardwareCatalog();
     return sanitizeHardwareCatalog(stored);
   } catch {
@@ -424,9 +486,48 @@ function selectedHandle() {
 
 function persistHardwareCatalog() {
   try {
-    localStorage.setItem(HARDWARE_STORAGE_KEY, JSON.stringify(hardwareCatalog));
+    programStorageSet(HARDWARE_STORAGE_KEY, JSON.stringify(hardwareCatalog));
     return true;
   } catch {
     return false;
   }
+}
+
+function technicalSnapshot() {
+  return {
+    materials: appDatabase.technical[PROFILE_STORAGE_KEY] ?? null,
+    rates: appDatabase.technical[RATES_STORAGE_KEY] ?? null,
+    technology: appDatabase.technical[TECHNOLOGY_STORAGE_KEY] ?? null,
+    glass: appDatabase.technical[glassCatalogKey] ?? null,
+    hardware: appDatabase.technical[HARDWARE_STORAGE_KEY] ?? null,
+    reports: appDatabase.technical[REPORTS_STORAGE_KEY] ?? null,
+  };
+}
+
+function applyTechnicalSnapshot(data) {
+  const map = {
+    materials: PROFILE_STORAGE_KEY,
+    rates: RATES_STORAGE_KEY,
+    technology: TECHNOLOGY_STORAGE_KEY,
+    glass: glassCatalogKey,
+    hardware: HARDWARE_STORAGE_KEY,
+    reports: REPORTS_STORAGE_KEY,
+  };
+  Object.entries(map).forEach(([field, key]) => {
+    if (!Object.hasOwn(data, field) || data[field] == null) delete appDatabase.technical[key];
+    else appDatabase.technical[key] = data[field];
+  });
+  saveAppDatabase();
+}
+
+function reloadProgramStateFromDatabase() {
+  MATERIALS = readStoredMaterials();
+  rates = readStoredRates();
+  technology = readStoredTechnology();
+  glassCatalog = loadGlassCatalog();
+  hardwareCatalog = loadHardwareCatalog();
+  projects = readStoredProjects();
+  if (typeof reloadReportSettings === "function") reloadReportSettings();
+  if (typeof renderAll === "function") renderAll();
+  if (typeof renderProjectsList === "function") renderProjectsList();
 }
