@@ -255,6 +255,20 @@
               </button>
             </div>
             <svg id="windowCanvas" viewBox="0 0 640 500" role="img" aria-label="Схема окна"></svg>
+            <div class="equal-glass-tools">
+              <button class="equal-glass-btn" id="equalGlassWidth" type="button" title="Равная ширина" aria-label="Равная ширина" hidden>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="3" y="4" width="7" height="16" rx="1" />
+                  <rect x="14" y="4" width="7" height="16" rx="1" />
+                </svg>
+              </button>
+              <button class="equal-glass-btn" id="equalGlassHeight" type="button" title="Равная высота" aria-label="Равная высота" hidden>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="4" y="3" width="16" height="7" rx="1" />
+                  <rect x="4" y="14" width="16" height="7" rx="1" />
+                </svg>
+              </button>
+            </div>
           </div>
 
           <div class="canvas-note">
@@ -300,8 +314,6 @@
                 <button class="button secondary" id="addInnerVertical" type="button" title="Добавить вертикальный импост в выбранный проём">
                   <span class="mini-impost vertical" aria-hidden="true"></span> Вертикальный
                 </button>
-                <button class="button secondary" id="equalGlassWidth" type="button" title="Выровнять ширину выбранных стеклопакетов" hidden disabled>Равная ширина</button>
-                <button class="button secondary" id="equalGlassHeight" type="button" title="Выровнять высоту выбранных стеклопакетов" hidden disabled>Равная высота</button>
                 <button class="button secondary" id="addInnerHorizontal" type="button" title="Добавить горизонтальный импост в выбранный проём">
                   <span class="mini-impost horizontal" aria-hidden="true"></span> Горизонтальный
                 </button>
