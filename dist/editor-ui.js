@@ -673,7 +673,9 @@ function bindEvents() {
   $("#renameCurrentOrder").addEventListener("click", renameCurrentOrder);
   $("#saveProject").addEventListener("click", requestProjectSave);
   window.addEventListener("storage", event => {
-    if (event.key !== PROJECTS_STORAGE_KEY && event.key !== null) return;
+    if (event.key !== APP_DATABASE_KEY && event.key !== null) return;
+    const fresh = readRawAppDatabase();
+    if (fresh) appDatabase = fresh;
     projects = readStoredProjects();
     renderProjectsList();
   });
@@ -743,7 +745,7 @@ function bindEvents() {
   $("#resetPrices").addEventListener("click", () => {
     rates = cloneRates();
     try {
-      localStorage.removeItem(RATES_STORAGE_KEY);
+      programStorageRemove(RATES_STORAGE_KEY);
     } catch {
       showToast("Не удалось очистить сохранённый прайс");
       return;
@@ -833,7 +835,7 @@ function bindEvents() {
         }
       }
     }
-    try { localStorage.setItem(glassCatalogKey, JSON.stringify(glassDraft)); }
+    try { programStorageSet(glassCatalogKey, JSON.stringify(glassDraft)); }
     catch { return showToast("Не удалось сохранить каталог стеклопакетов"); }
     glassCatalog = structuredClone(glassDraft);
     readTechnologyForm();
