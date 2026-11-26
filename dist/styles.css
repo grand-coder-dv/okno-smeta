@@ -795,7 +795,52 @@ h3 {
   user-select: none;
 }
 
+.equal-glass-tools {
+  position: absolute;
+  z-index: 3;
+  left: 12px;
+  bottom: 12px;
+  display: flex;
+  gap: 8px;
+}
+
+.equal-glass-tools:not(:has(button:not([hidden]))) {
+  display: none;
+}
+
+.equal-glass-btn {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  color: #24384f;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(24, 38, 58, 0.08);
+  cursor: pointer;
+}
+
+.equal-glass-btn[hidden] {
+  display: none;
+}
+
+.equal-glass-btn svg {
+  width: 22px;
+  height: 22px;
+  fill: #d7eaf3;
+  stroke: #24384f;
+  stroke-width: 1.4;
+}
+
+.equal-glass-btn:hover {
+  color: var(--accent);
+  border-color: rgba(242, 138, 46, 0.45);
+}
+
 #windowCanvas .pane-hit {
+  touch-action: manipulation;
   cursor: pointer;
   transition: fill 140ms ease;
 }
