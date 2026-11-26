@@ -358,11 +358,21 @@ function renderAll() {
   syncOverallInputs();
   refreshProfileEdit();
   renderInspector();
+  const glassPick = selectedSections();
+  const glassOverlap = (a, b, axis) => {
+    const start = axis === "x" ? a.rect.x : a.rect.y;
+    const end = start + (axis === "x" ? a.rect.width : a.rect.height);
+    const other = axis === "x" ? b.rect.x : b.rect.y;
+    const otherEnd = other + (axis === "x" ? b.rect.width : b.rect.height);
+    return Math.min(end, otherEnd) - Math.max(start, other) > 8;
+  };
   for(const [id,orientation] of [["equalGlassWidth","vertical"],["equalGlassHeight","horizontal"]]){
     const button=$(`#${id}`);
     const roots=orientation==="vertical"?state.vImposts:state.hImposts;
-    button.hidden=!roots.length && !sectionPanes().some(p=>p.split?.orientation===orientation);
-    button.disabled=selectedSections().length<2;
+    const cross=orientation==="vertical"?"y":"x";
+    const aligned=glassPick.length>=2 && glassPick.some((a,i)=>glassPick.slice(i+1).some(b=>glassOverlap(a,b,cross)));
+    button.hidden=glassPick.length<2 || !aligned || (!roots.length && !sectionPanes().some(p=>p.split?.orientation===orientation));
+    button.disabled=button.hidden;
   }
   renderSummary(calculation);
   renderSpecification(calculation);
