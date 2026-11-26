@@ -374,6 +374,16 @@ function renderAll() {
     button.hidden=glassPick.length<2 || !aligned || (!roots.length && !sectionPanes().some(p=>p.split?.orientation===orientation));
     button.disabled=button.hidden;
   }
+  const deleteButton=$("#canvasDelete");
+  if (deleteButton) {
+    const impost=getSelectedImpostRecord();
+    const sashes=[...new Set(selectedSections().map(entry=>entry.sashOwner?.pane || entry.pane))]
+      .filter(pane=>pane && !(pane.split && !pane.sashFill) && pane.opening!=="fixed");
+    const label=impost?"Удалить импост":"Удалить створку";
+    deleteButton.hidden=!impost && !sashes.length;
+    deleteButton.title=label;
+    deleteButton.setAttribute("aria-label", label);
+  }
   renderSummary(calculation);
   renderSpecification(calculation);
   if(customProfileArcs()) {
@@ -621,6 +631,15 @@ function bindEvents() {
       record.item.position = (left + right) / 2;
     }
     renderAll();
+  });
+  $("#canvasDelete").addEventListener("click", () => {
+    if (getSelectedImpostRecord()) { $("#removeImpost").click(); return; }
+    const sashes=[...new Set(selectedSections().map(entry=>entry.sashOwner?.pane || entry.pane))]
+      .filter(pane=>pane && !(pane.split && !pane.sashFill) && pane.opening!=="fixed");
+    if (!sashes.length) return;
+    sashes.forEach(pane => { pane.opening = "fixed"; });
+    renderAll();
+    showToast(sashes.length === 1 ? "Створка удалена" : `Створок удалено: ${sashes.length}`);
   });
   $("#removeImpost").addEventListener("click", () => {
     sharedAxis = null;
