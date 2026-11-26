@@ -72,6 +72,7 @@ function setSettingsTab(tab) {
   $("#settingsProfilePane").hidden = tab !== "profile";
   $("#settingsHardwarePane").hidden = tab !== "hardware";
   $("#settingsReportsPane").hidden = tab !== "reports";
+  $("#settingsDatabasePane").hidden = tab !== "database";
   $$("[data-settings-tab]").forEach((button) => {
     const active = button.dataset.settingsTab === tab;
     button.classList.toggle("active", active);
@@ -249,7 +250,7 @@ function populateTechnologyForm() {
 function readTechnologyForm() {
   readCatalogDraftFromEditor();
   MATERIALS = cloneMaterials(catalogDraft);
-  localStorage.setItem("oknoSmetaProfileCatalog", JSON.stringify(MATERIALS));
+  programStorageSet(PROFILE_STORAGE_KEY, JSON.stringify(MATERIALS));
   updateMaterialSelects();
   if (state.shape === "circle" && !getProfile().allowCircleShape) setWindowShapeMode("rect");
   normalizeUnsupportedOpenings();
@@ -444,3 +445,89 @@ function saveHardwareCatalog() {
   renderAll();
   showToast("Фурнитура сохранена");
 }
+
+function downloadDatabaseFile(filename, payload) {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+let databaseImportKind = "";
+
+$("#exportTechnicalDb").addEventListener("click", () => {
+  downloadDatabaseFile("okno-smeta-technical.json", {
+    kind: "okno-smeta-technical",
+    version: 1,
+    savedAt: new Date().toISOString(),
+    data: technicalSnapshot(),
+  });
+  showToast("Техническая база выгружена в файл");
+});
+
+$("#exportProjectsDb").addEventListener("click", () => {
+  downloadDatabaseFile("okno-smeta-projects.json", {
+    kind: "okno-smeta-projects",
+    version: 1,
+    savedAt: new Date().toISOString(),
+    projects: readStoredProjects(),
+  });
+  showToast("База проектов выгружена в файл");
+});
+
+$("#importTechnicalDb").addEventListener("click", () => {
+  databaseImportKind = "technical";
+  $("#databaseFileInput").value = "";
+  $("#databaseFileInput").click();
+});
+
+$("#importProjectsDb").addEventListener("click", () => {
+  databaseImportKind = "projects";
+  $("#databaseFileInput").value = "";
+  $("#databaseFileInput").click();
+});
+
+$("#databaseFileInput").addEventListener("change", async () => {
+  const file = $("#databaseFileInput").files?.[0];
+  if (!file) return;
+  let payload;
+  try {
+    payload = JSON.parse(await file.text());
+  } catch {
+    showToast("Файл не удалось прочитать как JSON");
+    return;
+  }
+  if (databaseImportKind === "technical") {
+    if (payload?.kind !== "okno-smeta-technical" || payload.version !== 1 || !payload.data || typeof payload.data !== "object") {
+      showToast("Выберите файл экспорта технической базы");
+      return;
+    }
+    applyTechnicalSnapshot(payload.data);
+    reloadProgramStateFromDatabase();
+    populatePriceForm();
+    populateTechnologyForm();
+    hardwareDraft = cloneData(hardwareCatalog);
+    $("#hardwareCatalogEditor").removeAttribute("data-ready");
+    showToast("Техническая база загружена в программу");
+    return;
+  }
+  if (payload?.kind !== "okno-smeta-projects" || payload.version !== 1 || !Array.isArray(payload.projects)) {
+    showToast("Выберите файл экспорта базы проектов");
+    return;
+  }
+  const next = payload.projects.filter(
+    (project) => project && typeof project.id === "string" && typeof project.name === "string" && Array.isArray(project.items),
+  );
+  try {
+    programStorageSet(PROJECTS_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    showToast("Не удалось записать базу проектов");
+    return;
+  }
+  projects = readStoredProjects();
+  renderProjectsList();
+  showToast(`База проектов загружена: ${projects.length}`);
+});
