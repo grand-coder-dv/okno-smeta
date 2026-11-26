@@ -111,3 +111,4 @@ renderAll();
 renderOrder();
 renderProjectsList();
 exposeAgentTools();
+void syncAppDatabaseFromCloud();
