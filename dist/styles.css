@@ -2184,6 +2184,19 @@ tbody tr:hover {
   margin: 0;
 }
 
+.database-exchange {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.database-exchange section {
+  border: 1px solid var(--line, #d5dde6);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+.database-exchange h3 { margin: 0 0 8px; }
+.database-exchange .dialog-actions { justify-content: flex-start; }
+
 .dialog-actions {
   margin-top: 19px;
   display: flex;
