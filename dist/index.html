@@ -505,7 +505,7 @@
           <div><span class="eyebrow">Сохранённые заказы</span><h2>Мои заказы</h2></div>
           <button class="icon-button" id="closeProjectsDialog" aria-label="Закрыть" type="button">×</button>
         </div>
-        <p class="dialog-intro">Заказы хранятся только в этом браузере на текущем устройстве.</p>
+        <p class="dialog-intro">Заказы хранятся в базе программы. Файл этой базы можно выгрузить и загрузить во вкладке «Баз. данных».</p>
         <div class="projects-empty" id="projectsEmpty">Сохранённых заказов пока нет.</div>
         <div class="projects-list" id="projectsList"></div>
       </div>
@@ -523,6 +523,7 @@
           <button type="button" role="tab" aria-selected="false" data-settings-tab="profile">Настройки профиля</button>
           <button type="button" role="tab" aria-selected="false" data-settings-tab="hardware">Фурнитура</button>
           <button type="button" role="tab" aria-selected="false" data-settings-tab="reports">Отчёты</button>
+          <button type="button" role="tab" aria-selected="false" data-settings-tab="database">Баз. данных</button>
         </div>
 
         <section class="settings-pane" id="settingsPricesPane" role="tabpanel">
@@ -596,7 +597,7 @@
             <div id="glassCatalogEditor" class="catalog-profile-list"></div>
             <p class="technology-note">Если цена стандартного стеклопакета не указана, используется тариф из вкладки «Цены».</p>
           </section>
-          <p class="technology-note">Нельзя удалить последнюю систему или последний цвет материала. Изменения сохраняются на этом устройстве.</p>
+          <p class="technology-note">Нельзя удалить последнюю систему или последний цвет материала. Изменения сохраняются в базе программы.</p>
           <div class="dialog-actions">
             <button class="button ghost" id="resetTechnology" type="button">Вернуть стандартные</button>
             <button class="button primary" id="saveTechnology" type="button">Сохранить каталог</button>
@@ -622,6 +623,28 @@
             <button class="button ghost" id="resetHardware" type="button">Вернуть стандартные</button>
             <button class="button primary" id="saveHardware" type="button">Сохранить фурнитуру</button>
           </div>
+        </section>
+        <section class="settings-pane" id="settingsDatabasePane" role="tabpanel" hidden>
+          <p class="dialog-intro">База хранится в программе. Техническая часть — прайс, профили, стеклопакеты, фурнитура и шаблоны отчётов. Проекты сохраняются отдельно, когда пользователь записывает заказ.</p>
+          <div class="database-exchange">
+            <section>
+              <h3>Техническая база</h3>
+              <p class="technology-note">Экспорт и импорт не затрагивают сохранённые проекты.</p>
+              <div class="dialog-actions">
+                <button class="button ghost" id="exportTechnicalDb" type="button">Экспорт</button>
+                <button class="button primary" id="importTechnicalDb" type="button">Импорт</button>
+              </div>
+            </section>
+            <section>
+              <h3>База проектов</h3>
+              <p class="technology-note">Импорт заменяет список проектов в программе файлом.</p>
+              <div class="dialog-actions">
+                <button class="button ghost" id="exportProjectsDb" type="button">Экспорт</button>
+                <button class="button primary" id="importProjectsDb" type="button">Импорт</button>
+              </div>
+            </section>
+          </div>
+          <input id="databaseFileInput" type="file" accept="application/json,.json" hidden />
         </section>
         <section class="settings-pane" id="settingsReportsPane" role="tabpanel" hidden>
           <p class="dialog-intro">Настройте внешний вид и текст каждого документа. Данные изделий, цены и спецификация подставляются из текущего заказа.</p>
