@@ -466,7 +466,7 @@ function bindEvents() {
   if(!shapeOptions.querySelector('[data-value="skew"]')){
     const skew=document.createElement("button");
     skew.type="button";skew.dataset.value="skew";skew.setAttribute("aria-pressed","false");
-    skew.innerHTML='<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 8l16-4v16H4z"/></svg>Косое';
+    skew.innerHTML='<span class="shape-icon skew"></span>Косое';
     shapeOptions.querySelector('[data-value="arch"]')?.before(skew);
   }
   shapeOptions.addEventListener("click",event=>{
