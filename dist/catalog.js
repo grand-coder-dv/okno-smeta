@@ -93,8 +93,65 @@ function migrateLegacyDatabase() {
 let appDatabase = readRawAppDatabase() || migrateLegacyDatabase();
 try { localStorage.setItem(APP_DATABASE_KEY, JSON.stringify(appDatabase)); } catch {}
 
+const SUPABASE_URL = "https://chydhzufoqlqfpjwlkkg.supabase.co";
+const SUPABASE_KEY = "sb_publishable_sKWBvN0N1L4FiB2AC7_fdQ_VWZ9dmRQ";
+let cloudReady = false;
+let cloudPushTimer = 0;
+
+function databaseHasUserData(database) {
+  return Boolean(database && (database.projects?.length || Object.keys(database.technical || {}).length));
+}
+
 function saveAppDatabase() {
+  appDatabase.updatedAt = new Date().toISOString();
   localStorage.setItem(APP_DATABASE_KEY, JSON.stringify(appDatabase));
+  if (cloudReady) scheduleCloudPush();
+}
+
+function scheduleCloudPush() {
+  clearTimeout(cloudPushTimer);
+  cloudPushTimer = setTimeout(() => { void pushAppDatabaseToCloud(); }, 400);
+}
+
+function supabaseHeaders() {
+  return {
+    apikey: SUPABASE_KEY,
+    Authorization: `Bearer ${SUPABASE_KEY}`,
+    "Content-Type": "application/json",
+  };
+}
+
+async function pushAppDatabaseToCloud() {
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/app_database?on_conflict=id`, {
+    method: "POST",
+    headers: { ...supabaseHeaders(), Prefer: "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify({ id: 1, payload: appDatabase, updated_at: appDatabase.updatedAt }),
+  });
+  if (!response.ok) throw new Error(await response.text());
+}
+
+function applyCloudDatabase(payload) {
+  if (payload?.version !== 1 || !payload.technical || !Array.isArray(payload.projects)) return;
+  appDatabase = payload;
+  localStorage.setItem(APP_DATABASE_KEY, JSON.stringify(appDatabase));
+  if (typeof reloadProgramStateFromDatabase === "function") reloadProgramStateFromDatabase();
+}
+
+async function syncAppDatabaseFromCloud() {
+  try {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/app_database?id=eq.1&select=payload,updated_at`, { headers: supabaseHeaders() });
+    if (!response.ok) throw new Error(await response.text());
+    const rows = await response.json();
+    const remote = rows[0];
+    const remoteTime = Date.parse(remote?.updated_at || remote?.payload?.updatedAt || 0);
+    const localTime = Date.parse(appDatabase.updatedAt || 0);
+    if (remote?.payload && remoteTime >= localTime) applyCloudDatabase(remote.payload);
+    else if (databaseHasUserData(appDatabase)) await pushAppDatabaseToCloud();
+    cloudReady = true;
+  } catch (error) {
+    console.warn(error);
+    if (typeof showToast === "function") showToast("Общая база Supabase недоступна. Проверьте таблицу app_database.");
+  }
 }
 
 function programStorageGet(key) {
