@@ -1,4 +1,5 @@
 // Холст: сборка SVG текущего изделия.
+let paneLongPressUsed = false;
 function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
   const maxWidth = 455;
   const maxHeight = 350;
@@ -542,6 +543,7 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
 
   $$("#windowCanvas .pane-hit").forEach((node) => {
     const choose = event => {
+      if (paneLongPressUsed) { paneLongPressUsed = false; return; }
       const index = Number(node.dataset.pane);
       if ((event.ctrlKey || event.metaKey) && !state.selectedImpost) {
         if (!multiSections.size && state.selectedPane !== null) multiSections.add(state.selectedPane);
@@ -557,6 +559,32 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
       state.selectedImpost = null;
       renderAll();
     };
+    let holdTimer = 0;
+    let holdAt = null;
+    const cancelHold = () => { clearTimeout(holdTimer); holdTimer = 0; holdAt = null; };
+    node.addEventListener("pointerdown", event => {
+      if (event.button !== 0 || state.selectedPane === null) return;
+      const index = Number(node.dataset.pane);
+      holdAt = {x: event.clientX, y: event.clientY};
+      holdTimer = setTimeout(() => {
+        holdTimer = 0;
+        paneLongPressUsed = true;
+        if (!multiSections.size) multiSections.add(state.selectedPane);
+        if (multiSections.has(index)) multiSections.delete(index);
+        else multiSections.add(index);
+        state.selectedPane = multiSections.has(index) ? index : ([...multiSections].at(-1) ?? null);
+        activeProfileEdge = null;
+        sharedAxis = null;
+        state.selectedImpost = null;
+        renderAll();
+      }, 450);
+    });
+    node.addEventListener("pointerup", cancelHold);
+    node.addEventListener("pointercancel", cancelHold);
+    node.addEventListener("pointermove", event => {
+      if (holdTimer && holdAt && Math.hypot(event.clientX - holdAt.x, event.clientY - holdAt.y) > 10) cancelHold();
+    });
+    node.addEventListener("contextmenu", event => event.preventDefault());
     node.addEventListener("click", choose);
     node.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
