@@ -1,5 +1,10 @@
 // Справочники: профили, стеклопакеты, цены, технология, фурнитура и чтение localStorage.
-const DEFAULT_MATERIALS = {
+import { renderAll, showToast } from "./editor-ui.js";
+import { sectionPanes } from "./geometry.js";
+import { renderProjectsList } from "./order.js";
+import { $, $$, catalogDraft, catalogMaterial, escapeHtml, projectWritePending, projects, setProjectWritePending, setProjects, state } from "./product.js";
+import { reloadReportSettings } from "./reports.js";
+export const DEFAULT_MATERIALS = {
   pvc: {
     label: "ПВХ",
     frame: "#eef1f4",
@@ -50,12 +55,12 @@ const DEFAULT_MATERIALS = {
   },
 };
 
-const cloneMaterials = (source = DEFAULT_MATERIALS) => JSON.parse(JSON.stringify(source));
+export const cloneMaterials = (source = DEFAULT_MATERIALS) => JSON.parse(JSON.stringify(source));
 
-const RATES_STORAGE_KEY = "oknoSmetaRates";
-const PROJECTS_STORAGE_KEY = "oknoSmetaProjectsV1";
-const APP_DATABASE_KEY = "oknoSmetaAppDatabase";
-const PROFILE_STORAGE_KEY = "oknoSmetaProfileCatalog";
+export const RATES_STORAGE_KEY = "oknoSmetaRates";
+export const PROJECTS_STORAGE_KEY = "oknoSmetaProjectsV1";
+export const APP_DATABASE_KEY = "oknoSmetaAppDatabase";
+export const PROFILE_STORAGE_KEY = "oknoSmetaProfileCatalog";
 const TECHNOLOGY_STORAGE_KEY = "oknoSmetaTechnology";
 const REPORTS_STORAGE_KEY = "okno-smeta-report-templates-v1";
 const TECHNICAL_STORAGE_KEYS = [
@@ -67,7 +72,7 @@ const TECHNICAL_STORAGE_KEYS = [
   REPORTS_STORAGE_KEY,
 ];
 
-function readRawAppDatabase() {
+export function readRawAppDatabase() {
   try {
     const parsed = JSON.parse(localStorage.getItem(APP_DATABASE_KEY) || "null");
     if (parsed?.version === 1 && parsed.technical && typeof parsed.technical === "object" && Array.isArray(parsed.projects)) return parsed;
@@ -90,7 +95,7 @@ function migrateLegacyDatabase() {
   return { version: 1, technical, projects };
 }
 
-let appDatabase = readRawAppDatabase() || migrateLegacyDatabase();
+export let appDatabase = readRawAppDatabase() || migrateLegacyDatabase();
 try { localStorage.setItem(APP_DATABASE_KEY, JSON.stringify(appDatabase)); } catch {}
 
 const SUPABASE_URL = "https://chydhzufoqlqfpjwlkkg.supabase.co";
@@ -137,7 +142,7 @@ function applyCloudDatabase(payload) {
   if (typeof reloadProgramStateFromDatabase === "function") reloadProgramStateFromDatabase();
 }
 
-async function syncAppDatabaseFromCloud() {
+export async function syncAppDatabaseFromCloud() {
   try {
     const response = await fetch(`${SUPABASE_URL}/rest/v1/app_database?id=eq.1&select=payload,updated_at`, { headers: supabaseHeaders() });
     if (!response.ok) throw new Error(await response.text());
@@ -154,20 +159,20 @@ async function syncAppDatabaseFromCloud() {
   }
 }
 
-function programStorageGet(key) {
+export function programStorageGet(key) {
   if (key === PROJECTS_STORAGE_KEY) return JSON.stringify(appDatabase.projects);
   const value = appDatabase.technical[key];
   return value === undefined ? null : JSON.stringify(value);
 }
 
-function programStorageSet(key, json) {
+export function programStorageSet(key, json) {
   const parsed = JSON.parse(json);
   if (key === PROJECTS_STORAGE_KEY) appDatabase.projects = parsed;
   else appDatabase.technical[key] = parsed;
   saveAppDatabase();
 }
 
-function programStorageRemove(key) {
+export function programStorageRemove(key) {
   if (key === PROJECTS_STORAGE_KEY) appDatabase.projects = [];
   else delete appDatabase.technical[key];
   saveAppDatabase();
@@ -199,10 +204,10 @@ function readStoredMaterials() {
   }
 }
 
-let MATERIALS = readStoredMaterials();
+export let MATERIALS = readStoredMaterials();
 
-const PRODUCT_TYPES = { window: "Окно", entranceDoor: "Входная дверь", balconyDoor: "Балконная дверь" };
-function profileTypeSettings(profile, type = state.productType || "window") {
+export const PRODUCT_TYPES = { window: "Окно", entranceDoor: "Входная дверь", balconyDoor: "Балконная дверь" };
+export function profileTypeSettings(profile, type = state.productType || "window") {
   const legacy = {
     frameWidth: profile.frameWidth, sashWidth: profile.sashWidth, impostWidth: profile.impostWidth,
     shtulpWidth: profile.shtulpWidth ?? profile.sashWidth ?? 70,
@@ -218,25 +223,25 @@ function profileTypeSettings(profile, type = state.productType || "window") {
   };
   return { ...legacy, ...(profile.types?.[type] || {}), enabled: profile.types?.[type]?.enabled ?? type === "window" };
 }
-function availableProfiles(material = state.material, type = state.productType || "window") {
+export function availableProfiles(material = state.material, type = state.productType || "window") {
   return MATERIALS[material].profiles.filter(profile => profileTypeSettings(profile, type).enabled);
 }
 
-const GLASS = {
+export const GLASS = {
   single: { name: "Однокамерный", detail: "24 мм", color: "#cce9f3" },
   double: { name: "Двухкамерный", detail: "40 мм", color: "#bfe3ef" },
   energy: { name: "Энергосберегающий", detail: "40 мм · i-стекло", color: "#c7eadf" },
   acoustic: { name: "Шумоизоляционный", detail: "44 мм · триплекс", color: "#cbdcf1" },
 };
 
-const OPENINGS = {
+export const OPENINGS = {
   fixed: { name: "Глухая", short: "Г" },
   turn: { name: "Поворотная", short: "П" },
   tiltturn: { name: "Поворотно-откидная", short: "ПО" },
   tilt: { name: "Откидная", short: "О" },
 };
 
-const SHAPES = {
+export const SHAPES = {
   rect: "Прямоугольная",
   arch: "Арочная",
   circle: "Круглая",
@@ -265,9 +270,9 @@ const DEFAULT_TECHNOLOGY = Object.freeze({
   wood: { frame: 78, sash: 82, impost: 86 },
 });
 
-const cloneRates = () => JSON.parse(JSON.stringify(DEFAULT_RATES));
+export const cloneRates = () => JSON.parse(JSON.stringify(DEFAULT_RATES));
 const cloneTechnology = () => JSON.parse(JSON.stringify(DEFAULT_TECHNOLOGY));
-const cloneData = (value) => JSON.parse(JSON.stringify(value));
+export const cloneData = (value) => JSON.parse(JSON.stringify(value));
 
 function readStoredRates() {
   const next = cloneRates();
@@ -291,7 +296,7 @@ function readStoredRates() {
   }
 }
 
-function persistRates() {
+export function persistRates() {
   try {
     programStorageSet(RATES_STORAGE_KEY, JSON.stringify(rates));
     return true;
@@ -300,7 +305,7 @@ function persistRates() {
   }
 }
 
-function readStoredProjects() {
+export function readStoredProjects() {
   try {
     const stored = JSON.parse(programStorageGet(PROJECTS_STORAGE_KEY) || "[]");
     if (!Array.isArray(stored)) return [];
@@ -312,13 +317,13 @@ function readStoredProjects() {
   }
 }
 
-async function changeStoredProjects(change) {
+export async function changeStoredProjects(change) {
   if (!navigator.locks?.request) {
     showToast("Для безопасного сохранения откройте приложение через HTTPS или localhost в браузере с поддержкой Web Locks");
     return false;
   }
   if (projectWritePending) return false;
-  projectWritePending = true;
+  setProjectWritePending(true);
   try {
     return await navigator.locks.request(PROJECTS_STORAGE_KEY, () => {
       const raw = programStorageGet(PROJECTS_STORAGE_KEY);
@@ -333,8 +338,8 @@ async function changeStoredProjects(change) {
     showToast("Не удалось записать заказы в браузере. Изменения остались в редакторе.");
     return false;
   } finally {
-    projectWritePending = false;
-    projects = readStoredProjects();
+    setProjectWritePending(false);
+    setProjects(readStoredProjects());
     renderProjectsList();
   }
 }
@@ -355,9 +360,9 @@ function readStoredTechnology() {
   }
 }
 
-let rates = readStoredRates();
-const glassCatalogKey = "oknoSmetaGlassCatalog";
-function standardGlassCatalog() {
+export let rates = readStoredRates();
+export const glassCatalogKey = "oknoSmetaGlassCatalog";
+export function standardGlassCatalog() {
   return Object.fromEntries(["pvc", "aluminum", "wood"].map(material => [material, structuredClone(GLASS)]));
 }
 function loadGlassCatalog() {
@@ -370,16 +375,16 @@ function loadGlassCatalog() {
   } catch {}
   return defaults;
 }
-let glassCatalog = loadGlassCatalog();
-let glassDraft;
-function fitsGlassProfile(item, profile) {
+export let glassCatalog = loadGlassCatalog();
+export let glassDraft;
+export function fitsGlassProfile(item, profile) {
   return !Array.isArray(item.profileIds) || item.profileIds.includes(profile);
 }
-function materialGlass() {
+export function materialGlass() {
   return Object.fromEntries(Object.entries(glassCatalog[state.material])
     .filter(([, item]) => fitsGlassProfile(item, state.profile)));
 }
-function syncGlassChoices() {
+export function syncGlassChoices() {
   const catalog = materialGlass();
   if (!Object.hasOwn(catalog, state.defaultGlass)) state.defaultGlass = Object.hasOwn(catalog, "double") ? "double" : Object.keys(catalog)[0];
   sectionPanes().forEach(pane => { if (!Object.hasOwn(catalog, pane.glass)) pane.glass = state.defaultGlass; });
@@ -394,7 +399,7 @@ function syncGlassChoices() {
   }
   $("#defaultGlass").value = state.defaultGlass;
 }
-function renderGlassCatalog() {
+export function renderGlassCatalog() {
   const profiles = catalogDraft[catalogMaterial].profiles;
   const items = Object.entries(glassDraft[catalogMaterial]);
   $("#glassCatalogCount").textContent = `${items.length} шт.`;
@@ -410,7 +415,7 @@ function renderGlassCatalog() {
       </fieldset>
     </article>`).join("");
 }
-function captureGlassDraft() {
+export function captureGlassDraft() {
   $$("#glassCatalogEditor [data-glass-id]").forEach(row => {
     const item = glassDraft[catalogMaterial][row.dataset.glassId];
     item.name = row.querySelector("[data-glass-name]").value.trim();
@@ -423,23 +428,23 @@ function captureGlassDraft() {
   });
 }
 
-let technology = readStoredTechnology();
+export let technology = readStoredTechnology();
 
 const HARDWARE_STORAGE_KEY = "oknoSmetaHardware";
-const HANDLE_STYLES = {
+export const HANDLE_STYLES = {
   window: "Оконная",
   turn: "Поворотная",
   cylinder: "Поворотная с цилиндром",
   bow: "Скоба",
   rod: "Штанга",
 };
-const HANDLE_LENGTHS = { window: 175, turn: 175, cylinder: 250, bow: 300, rod: 1000 };
+export const HANDLE_LENGTHS = { window: 175, turn: 175, cylinder: 250, bow: 300, rod: 1000 };
 const HANDLE_STYLE_ALIASES = { bar: "window", lever: "turn", offset: "bow", knob: "window", lock: "cylinder", long: "rod" };
-function normalizeHandleStyle(style) {
+export function normalizeHandleStyle(style) {
   if (HANDLE_STYLES[style]) return style;
   return HANDLE_STYLE_ALIASES[style] || "window";
 }
-const MATERIAL_TITLES = { pvc: "Пластик", aluminum: "Алюминий", wood: "Дерево" };
+export const MATERIAL_TITLES = { pvc: "Пластик", aluminum: "Алюминий", wood: "Дерево" };
 
 function hardwareBound(value, fallback) {
   const number = Number(value);
@@ -457,7 +462,7 @@ function linksForMaterials(materials, productTypes) {
   return links;
 }
 
-function defaultHardwareCatalog() {
+export function defaultHardwareCatalog() {
   const windowTypes = ["window", "balconyDoor"];
   return {
     sets: [
@@ -477,7 +482,7 @@ function defaultHardwareCatalog() {
   };
 }
 
-function sanitizeHardwareCatalog(raw) {
+export function sanitizeHardwareCatalog(raw) {
   const sets = (Array.isArray(raw?.sets) ? raw.sets : []).filter((set) => set && typeof set.id === "string").map((set) => ({
     id: set.id,
     name: String(set.name || "Фурнитура").slice(0, 80),
@@ -514,34 +519,34 @@ function loadHardwareCatalog() {
   }
 }
 
-let hardwareCatalog = loadHardwareCatalog();
-let hardwareDraft = null;
+export let hardwareCatalog = loadHardwareCatalog();
+export let hardwareDraft = null;
 
-function hardwareSetsForProduct(material = state.material, profileId = state.profile, productType = state.productType || "window") {
+export function hardwareSetsForProduct(material = state.material, profileId = state.profile, productType = state.productType || "window") {
   return hardwareCatalog.sets.filter((set) => (set.links || []).some((link) =>
     link.material === material && link.profileId === profileId && (link.productTypes || []).includes(productType)));
 }
 
-function handlesForSet(hardwareId) {
+export function handlesForSet(hardwareId) {
   return hardwareCatalog.handles.filter((item) => (item.hardwareIds || []).includes(hardwareId));
 }
 
-function syncHardwareChoice() {
+export function syncHardwareChoice() {
   const sets = hardwareSetsForProduct();
   if (!sets.some((set) => set.id === state.hardwareId)) state.hardwareId = sets[0]?.id || "";
   const handles = handlesForSet(state.hardwareId);
   if (!handles.some((item) => item.id === state.handleId)) state.handleId = handles[0]?.id || "";
 }
 
-function selectedHardware() {
+export function selectedHardware() {
   return hardwareCatalog.sets.find((set) => set.id === state.hardwareId) || null;
 }
 
-function selectedHandle() {
+export function selectedHandle() {
   return hardwareCatalog.handles.find((item) => item.id === state.handleId) || null;
 }
 
-function persistHardwareCatalog() {
+export function persistHardwareCatalog() {
   try {
     programStorageSet(HARDWARE_STORAGE_KEY, JSON.stringify(hardwareCatalog));
     return true;
@@ -550,7 +555,7 @@ function persistHardwareCatalog() {
   }
 }
 
-function technicalSnapshot() {
+export function technicalSnapshot() {
   return {
     materials: appDatabase.technical[PROFILE_STORAGE_KEY] ?? null,
     rates: appDatabase.technical[RATES_STORAGE_KEY] ?? null,
@@ -561,7 +566,7 @@ function technicalSnapshot() {
   };
 }
 
-function applyTechnicalSnapshot(data) {
+export function applyTechnicalSnapshot(data) {
   const map = {
     materials: PROFILE_STORAGE_KEY,
     rates: RATES_STORAGE_KEY,
@@ -577,14 +582,28 @@ function applyTechnicalSnapshot(data) {
   saveAppDatabase();
 }
 
-function reloadProgramStateFromDatabase() {
+export function reloadProgramStateFromDatabase() {
   MATERIALS = readStoredMaterials();
   rates = readStoredRates();
   technology = readStoredTechnology();
   glassCatalog = loadGlassCatalog();
   hardwareCatalog = loadHardwareCatalog();
-  projects = readStoredProjects();
-  if (typeof reloadReportSettings === "function") reloadReportSettings();
-  if (typeof renderAll === "function") renderAll();
-  if (typeof renderProjectsList === "function") renderProjectsList();
+  setProjects(readStoredProjects());
+  reloadReportSettings();
+  renderAll();
+  renderProjectsList();
 }
+
+export function setMATERIALS(value) { MATERIALS = value; }
+
+export function setAppDatabase(value) { appDatabase = value; }
+
+export function setGlassCatalog(value) { glassCatalog = value; }
+
+export function setGlassDraft(value) { glassDraft = value; }
+
+export function setHardwareCatalog(value) { hardwareCatalog = value; }
+
+export function setHardwareDraft(value) { hardwareDraft = value; }
+
+export function setRates(value) { rates = value; }
