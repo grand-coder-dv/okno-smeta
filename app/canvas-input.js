@@ -1,4 +1,9 @@
 // Холст: выбор, перетаскивание импостов и выравнивание стеклопакетов.
+import { renderCanvas } from "./canvas.js";
+import { activeImpostEndpoint, activeProfileEdge, commitOverallDimension, editPolygon, overallSize, refreshProfileEdit, setActiveImpostEndpoint, setActiveProfileEdge } from "./drawing.js";
+import { renderAll, showToast } from "./editor-ui.js";
+import { createImpostId, getPanePhysicalRect, getSelectedImpostRecord, glassGeometry, nestedImpostLimits, rootImpostLimits, sectionLayout, sectionPanes } from "./geometry.js";
+import { $, canvasLayout, canvasZoom, clamp, dragState, getTechnology, impostPositionOrigin, multiSections, selectedSections, setCanvasZoom, setDragState, setMultiSections, setSharedAxis, sharedAxis, state, validateCurrentProduct } from "./product.js";
 const CANVAS_ZOOM_MIN = 0.5;
 const CANVAS_ZOOM_MAX = 4;
 const CANVAS_ZOOM_STEP = 1.25;
@@ -7,7 +12,7 @@ function clampCanvasZoom(value) {
   return Math.min(CANVAS_ZOOM_MAX, Math.max(CANVAS_ZOOM_MIN, value));
 }
 
-function updateCanvasZoomButtons() {
+export function updateCanvasZoomButtons() {
   const zoomIn = $("#canvasZoomIn");
   const zoomOut = $("#canvasZoomOut");
   if (!zoomIn || !zoomOut) return;
@@ -15,26 +20,28 @@ function updateCanvasZoomButtons() {
   zoomOut.disabled = canvasZoom <= CANVAS_ZOOM_MIN + 1e-6;
 }
 
-function bindCanvasZoom() {
+export function bindCanvasZoom() {
   $("#canvasZoomIn")?.addEventListener("click", () => {
     const next = clampCanvasZoom(canvasZoom * CANVAS_ZOOM_STEP);
     if (next === canvasZoom) return;
-    canvasZoom = next;
+    setCanvasZoom(next);
     renderCanvas();
   });
   $("#canvasZoomOut")?.addEventListener("click", () => {
     const next = clampCanvasZoom(canvasZoom / CANVAS_ZOOM_STEP);
     if (next === canvasZoom) return;
-    canvasZoom = next;
+    setCanvasZoom(next);
     renderCanvas();
   });
   updateCanvasZoomButtons();
 }
-function selectImpostFromNode(node) {
-  if(activeImpostEndpoint && (activeImpostEndpoint.id!==node.dataset.id || activeImpostEndpoint.scope!==node.dataset.scope)) activeImpostEndpoint=null;
-  activeProfileEdge = null;
+const impostSelectGuards = [];
+export function beforeSelectImpost(guard) { impostSelectGuards.push(guard); }
+export function applyImpostSelection(node) {
+  if(activeImpostEndpoint && (activeImpostEndpoint.id!==node.dataset.id || activeImpostEndpoint.scope!==node.dataset.scope)) setActiveImpostEndpoint(null);
+  setActiveProfileEdge(null);
   multiSections.clear();
-  sharedAxis = null;
+  setSharedAxis(null);
   const scope = node.dataset.scope;
   const paneIndex = scope === "pane" ? Number(node.dataset.pane) : null;
   state.selectedImpost = {
@@ -45,8 +52,12 @@ function selectImpostFromNode(node) {
   };
   if (scope === "pane") state.selectedPane = paneIndex;
 }
+export function selectImpostFromNode(node) {
+  for (const guard of impostSelectGuards) guard(node);
+  applyImpostSelection(node);
+}
 
-function moveSelectedImpostBy(deltaMm) {
+export function moveSelectedImpostBy(deltaMm) {
   const record = getSelectedImpostRecord();
   if (!record) return;
   if (record.selected.scope === "root") {
@@ -92,7 +103,7 @@ function getCanvasPoint(event) {
   return matrix ? new DOMPoint(event.clientX,event.clientY).matrixTransform(matrix.inverse()) : {x:0,y:0};
 }
 
-function bindCanvasDragging() {
+export function bindCanvasDragging() {
   const svg = $("#windowCanvas");
   let lastEditableClick=null;
   svg.addEventListener("click", event=>{
@@ -111,13 +122,13 @@ function bindCanvasDragging() {
     event.stopImmediatePropagation();
     if(node.matches(".impost-endpoint")){
       if(state.shape!=="skew")return;
-      activeImpostEndpoint={owner:state,id:node.dataset.id,orientation:node.dataset.orientation,
-        scope:node.dataset.scope,paneIndex:Number(node.dataset.pane),end:Number(node.dataset.endpoint)};
-      activeProfileEdge=null;
+      setActiveImpostEndpoint({owner:state,id:node.dataset.id,orientation:node.dataset.orientation,
+        scope:node.dataset.scope,paneIndex:Number(node.dataset.pane),end:Number(node.dataset.endpoint)});
+      setActiveProfileEdge(null);
     } else {
       const type=node.dataset.profileEdge;
-      activeImpostEndpoint=null;
-      activeProfileEdge={owner:state,type,index:(type==="sash"||type==="skew-sash")?Number(node.dataset.edgeIndex):null,side:Number(node.dataset.edgeSide)};
+      setActiveImpostEndpoint(null);
+      setActiveProfileEdge({owner:state,type,index:(type==="sash"||type==="skew-sash")?Number(node.dataset.edgeIndex):null,side:Number(node.dataset.edgeSide)});
     }
     refreshProfileEdit();
     const button=$("#editProfileGeometry");
@@ -127,9 +138,9 @@ function bindCanvasDragging() {
     const point=event.target.closest?.(".impost-endpoint");
     if(!point)return;
     event.preventDefault();
-    activeImpostEndpoint={owner:state,id:point.dataset.id,orientation:point.dataset.orientation,
-      scope:point.dataset.scope,paneIndex:Number(point.dataset.pane),end:Number(point.dataset.endpoint)};
-    activeProfileEdge=null;
+    setActiveImpostEndpoint({owner:state,id:point.dataset.id,orientation:point.dataset.orientation,
+      scope:point.dataset.scope,paneIndex:Number(point.dataset.pane),end:Number(point.dataset.endpoint)});
+    setActiveProfileEdge(null);
     refreshProfileEdit();
   });
   svg.addEventListener("keydown",event=>{
@@ -141,13 +152,13 @@ function bindCanvasDragging() {
     const hit=event.target.closest?.("[data-profile-edge]");
     if(hit){
       event.preventDefault();
-      activeImpostEndpoint=null;
+      setActiveImpostEndpoint(null);
       const type=hit.dataset.profileEdge;
-      activeProfileEdge={owner:state,type,index:(type==="sash"||type==="skew-sash")?Number(hit.dataset.edgeIndex):null,side:Number(hit.dataset.edgeSide)};
-      state.selectedPane=null;state.selectedImpost=null;multiSections.clear();sharedAxis=null;
+      setActiveProfileEdge({owner:state,type,index:(type==="sash"||type==="skew-sash")?Number(hit.dataset.edgeIndex):null,side:Number(hit.dataset.edgeSide)});
+      state.selectedPane=null;state.selectedImpost=null;multiSections.clear();setSharedAxis(null);
       renderAll();
     }
-    else if(activeProfileEdge && !event.target.closest?.("[data-profile-length]")){activeProfileEdge=null; if(event.target===svg)renderAll();}
+    else if(activeProfileEdge && !event.target.closest?.("[data-profile-length]")){setActiveProfileEdge(null); if(event.target===svg)renderAll();}
   };
   svg.addEventListener("click",openProfile);
   svg.addEventListener("keydown",event=>{if(event.key==="Enter" || event.key===" ")openProfile(event);});
@@ -167,7 +178,7 @@ function bindCanvasDragging() {
       const shown = Math.round(verticalLine ? state.height - first.absolute : first.absolute);
       selectImpostFromNode({dataset:{scope:first.index == null ? "root" : "pane", pane:first.index,
         orientation:first.item.orientation, id:first.id}});
-      sharedAxis = group;
+      setSharedAxis(group);
       openInlineDimension(box, shown, verticalLine, value => {
         const orientation = first.item.orientation;
         const verticalImpost = orientation === "vertical";
@@ -193,7 +204,7 @@ function bindCanvasDragging() {
   svg.addEventListener("click", event => {
     if (event.target !== svg || (state.selectedPane === null && !state.selectedImpost)) return;
     multiSections.clear();
-    sharedAxis = null;
+    setSharedAxis(null);
     state.selectedPane = null;
     state.selectedImpost = null;
     renderAll();
@@ -203,7 +214,7 @@ function bindCanvasDragging() {
     if (!node) return;
     event.preventDefault();
     selectImpostFromNode(node);
-    dragState = { pointerId: event.pointerId };
+    setDragState({ pointerId: event.pointerId });
     try {
       svg.setPointerCapture(event.pointerId);
     } catch {}
@@ -221,7 +232,7 @@ function bindCanvasDragging() {
   });
   const finishDrag = (event) => {
     if (!dragState || dragState.pointerId !== event.pointerId) return;
-    dragState = null;
+    setDragState(null);
     document.body.style.cursor = "";
     try {
       svg.releasePointerCapture(event.pointerId);
@@ -281,7 +292,7 @@ function largestGapPosition(items) {
   return best.position;
 }
 
-function addInnerImpost(orientation) {
+export function addInnerImpost(orientation) {
   const targets = selectedSections();
   if (!targets.length) return;
   if (targets.some(({pane}) => pane.innerImposts.length)) {
@@ -314,14 +325,14 @@ function addInnerImpost(orientation) {
     return;
   }
   const panes = sectionPanes();
-  multiSections = new Set(changed.map(({pane}) => panes.indexOf(pane.children[0])));
+  setMultiSections(new Set(changed.map(({pane}) => panes.indexOf(pane.children[0]))));
   state.selectedPane = [...multiSections][0];
   state.selectedImpost = null;
-  sharedAxis = null;
+  setSharedAxis(null);
   renderAll();
   showToast(`Импостов добавлено: ${changed.length}`);
 }
-function equalizeSelectedGlass(axis) {
+export function equalizeSelectedGlass(axis) {
   const entries=selectedSections();
   const horizontal=axis==="horizontal";
   const coordinate=e=>horizontal?e.rect.y:e.rect.x;
