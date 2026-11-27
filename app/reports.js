@@ -1,4 +1,12 @@
-(() => {
+import { GLASS, MATERIALS, OPENINGS, PRODUCT_TYPES, SHAPES, glassCatalog, programStorageGet, programStorageSet } from "./catalog.js";
+import { overallSizeLabel } from "./drawing.js";
+import { showToast } from "./editor-ui.js";
+import { orderItemSketch } from "./order.js";
+import { escapeHtml, formatMoney, formatNumber, orderItems, pluralizeRu } from "./product.js";
+import { setSettingsTab } from "./settings.js";
+export let openReportsDialog = () => {};
+export let reloadReportSettings = () => {};
+export function installReports() {
   const STORAGE_KEY = "okno-smeta-report-templates-v1";
   const types = [
     ["invoice", "Счёт"], ["contract", "Договор"],
@@ -198,7 +206,7 @@
   }
   function render(ids) { return ids.map(report).join(""); }
   function message(text) { document.querySelector("#reportDialogMessage").textContent=text; }
-  window.openReportsDialog = function () {
+  openReportsDialog = function () {
     choices();
     document.querySelector("#reportPreview").hidden=true;
     message(orderItems.length ? "" : "Сначала сохраните хотя бы одно изделие в текущем заказе.");
@@ -232,6 +240,6 @@
   document.querySelector("#resetReportTemplates").addEventListener("click",()=>{
     settings=copy(defaults);renderEditor();showToast("Шаблоны восстановлены. Нажмите «Сохранить отчёты».");
   });
-  window.reloadReportSettings = () => { settings = load(); renderEditor(); };
+  reloadReportSettings = () => { settings = load(); renderEditor(); };
   renderEditor();
-})();
+}
