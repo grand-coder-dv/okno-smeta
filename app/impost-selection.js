@@ -1,5 +1,9 @@
-(() => {
-  "use strict";
+import { applyImpostSelection, beforeSelectImpost } from "./canvas-input.js";
+import { addImpostSelectionTest } from "./drawing.js";
+import { renderAll, showToast, syncFormFromState } from "./editor-ui.js";
+import { ensurePanes, removeRootImpost, sectionPanes } from "./geometry.js";
+import { multiSections, selectedSections, setSharedAxis, state } from "./product.js";
+export function installImpostSelection() {
   const svg = document.querySelector("#windowCanvas");
   if (!svg || typeof sectionPanes !== "function") return;
   let selected = new Map();
@@ -14,16 +18,8 @@
     return {scope, orientation, id, ...(scope === "pane" ? {paneIndex:Number(pane)} : {})};
   }
   function key(ref) { return `${ref.scope}:${ref.orientation}:${ref.id}`; }
-  const originalSelected = isSelectedImpost;
-  isSelectedImpost = function(scope, orientation, id, paneIndex) {
-    return originalSelected(scope, orientation, id, paneIndex) ||
-      (owner === state && !!state.selectedImpost && selected.has(key({scope, orientation, id})));
-  };
-  const originalSelect = selectImpostFromNode;
-  selectImpostFromNode = function(node) {
-    reset();
-    originalSelect(node);
-  };
+  addImpostSelectionTest((scope, orientation, id) => owner === state && !!state.selectedImpost && selected.has(key({scope, orientation, id})));
+  beforeSelectImpost(reset);
   function toggle(node) {
     if (owner !== state || !state.selectedImpost) reset();
     const previous = state.selectedImpost;
@@ -34,7 +30,7 @@
     const last = selected.get(key(ref)) ?? [...selected.values()].at(-1);
     const keep = new Map(selected);
     if (last) {
-      originalSelect({dataset:{scope:last.scope,orientation:last.orientation,id:last.id,pane:last.paneIndex}});
+      applyImpostSelection({dataset:{scope:last.scope,orientation:last.orientation,id:last.id,pane:last.paneIndex}});
     } else {
       state.selectedImpost = null;
       state.selectedPane = null;
@@ -92,8 +88,8 @@
       }
     }
     reset();
-    if (typeof multiSections !== "undefined") multiSections.clear();
-    if (typeof sharedAxis !== "undefined") sharedAxis = null;
+    multiSections.clear();
+    setSharedAxis(null);
     state.selectedImpost = null;
     state.selectedPane = null;
     ensurePanes();
@@ -121,4 +117,4 @@
     showToast(sashes.length === 1 ? "Проём стал глухим" : `Створок убрано: ${sashes.length}`);
   });
   renderAll();
-})();
+}
