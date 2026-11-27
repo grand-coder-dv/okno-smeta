@@ -1,9 +1,13 @@
 // Смета: строки спецификации и стоимость текущего изделия.
-function hardwareFitsSize(set, width, height) {
+import { HANDLE_LENGTHS, HANDLE_STYLES, MATERIALS, OPENINGS, PRODUCT_TYPES, SHAPES, materialGlass, rates, selectedHandle, selectedHardware } from "./catalog.js";
+import { customProfileArcs, overallSizeLabel } from "./drawing.js";
+import { geometry, glassGeometry, sectionLayout, sectionNumber, sectionPanes } from "./geometry.js";
+import { SASH_LAP, getFinish, getProfile, getTechnology, state } from "./product.js";
+export function hardwareFitsSize(set, width, height) {
   return width >= set.minWidth && width <= set.maxWidth && height >= set.minHeight && height <= set.maxHeight;
 }
 
-function sashProfileSize(sashPane) {
+export function sashProfileSize(sashPane) {
   const tech = getTechnology();
   const entry = sectionLayout().find((item) => item.pane === sashPane);
   if (!entry) return null;
@@ -17,7 +21,7 @@ function sashProfileSize(sashPane) {
   return { width: Math.round(box[2] - box[0]), height: Math.round(box[3] - box[1]) };
 }
 
-function hardwareRangeProblems() {
+export function hardwareRangeProblems() {
   const set = selectedHardware();
   if (!set) return [];
   const problems = [];
@@ -34,7 +38,7 @@ function hardwareRangeProblems() {
   return problems;
 }
 
-function buildSpecification() {
+export function buildSpecification() {
   const dimensions = geometry();
   const material = MATERIALS[state.material];
   const profile = getProfile();
