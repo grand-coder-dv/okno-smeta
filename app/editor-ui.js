@@ -1,4 +1,14 @@
 // Экран редактора: инспектор, итог, кнопки и общий пересчёт.
+import { addInnerImpost, bindCanvasDragging, bindCanvasZoom, equalizeSelectedGlass } from "./canvas-input.js";
+import { renderCanvas } from "./canvas.js";
+import { APP_DATABASE_KEY, GLASS, MATERIALS, OPENINGS, PRODUCT_TYPES, RATES_STORAGE_KEY, SHAPES, appDatabase, captureGlassDraft, cloneData, cloneMaterials, cloneRates, defaultHardwareCatalog, fitsGlassProfile, glassCatalog, glassCatalogKey, glassDraft, handlesForSet, hardwareCatalog, hardwareDraft, hardwareSetsForProduct, persistRates, profileTypeSettings, programStorageRemove, programStorageSet, rates, readRawAppDatabase, readStoredProjects, renderGlassCatalog, selectedHandle, selectedHardware, setAppDatabase, setGlassCatalog, setGlassDraft, setHardwareDraft, setRates, standardGlassCatalog, syncGlassChoices, syncHardwareChoice } from "./catalog.js";
+import { activeProfileEdge, commitOverallDimension, customProfileArcs, editPolygon, editProfileSide, fittedGlass, handlePreviewMarkup, hasSlantedImposts, overallSizeLabel, refreshProfileEdit, sharedImpostLimits, syncOverallInputs } from "./drawing.js";
+import { buildSpecification, hardwareFitsSize, hardwareRangeProblems, sashProfileSize } from "./estimate.js";
+import { adjacentBar, circleSashesBlocked, constructionModel, createImpostId, ensurePanes, getPanePhysicalRect, getSelectedImpostRecord, glassGeometry, glassSizeLabel, makeEvenImposts, nestedImpostLimits, removeRootImpost, rootImpostLimits, sectionLayout, sectionNumber, sectionPanes, updateMaterialSelects } from "./geometry.js";
+import { deleteOrderItem, deleteProject, editOrderItem, hasUnsavedProjectWork, openProject, renameCurrentOrder, renameOrderItem, renameStoredOrder, renderOrder, renderProjectToolbar, renderProjectsList, requestProjectSave, saveCurrentOrderItem, saveProjectRecord, startNewProject } from "./order.js";
+import { $, $$, catalogDraft, catalogMaterial, clamp, draftProductName, editingOrderItemId, escapeHtml, formatMoney, formatNumber, getProfile, getTechnology, impostPositionOrigin, isPreliminaryShape, multiSections, normalizeUnsupportedOpenings, openingAllowed, orderItems, projectDirty, projects, resetCurrentProduct, selectedSections, setCatalogDraft, setCatalogMaterial, setDraftProductName, setProjectDirty, setProjects, setSharedAxis, setWindowShapeMode, sharedAxis, state, validateCurrentProduct } from "./product.js";
+import { openReportsDialog } from "./reports.js";
+import { handleCatalogAction, handleHardwareAction, populatePriceForm, populateTechnologyForm, readCatalogDraftFromEditor, readPriceForm, readTechnologyForm, renderHardwareCatalog, renderTechnologyCatalog, saveHardwareCatalog, setSettingsTab } from "./settings.js";
 function profileTarget(edge) {
   if (!edge) return null;
   if (edge.type === "circle-frame") return { side: "ring", vertex: null };
@@ -348,7 +358,10 @@ function renderHardwareChoices() {
   else note.textContent = `Для створки: ширина ${set.minWidth}–${set.maxWidth} мм, высота ${set.minHeight}–${set.maxHeight} мм.`;
 }
 
-function renderAll() {
+const afterRenderHooks = [];
+export function onAfterRender(hook) { afterRenderHooks.push(hook); }
+
+export function renderAll() {
   ensurePanes();
   renderHardwareChoices();
   $("#editorProductName").textContent=draftProductName;
@@ -396,11 +409,12 @@ function renderAll() {
   }
   updateActiveControls();
   renderProjectToolbar();
+  for (const hook of afterRenderHooks) hook();
 }
 
 function setSplit(cols, rows) {
   multiSections.clear();
-  sharedAxis = null;
+  setSharedAxis(null);
   const nextCols = clamp(cols, 1, 4);
   const nextRows = clamp(rows, 1, 3);
   if (nextCols === state.cols && nextRows === state.rows) return;
@@ -424,7 +438,7 @@ function setSplit(cols, rows) {
   renderAll();
 }
 
-function showToast(message) {
+export function showToast(message) {
   const toast = $("#toast");
   toast.textContent = message;
   toast.classList.add("show");
@@ -432,7 +446,7 @@ function showToast(message) {
   showToast.timer = setTimeout(() => toast.classList.remove("show"), 2300);
 }
 
-function bindEvents() {
+export function bindEvents() {
   $$('input[name="material"]').forEach((input) => {
     input.addEventListener("change", () => {
       state.material = input.value;
@@ -612,7 +626,7 @@ function bindEvents() {
     event.currentTarget.blur();
   });
   $("#centerImpost").addEventListener("click", () => {
-    sharedAxis = null;
+    setSharedAxis(null);
     multiSections.clear();
     const record = getSelectedImpostRecord();
     if (!record) return;
@@ -642,7 +656,7 @@ function bindEvents() {
     showToast(sashes.length === 1 ? "Створка удалена" : `Створок удалено: ${sashes.length}`);
   });
   $("#removeImpost").addEventListener("click", () => {
-    sharedAxis = null;
+    setSharedAxis(null);
     multiSections.clear();
     const record = getSelectedImpostRecord();
     if (!record) return;
@@ -683,11 +697,11 @@ function bindEvents() {
     if(entered===null)return;
     const name=entered.trim();
     if(!name||name.length>100)return showToast("Название должно содержать от 1 до 100 символов.");
-    draftProductName=name;
+    setDraftProductName(name);
     $("#editorProductName").textContent=name;
     if(editingOrderItemId){
       const item=orderItems.find(candidate=>candidate.id===editingOrderItemId);
-      if(item){item.name=name;item.updatedAt=new Date().toISOString();projectDirty=true;renderOrder();renderProjectToolbar();}
+      if(item){item.name=name;item.updatedAt=new Date().toISOString();setProjectDirty(true);renderOrder();renderProjectToolbar();}
     }
   });
   $("#orderItems").addEventListener("click", (event) => {
@@ -704,12 +718,12 @@ function bindEvents() {
   window.addEventListener("storage", event => {
     if (event.key !== APP_DATABASE_KEY && event.key !== null) return;
     const fresh = readRawAppDatabase();
-    if (fresh) appDatabase = fresh;
-    projects = readStoredProjects();
+    if (fresh) setAppDatabase(fresh);
+    setProjects(readStoredProjects());
     renderProjectsList();
   });
   $("#myProjects").addEventListener("click", () => {
-    projects = readStoredProjects();
+    setProjects(readStoredProjects());
     renderProjectsList();
     $("#projectsDialog").showModal();
   });
@@ -753,7 +767,7 @@ function bindEvents() {
   $("#openPrices").addEventListener("click", () => {
     populatePriceForm();
     populateTechnologyForm();
-    hardwareDraft = cloneData(hardwareCatalog);
+    setHardwareDraft(cloneData(hardwareCatalog));
     $("#hardwareCatalogEditor").removeAttribute("data-ready");
     setSettingsTab("prices");
     $("#pricesDialog").showModal();
@@ -772,7 +786,7 @@ function bindEvents() {
     showToast("Новые тарифы сохранены и применены");
   });
   $("#resetPrices").addEventListener("click", () => {
-    rates = cloneRates();
+    setRates(cloneRates());
     try {
       programStorageRemove(RATES_STORAGE_KEY);
     } catch {
@@ -790,7 +804,7 @@ function bindEvents() {
     button.addEventListener("click", () => {
       readCatalogDraftFromEditor();
       captureGlassDraft();
-      catalogMaterial = button.dataset.catalogMaterial;
+      setCatalogMaterial(button.dataset.catalogMaterial);
       renderTechnologyCatalog();
       renderGlassCatalog();
     });
@@ -809,7 +823,7 @@ function bindEvents() {
   $("#hardwareCatalogEditor").addEventListener("change", refreshHandlePreview);
   $("#saveHardware").addEventListener("click", saveHardwareCatalog);
   $("#resetHardware").addEventListener("click", () => {
-    hardwareDraft = defaultHardwareCatalog();
+    setHardwareDraft(defaultHardwareCatalog());
     renderHardwareCatalog();
     showToast("Стандартная фурнитура подготовлена — нажмите «Сохранить фурнитуру»");
   });
@@ -866,16 +880,16 @@ function bindEvents() {
     }
     try { programStorageSet(glassCatalogKey, JSON.stringify(glassDraft)); }
     catch { return showToast("Не удалось сохранить каталог стеклопакетов"); }
-    glassCatalog = structuredClone(glassDraft);
+    setGlassCatalog(structuredClone(glassDraft));
     readTechnologyForm();
     $("#pricesDialog").close();
     renderAll();
     showToast("Каталог профильных систем сохранён");
   }));
   $("#resetTechnology").addEventListener("click", () => {
-    catalogDraft = cloneMaterials();
-    glassDraft = standardGlassCatalog();
-    catalogMaterial = state.material;
+    setCatalogDraft(cloneMaterials());
+    setGlassDraft(standardGlassCatalog());
+    setCatalogMaterial(state.material);
     renderTechnologyCatalog();
     renderGlassCatalog();
     showToast("Стандартный каталог подготовлен — нажмите «Сохранить каталог»");
@@ -921,7 +935,7 @@ function bindEvents() {
   });
 }
 
-function syncFormFromState() {
+export function syncFormFromState() {
   $$('input[name="material"]').forEach((input) => (input.checked = input.value === state.material));
   updateMaterialSelects();
   syncOverallInputs(true);
