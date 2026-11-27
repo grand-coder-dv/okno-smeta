@@ -1,10 +1,9 @@
 // Конструкция: импосты, секции, габариты и площадь.
 import { MATERIALS, availableProfiles } from "./catalog.js";
 import { circularOutline, clipSlantedSections, constructionPolygon, customFrameMeasures, customProfileArcs, fittedGlass, fittedOutline, hasSlantedImposts, impostSegment, overallSize, polyBounds, polygonClip, polygonPoints, profileOutline, rectPoints, sectionContour, slantedBounds } from "./drawing.js";
-import { $, $$, SASH_LAP, clamp, comparableCurrentState, escapeHtml, formatNumber, getProfile, getTechnology, impostSequence, state } from "./product.js";
+import { $, $$, SASH_LAP, clamp, comparableCurrentState, escapeHtml, formatNumber, getProfile, getTechnology, nextImpostSequence, state } from "./product.js";
 export function createImpostId(scope, orientation) {
-  impostSequence += 1;
-  return `${scope}-${orientation[0]}-${impostSequence}`;
+  return `${scope}-${orientation[0]}-${nextImpostSequence()}`;
 }
 
 export function makeEvenImposts(count, size, orientation) {
