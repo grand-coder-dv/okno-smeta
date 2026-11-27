@@ -1,5 +1,9 @@
 // Чертёж: контуры, дуги, скосы и точки профиля.
-function shapePaths(x, y, width, height, frame) {
+import { HANDLE_LENGTHS, normalizeHandleStyle, selectedHandle } from "./catalog.js";
+import { renderAll, showToast } from "./editor-ui.js";
+import { barFace, getPanePhysicalRect, glassGeometry, nestedImpostLimits, rootImpostLimits, sectionLayout, sectionPanes } from "./geometry.js";
+import { $, SASH_LAP, clamp, escapeHtml, formatNumber, getTechnology, inferredShapeMode, multiSections, numberFormatter, setSharedAxis, sharedAxis, state } from "./product.js";
+export function shapePaths(x, y, width, height, frame) {
   if (state.shape === "circle") {
     return {
       outer: `<ellipse cx="${x + width / 2}" cy="${y + height / 2}" rx="${width / 2}" ry="${height / 2}" />`,
@@ -48,7 +52,7 @@ function openingSymbol(type, x, y, width, height, side) {
   return paths;
 }
 
-function sharedImpostLimits(group, orientation) {
+export function sharedImpostLimits(group, orientation) {
   const v = orientation === "vertical";
   const entries = sectionLayout();
   const members = group.flatMap(({id,index}) => {
@@ -64,22 +68,25 @@ function sharedImpostLimits(group, orientation) {
   return {members, min:Math.max(...members.map(m=>m.min)), max:Math.min(...members.map(m=>m.max))};
 }
 
-function isSelectedImpost(scope, orientation, id, paneIndex = null) {
+const impostSelectionTests = [];
+export function addImpostSelectionTest(test) { impostSelectionTests.push(test); }
+export function isSelectedImpost(scope, orientation, id, paneIndex = null) {
   const selected = state.selectedImpost;
-  return Boolean(selected && selected.scope === scope && selected.orientation === orientation && selected.id === id && (scope === "root" || selected.paneIndex === paneIndex));
+  const base = Boolean(selected && selected.scope === scope && selected.orientation === orientation && selected.id === id && (scope === "root" || selected.paneIndex === paneIndex));
+  return base || impostSelectionTests.some((test) => test(scope, orientation, id, paneIndex));
 }
 
-function polygonPoints() {
+export function polygonPoints() {
   if(state.shape!=="skew")return;
   if(state.framePolygon?.length>=3) return state.framePolygon.map(([x,y])=>[x*state.width,y*state.height]);
   return rectPoints([0,0,state.width,state.height]);
 }
-function hasSlantedImposts() {
+export function hasSlantedImposts() {
   if(state.shape!=="skew")return false;
   const nested=panes=>(panes||[]).some(p=>p.innerImposts?.some(i=>i.endOffsets?.some(Boolean)) || nested(p.children));
   return state.vImposts.some(i=>i.endOffsets?.some(Boolean)) || state.hImposts.some(i=>i.endOffsets?.some(Boolean)) || nested(state.panes);
 }
-function constructionPolygon() {
+export function constructionPolygon() {
   return polygonPoints();
 }
 function clipByImpostLine(points,a,b,sign,inset=0) {
@@ -94,7 +101,7 @@ function clipByImpostLine(points,a,b,sign,inset=0) {
   return result;
 }
 const cross2=(a,b,c)=>(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
-function polygonClip(subject, boundary, inset=0) {
+export function polygonClip(subject, boundary, inset=0) {
   let out=subject;
   boundary.forEach((a,i)=>{
     const b=boundary[(i+1)%boundary.length], gap=inset*Math.hypot(b[0]-a[0],b[1]-a[1]);
@@ -108,10 +115,10 @@ function polygonClip(subject, boundary, inset=0) {
   });
   return out;
 }
-function rectPoints([l,t,r,b]) { return [[l,t],[r,t],[r,b],[l,b]]; }
-function polyPath(points,X,Y) { return points.length>=3 ? `M ${points.map(([x,y])=>`${X(x)} ${Y(y)}`).join(' L ')} Z` : ""; }
-function polyBounds(p) { return [Math.min(...p.map(v=>v[0])),Math.min(...p.map(v=>v[1])),Math.max(...p.map(v=>v[0])),Math.max(...p.map(v=>v[1]))]; }
-function clipSlantedSections(points,entry,inset=0,withParents=true) {
+export function rectPoints([l,t,r,b]) { return [[l,t],[r,t],[r,b],[l,b]]; }
+export function polyPath(points,X,Y) { return points.length>=3 ? `M ${points.map(([x,y])=>`${X(x)} ${Y(y)}`).join(' L ')} Z` : ""; }
+export function polyBounds(p) { return [Math.min(...p.map(v=>v[0])),Math.min(...p.map(v=>v[1])),Math.max(...p.map(v=>v[0])),Math.max(...p.map(v=>v[1]))]; }
+export function clipSlantedSections(points,entry,inset=0,withParents=true) {
   if(!points.length || !entry || !constructionPolygon())return points;
   const full={x:0,y:0,width:state.width,height:state.height},outer=constructionPolygon();
   const borders=[
@@ -129,7 +136,7 @@ function clipSlantedSections(points,entry,inset=0,withParents=true) {
   }
   return result;
 }
-function slantedBounds(bounds,entry,field=null) {
+export function slantedBounds(bounds,entry,field=null) {
   if(!entry || !constructionPolygon())return bounds;
   let [l,t,r,b]=bounds;
   const tech=getTechnology(),margin=tech.frame+tech.sash+tech.impost;
@@ -148,7 +155,7 @@ function slantedBounds(bounds,entry,field=null) {
   }
   return [l,t,r,b];
 }
-function sectionContour(entry,poly=constructionPolygon(),frameInset=0) {
+export function sectionContour(entry,poly=constructionPolygon(),frameInset=0) {
   if(!poly)return null;
   const {rect,edges}=entry, limits=polyBounds(poly);
   const bounds=[edges[0]?Math.min(rect.x,limits[0]):rect.x,
@@ -189,7 +196,7 @@ function polygonGlass(poly, geometry, f, tech, entry) {
   }
   return result;
 }
-function outlineRange(points, axis, at) {
+export function outlineRange(points, axis, at) {
   const values=[];
   points.forEach((p,i)=>{
     const q=points[(i+1)%points.length], a=p[axis], b=q[axis];
@@ -198,7 +205,7 @@ function outlineRange(points, axis, at) {
   });
   return values.length?[Math.min(...values),Math.max(...values)]:null;
 }
-function impostSegment(item, orientation, rect, outer = constructionPolygon(), root = false) {
+export function impostSegment(item, orientation, rect, outer = constructionPolygon(), root = false) {
   const vertical=orientation === "vertical";
   const base=root ? item.position : (vertical ? rect.x+rect.width*item.position : rect.y+rect.height*item.position);
   const offsets=item.endOffsets || [0,0];
@@ -230,7 +237,7 @@ function impostSegment(item, orientation, rect, outer = constructionPolygon(), r
   }
   return segment;
 }
-function impostRibbon(item, orientation, rect, boundary, face, root = false, outer = constructionPolygon()) {
+export function impostRibbon(item, orientation, rect, boundary, face, root = false, outer = constructionPolygon()) {
   const [a,b]=impostSegment(item,orientation,rect,outer,root);
   const dx=b[0]-a[0],dy=b[1]-a[1],length=Math.hypot(dx,dy);
   if(length<1e-7 || !boundary?.length)return [];
@@ -310,7 +317,7 @@ function handleParts(style, color) {
   return `${plate(-15, -87, 30, 74, 9)}${plate(-8.5, -51, 17, 138, 8.5)}${ring(0, -50, 10.5)}`;
 }
 
-function handlePreviewMarkup(style, color) {
+export function handlePreviewMarkup(style, color) {
   const kind = normalizeHandleStyle(style);
   const boxes = {
     window: "-28 -100 56 200",
@@ -345,7 +352,7 @@ function placedHandle(anchorX, anchorY, inward, availableH, availableW, X, Y, ha
   return `<g transform="translate(${px} ${py}) scale(${ux} ${uy})" pointer-events="none">${handleParts(style, handle?.color)}</g>`;
 }
 
-function sashOpeningMark(glass, outer, inner, type, side, X, Y) {
+export function sashOpeningMark(glass, outer, inner, type, side, X, Y) {
   if(glass.length<3 || type==="fixed")return {dashes:"",handle:""};
   const [l,t,r,b]=polyBounds(glass);
   const ym=(t+b)/2, xmid=(l+r)/2;
@@ -429,7 +436,7 @@ function editImpostEndpoint() {
   });
   dialog.showModal();
 }
-function refreshProfileEdit() {
+export function refreshProfileEdit() {
   let button=$("#editProfileGeometry");
   const host=$("#editorHistory");
   if(!button){
@@ -450,7 +457,7 @@ function refreshProfileEdit() {
   button.disabled=button.hidden || !(activeImpostEndpoint?.owner===state || activeProfileEdge?.owner===state && activeProfileEdge.type!=="skew-sash");
   button.style.color=button.disabled?"#68778a":"white";button.style.background=button.disabled?"#edf1f5":"#24384f";
 }
-function editPolygon(selection) {
+export function editPolygon(selection) {
   if(state.shape!=="skew")return;
   const points=polygonPoints()||rectPoints([0,0,state.width,state.height]);
   const i=selection.side, vertex=selection.type==="vertex", lengthMode=selection.type==="length";
@@ -491,9 +498,9 @@ function editPolygon(selection) {
 }
 
 const PROFILE_SIDES = ["верхняя поперечина", "правая стойка", "нижняя поперечина", "левая стойка"];
-let activeProfileEdge = null;
-let activeImpostEndpoint = null;
-function customProfileArcs() {
+export let activeProfileEdge = null;
+export let activeImpostEndpoint = null;
+export function customProfileArcs() {
   return Boolean((state.shape === "arch" && (Object.values(state.frameArcs || {}).some(Boolean) ||
     sectionPanes().some(p => !p.split && p.opening !== "fixed" && Object.values(p.sashArcs || {}).some(Boolean)))));
 }
@@ -508,7 +515,7 @@ function arcBoundaryPoints(p,q,radius,sweep) {
     return [p[0]+(dx*tangent+dy*sag)/chord,p[1]+(dy*tangent-dx*sag)/chord];
   });
 }
-function profileOutline(bounds, arcs, X, Y, sx, sy) {
+export function profileOutline(bounds, arcs, X, Y, sx, sy) {
   const [l,t,r,b] = bounds;
   const pts = [[l,t],[r,t],[r,b],[l,b]];
   const point = ([x,y]) => `${X(x)} ${Y(y)}`;
@@ -536,7 +543,7 @@ function arcRise(chord,radius) {
   const R=Math.max(half,radius);
   return half*half/(R+Math.sqrt(Math.max(0,R*R-half*half)));
 }
-function pieceWidth(role) {
+export function pieceWidth(role) {
   const tech = getTechnology();
   if (role === "extender") return tech.extender;
   if (role === "connector") return tech.connector;
@@ -557,7 +564,7 @@ function ringOutset(config = state) {
     (addon.role === "extender" || addon.role === "connector") && addon.side === "ring" ? sum + pieceWidth(addon.role) : sum
   ), 0);
 }
-function frameSideChain(side) {
+export function frameSideChain(side) {
   if (state.shape === "circle" || side == null || side === "ring") return null;
   const polygon = state.shape === "skew" ? (polygonPoints() || rectPoints([0, 0, state.width, state.height])) : null;
   if (polygon) {
@@ -574,7 +581,7 @@ function frameSideChain(side) {
   const chord = Math.hypot(end[0] - start[0], end[1] - start[1]);
   return arcBoundaryPoints(start, end, Math.max(chord / 2, arc.radius), arc.direction === "in" ? 0 : 1);
 }
-function windowOuterBounds(config = state) {
+export function windowOuterBounds(config = state) {
   const mode=inferredShapeMode(config);
   if (mode === "circle") {
     const extra = ringOutset(config);
@@ -607,16 +614,16 @@ function windowOuterBounds(config = state) {
   const bottom=rise(2,config.width)+Math.max(sideOutset(2,config),cornerExtra(2,config),cornerExtra(3,config));
   return [-left,-top,config.width+right,config.height+bottom];
 }
-function overallSize(config = state) {
+export function overallSize(config = state) {
   const [l,t,r,b]=windowOuterBounds(config);
   return {width:r-l,height:b-t};
 }
-function overallSizeLabel(config = state) {
+export function overallSizeLabel(config = state) {
   const {width,height}=overallSize(config);
   const mm=value=>numberFormatter.format(Math.round(value));
   return config.shape==="circle" ? `Ø ${mm(width)} мм` : `${mm(width)} × ${mm(height)} мм`;
 }
-function syncOverallInputs(force=false) {
+export function syncOverallInputs(force=false) {
   const size=overallSize();
   for(const key of ["width","height"]){
     const input=$("#"+key);
@@ -626,7 +633,7 @@ function syncOverallInputs(force=false) {
     if(force || document.activeElement!==input) input.value=String(Math.round(size[key]));
   }
 }
-function commitOverallDimension(key,input) {
+export function commitOverallDimension(key,input) {
   const desired=input.valueAsNumber;
   if(!Number.isFinite(desired)){syncOverallInputs(true);return;}
   const lo=400,hi=key==="width"?5000:4000;
@@ -642,7 +649,7 @@ function commitOverallDimension(key,input) {
 function closedArea(points) {
   return Math.abs(points.reduce((sum,p,i)=>{const q=points[(i+1)%points.length];return sum+p[0]*q[1]-p[1]*q[0];},0))/2;
 }
-function customFrameMeasures() {
+export function customFrameMeasures() {
   const poly=polygonPoints();
   if(poly) return {area:closedArea(poly)/1e6,
     perimeter:poly.reduce((sum,p,i)=>{const q=poly[(i+1)%poly.length];return sum+Math.hypot(q[0]-p[0],q[1]-p[1]);},0)/1000};
@@ -657,7 +664,7 @@ function customFrameMeasures() {
   }
   return {area:Math.max(0,area)/1e6,perimeter:perimeter/1000};
 }
-function frameCurve(side, offset) {
+export function frameCurve(side, offset) {
   const arc = state.shape === "arch" && state.frameArcs?.[side];
   if (!arc || !Number.isFinite(arc.radius)) return null;
   const vertical = side % 2 === 1;
@@ -671,7 +678,7 @@ function frameCurve(side, offset) {
   if (signedRadius <= 0) return null;
   return t => center + sign*Math.sqrt(Math.max(0,signedRadius*signedRadius-(t-span/2)**2));
 }
-function fittedOutline(bounds, offsets, arcs, X, Y, sx, sy) {
+export function fittedOutline(bounds, offsets, arcs, X, Y, sx, sy) {
   const curves=offsets.map((offset,i)=>offset==null || arcs?.[i] ? null : frameCurve(i,offset));
   if(!curves.some(Boolean)) return profileOutline(bounds,arcs,X,Y,sx,sy);
   const [l,t,r,b]=bounds;
@@ -710,7 +717,7 @@ function fittedOutline(bounds, offsets, arcs, X, Y, sx, sy) {
   return {pts,screen,edges,extrema,boundary,path:`M ${screen[0].join(' ')} ${edges.map(e=>e.cmd).join(' ')} Z`};
 }
 
-function circularOutline(bounds,depth,X,Y) {
+export function circularOutline(bounds,depth,X,Y) {
   const [l,t,r,b]=bounds, cx=state.width/2, cy=state.height/2, radius=cx-depth;
   const empty={path:"",boundary:[],w:0,h:0,area:0};
   if(radius<=0 || r<=l || b<=t) return empty;
@@ -728,7 +735,7 @@ function circularOutline(bounds,depth,X,Y) {
   return area>1e-7 ? {path:polyPath(boundary,X,Y),boundary,w:right-left,h:bottom-top,area} : empty;
 }
 
-function fittedGlass(entry,geometry,f,tech,X=mm=>mm,Y=mm=>mm,sx=1,sy=1) {
+export function fittedGlass(entry,geometry,f,tech,X=mm=>mm,Y=mm=>mm,sx=1,sy=1) {
   const {sashBox,opening}=geometry;
   const bite=tech.bite[sashBox || entry.sashOwner ? "створка" : "рама"];
   const fbox=[f.x,f.y,f.x+f.w,f.y+f.h];
@@ -753,7 +760,7 @@ function fittedGlass(entry,geometry,f,tech,X=mm=>mm,Y=mm=>mm,sx=1,sy=1) {
   const boundary=outline.boundary||outline.pts;
   return {path:outline.path,boundary,w:Math.max(...xs)-Math.min(...xs),h:Math.max(...ys)-Math.min(...ys),area:closedArea(boundary)};
 }
-function polygonProfileTargets(outer,inner,type,index,X,Y) {
+export function polygonProfileTargets(outer,inner,type,index,X,Y) {
   if(outer.length<3 || inner.length<3) return "";
   const label=type==="polygon" ? "Рама" : "Створка";
   const next=i=>(i+1)%outer.length;
@@ -808,7 +815,7 @@ function polygonProfileTargets(outer,inner,type,index,X,Y) {
   return bands+seams+notes;
 }
 
-function profileEdgeTargets(outer, inner, type, index = null) {
+export function profileEdgeTargets(outer, inner, type, index = null) {
   const label=type === 'frame' ? 'Рама' : 'Створка';
   const joints=outer.edges.map((edge,i)=>{
     const previous=outer.edges[(i+3)%4];
@@ -835,7 +842,7 @@ function profileEdgeTargets(outer, inner, type, index = null) {
     stroke="#506176" stroke-opacity=".75" stroke-width="1" pointer-events="none"/>`).join('');
   return bands+seams+notes;
 }
-function editProfileSide(node) {
+export function editProfileSide(node) {
   if(state.shape!=="arch")return;
   const {profileEdge:type,edgeIndex,edgeSide} = node.dataset;
   const index=type==="frame"?null:Number(edgeIndex), side=Number(edgeSide);
@@ -847,7 +854,7 @@ function editProfileSide(node) {
   const depth=side%2?box[2]-box[0]:box[3]-box[1];
   if(chord<=0 || depth<=0) return;
   activeProfileEdge={owner:state,type,index,side};
-  state.selectedPane=null; state.selectedImpost=null; multiSections.clear(); sharedAxis=null;
+  state.selectedPane=null; state.selectedImpost=null; multiSections.clear(); setSharedAxis(null);
   renderAll();
   const current=(pane ? pane.sashArcs : state.frameArcs)?.[side];
   let dialog=$("#profileArcDialog");
@@ -900,7 +907,7 @@ function editProfileSide(node) {
   dialog.showModal();
 }
 
-function circleFrameTargets(cx,cy,rx,ry,frame) {
+export function circleFrameTargets(cx,cy,rx,ry,frame) {
   const ix=Math.max(rx-frame,2), iy=Math.max(ry-frame,2);
   const halves=[1,0].map((sweep,side)=>{
     const selected=activeProfileEdge?.owner===state && activeProfileEdge.type==="circle-frame" && activeProfileEdge.side===side;
@@ -909,3 +916,7 @@ function circleFrameTargets(cx,cy,rx,ry,frame) {
   }).join("");
   return halves+`<path d="M ${cx-rx} ${cy} H ${cx-ix} M ${cx+ix} ${cy} H ${cx+rx}" fill="none" stroke="#506176" stroke-width="1" pointer-events="none"/>`;
 }
+
+export function setActiveImpostEndpoint(value) { activeImpostEndpoint = value; }
+
+export function setActiveProfileEdge(value) { activeProfileEdge = value; }
