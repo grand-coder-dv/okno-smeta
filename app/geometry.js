@@ -1,10 +1,13 @@
 // Конструкция: импосты, секции, габариты и площадь.
-function createImpostId(scope, orientation) {
+import { MATERIALS, availableProfiles } from "./catalog.js";
+import { circularOutline, clipSlantedSections, constructionPolygon, customFrameMeasures, customProfileArcs, fittedGlass, fittedOutline, hasSlantedImposts, impostSegment, overallSize, polyBounds, polygonClip, polygonPoints, profileOutline, rectPoints, sectionContour, slantedBounds } from "./drawing.js";
+import { $, $$, SASH_LAP, clamp, comparableCurrentState, escapeHtml, formatNumber, getProfile, getTechnology, impostSequence, state } from "./product.js";
+export function createImpostId(scope, orientation) {
   impostSequence += 1;
   return `${scope}-${orientation[0]}-${impostSequence}`;
 }
 
-function makeEvenImposts(count, size, orientation) {
+export function makeEvenImposts(count, size, orientation) {
   return Array.from({ length: count }, (_, index) => ({
     id: createImpostId("root", orientation),
     position: Math.round(((index + 1) * size) / (count + 1) / 10) * 10,
@@ -15,7 +18,7 @@ function minimumSegment(size, impostCount) {
   return Math.min(220, Math.max(70, (size / (impostCount + 1)) * 0.36));
 }
 
-function removeRootImpost(orientation,id) {
+export function removeRootImpost(orientation,id) {
   const vertical=orientation === "vertical";
   const items=vertical ? state.vImposts : state.hImposts;
   const index=items.findIndex(item=>item.id===id);
@@ -69,7 +72,7 @@ function primaryBoundaries(orientation) {
   return [0, ...items.map((item) => item.position), size];
 }
 
-function sectionLayout(x = primaryBoundaries("vertical"), y = primaryBoundaries("horizontal")) {
+export function sectionLayout(x = primaryBoundaries("vertical"), y = primaryBoundaries("horizontal")) {
   const entries = [];
   function visit(pane, rect, [l,r,t,b], rootCol, rootRow, owner = null, slantParents = []) {
     entries.push({ pane, rect, edges: [l,r,t,b], rootCol, rootRow, sashOwner: owner, slantParents });
@@ -99,9 +102,9 @@ function sectionLayout(x = primaryBoundaries("vertical"), y = primaryBoundaries(
   });
   return entries;
 }
-function sectionPanes() { return sectionLayout().map(e => e.pane); }
-function getPanePhysicalRect(i) { return sectionLayout()[i].rect; }
-function sectionNumber(i) { return sectionPanes().slice(0,i+1).filter(p => !p.split).length; }
+export function sectionPanes() { return sectionLayout().map(e => e.pane); }
+export function getPanePhysicalRect(i) { return sectionLayout()[i].rect; }
+export function sectionNumber(i) { return sectionPanes().slice(0,i+1).filter(p => !p.split).length; }
 
 function paneGlassUnits(pane) {
   const vertical = pane.innerImposts.filter((item) => item.orientation === "vertical").length;
@@ -109,11 +112,11 @@ function paneGlassUnits(pane) {
   return (vertical + 1) * (horizontal + 1);
 }
 
-function circleSashesBlocked() {
+export function circleSashesBlocked() {
   return state.shape === "circle" && getProfile().allowCircleSashes !== true;
 }
 
-function ensurePanes() {
+export function ensurePanes() {
   normalizeRootImposts();
   const count = state.cols * state.rows;
   const panes = Array.from({ length: count }, (_, index) => {
@@ -139,7 +142,7 @@ function ensurePanes() {
   if (!state.selectedImpost) while (sectionPanes()[state.selectedPane]?.split) state.selectedPane += 1;
 }
 
-function getSelectedImpostRecord() {
+export function getSelectedImpostRecord() {
   const selected = state.selectedImpost;
   if (!selected) return null;
   if (selected.scope === "root") {
@@ -178,7 +181,7 @@ function clampImpostToSashes(position, limits, orientation, match) {
   if (!(min <= max)) return { min: position, max: position };
   return { min, max };
 }
-function rootImpostLimits(item, orientation) {
+export function rootImpostLimits(item, orientation) {
   const collection = orientation === "vertical" ? state.vImposts : state.hImposts;
   const index = collection.findIndex((candidate) => candidate.id === item.id);
   const {min,max,gap}=profileImpostStops(orientation,collection.length);
@@ -189,7 +192,7 @@ function rootImpostLimits(item, orientation) {
   return clampImpostToSashes(item.position, stops, orientation);
 }
 
-function nestedImpostLimits(item, pane) {
+export function nestedImpostLimits(item, pane) {
   const siblings = pane.innerImposts.filter((candidate) => candidate.orientation === item.orientation).sort((a, b) => a.position - b.position);
   const index = siblings.findIndex((candidate) => candidate.id === item.id);
   const entry=sectionLayout().find(e=>e.pane===pane);
@@ -218,7 +221,7 @@ function nestedImpostLimits(item, pane) {
   };
 }
 
-function updateMaterialSelects(reset = false, preserveProfile = false) {
+export function updateMaterialSelects(reset = false, preserveProfile = false) {
   const material = MATERIALS[state.material];
   if (reset || !availableProfiles().length) state.productType = "window";
   const compatible = availableProfiles();
@@ -237,11 +240,11 @@ function updateMaterialSelects(reset = false, preserveProfile = false) {
     .join("");
 }
 
-function barFace(item, tech = getTechnology()) {
+export function barFace(item, tech = getTechnology()) {
   if (!item) return tech.impost;
   return item.shtulp ? tech.shtulp : tech.impost;
 }
-function adjacentBar(entry, edgeIndex) {
+export function adjacentBar(entry, edgeIndex) {
   if (!entry || entry.edges?.[edgeIndex]) return null;
   const parents = entry.slantParents || [];
   const nested = parents.find((parent) => {
@@ -256,7 +259,7 @@ function adjacentBar(entry, edgeIndex) {
   if (edgeIndex === 2) return state.hImposts[entry.rootRow - 1] || null;
   return state.hImposts[entry.rootRow] || null;
 }
-function glassGeometry(entry, tech = getTechnology()) {
+export function glassGeometry(entry, tech = getTechnology()) {
   const {pane, rect, edges, sashOwner} = entry;
   const [fl,fr,ft,fb] = [0,1,2,3].map((side) => edges[side] ? tech.frame : barFace(adjacentBar(entry, side), tech) / 2);
   const ownerEdges=sashOwner && [
@@ -298,10 +301,10 @@ function glassGeometry(entry, tech = getTechnology()) {
   const ys=intervals("horizontal",opening[1],opening[3],rect.y,rect.height,bites[2],bites[3]);
   return {opening,sashBox,fields:ys.flatMap((y,row)=>xs.map((x,col)=>({x:x.start,y:y.start,w:x.size,h:y.size,clearW:x.clear,clearH:y.clear,row,col})))};
 }
-function glassSizeLabel(f) { return f.clearW>0 && f.clearH>0 && f.w>0 && f.h>0 ? `${Math.round(f.w)} × ${Math.round(f.h)} мм` : "—"; }
+export function glassSizeLabel(f) { return f.clearW>0 && f.clearH>0 && f.w>0 && f.h>0 ? `${Math.round(f.w)} × ${Math.round(f.h)} мм` : "—"; }
 
 /** Пролёты видимого импоста: от внутреннего края рамы/створки до грани соседнего импоста (как у стеклопакета). */
-function nestedImpostSpans(entry, item, tech = getTechnology()) {
+export function nestedImpostSpans(entry, item, tech = getTechnology()) {
   const {pane, rect} = entry;
   const vertical = item.orientation === "vertical";
   const geoEntry = pane.split
@@ -391,7 +394,7 @@ function splitBoundaryLengths(outline) {
     return length;
   });
 }
-function innerFrameBoundary(tech) {
+export function innerFrameBoundary(tech) {
   const inset = tech.frame;
   if (state.shape === "circle") {
     const radius = state.width / 2 - inset;
@@ -413,7 +416,7 @@ function innerFrameBoundary(tech) {
   const points = outline.boundary || outline.pts;
   return points?.length >= 3 ? points : [];
 }
-function impostHostBoundary(entry, tech, root) {
+export function impostHostBoundary(entry, tech, root) {
   if (root) return innerFrameBoundary(tech);
   const hostPane = entry.pane.split ? { ...entry.pane, innerImposts: [], split: null } : entry.pane;
   const opening = glassGeometry({ ...entry, pane: hostPane }, tech).opening;
@@ -705,7 +708,7 @@ function buildConstruction() {
     },
   };
 }
-function constructionModel() {
+export function constructionModel() {
   const tech = getTechnology();
   const key = `${comparableCurrentState()}|${tech.frame}|${tech.sash}|${tech.impost}|${tech.shtulp}|${tech.extender}|${tech.connector}|${tech.corner}`;
   if (key === constructionKey && constructionCache) return constructionCache;
@@ -713,7 +716,7 @@ function constructionModel() {
   constructionKey = key;
   return constructionCache;
 }
-function geometry() {
+export function geometry() {
   const model = constructionModel();
   const meters = (value) => value / 1000;
   return {
