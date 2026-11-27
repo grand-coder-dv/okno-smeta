@@ -1,11 +1,18 @@
 // Заказ: список изделий, сохранение проектов и их список.
-function orderItemSketch(config, detailed = false) {
+import { renderCanvas } from "./canvas.js";
+import { MATERIALS, PRODUCT_TYPES, SHAPES, changeStoredProjects, cloneData, readStoredProjects } from "./catalog.js";
+import { overallSizeLabel } from "./drawing.js";
+import { showToast } from "./editor-ui.js";
+import { buildSpecification } from "./estimate.js";
+import { circleSashesBlocked, ensurePanes, sectionPanes } from "./geometry.js";
+import { $, activeProjectId, activeProjectName, activeProjectSnapshot, canvasLayout, createOrderItemId, currentProductIsDirty, draftProductName, editingOrderItemId, escapeHtml, formatMoney, formatNumber, isPreliminaryShape, orderItemSequence, orderItems, pluralizeRu, projectDirty, projectWritePending, projects, replaceState, resetCurrentProduct, restoreProductState, setActiveProjectId, setActiveProjectName, setActiveProjectSnapshot, setCanvasLayout, setConfigurationError, setDraftProductName, setEditingOrderItemId, setOrderItemSequence, setOrderItems, setProjectDirty, setProjects, snapshotCurrentState, state, validateCurrentProduct } from "./product.js";
+export function orderItemSketch(config, detailed = false) {
   // Draw the saved configuration with the same renderer as the large editor.
   const previousState = state;
   const previousLayout = canvasLayout;
   const preview = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   try {
-    state = config;
+    replaceState(config);
     renderCanvas({ svg: preview, thumbnail: !detailed });
     if (detailed) preview.querySelectorAll(".pane-hit, .pane-selected, .impost-hit, .impost-grip, .impost-endpoint, [data-profile-edge], [data-profile-length]").forEach(node => node.remove());
     const prefix = `order-preview-${Math.random().toString(36).slice(2)}-`;
@@ -17,12 +24,12 @@ function orderItemSketch(config, detailed = false) {
     preview.setAttribute("aria-label", "Эскиз изделия");
     return preview.outerHTML;
   } finally {
-    state = previousState;
-    canvasLayout = previousLayout;
+    replaceState(previousState);
+    setCanvasLayout(previousLayout);
   }
 }
 
-function renderOrder() {
+export function renderOrder() {
   const container = $("#orderItems");
   $("#orderEmpty").hidden = orderItems.length > 0;
   container.innerHTML = orderItems
@@ -154,7 +161,7 @@ function projectTotals(project) {
   };
 }
 
-function renderProjectToolbar() {
+export function renderProjectToolbar() {
   const currentDirty = currentProductIsDirty();
   $("#currentProjectName").textContent = activeProjectName || "Новый заказ";
   const status = $("#projectSaveStatus");
@@ -174,7 +181,7 @@ function renderProjectToolbar() {
   $("#saveProject").textContent = activeProjectId ? "Сохранить изменения" : "Сохранить заказ";
 }
 
-function renderProjectsList() {
+export function renderProjectsList() {
   const list = $("#projectsList");
   const sorted = [...projects].sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
   $("#projectsEmpty").hidden = sorted.length > 0;
@@ -201,7 +208,7 @@ function renderProjectsList() {
     .join("");
 }
 
-function hasUnsavedProjectWork() {
+export function hasUnsavedProjectWork() {
   return projectDirty || currentProductIsDirty();
 }
 
@@ -216,18 +223,18 @@ function askOrderName(current) {
   return name;
 }
 
-function renameCurrentOrder() {
+export function renameCurrentOrder() {
   const name = askOrderName(activeProjectName);
   if (!name || name === activeProjectName) return;
-  activeProjectName = name;
-  projectDirty = true;
+  setActiveProjectName(name);
+  setProjectDirty(true);
   renderProjectToolbar();
   showToast("Название заказа изменено. Сохраните заказ, чтобы записать его.");
 }
 
-async function renameStoredOrder(projectId) {
+export async function renameStoredOrder(projectId) {
   if (projectWritePending) return;
-  projects = readStoredProjects();
+  setProjects(readStoredProjects());
   const project = projects.find(item => item.id === projectId);
   if (!project) return;
   const name = askOrderName(project.name);
@@ -246,9 +253,9 @@ async function renameStoredOrder(projectId) {
   if (!saved) return;
   if (activeProjectId === projectId) {
     const pendingName = activeProjectName !== project.name;
-    activeProjectSnapshot = JSON.stringify(renamed);
-    if (!pendingName) activeProjectName = name;
-    projectDirty = projectDirty || pendingName;
+    setActiveProjectSnapshot(JSON.stringify(renamed));
+    if (!pendingName) setActiveProjectName(name);
+    setProjectDirty(projectDirty || pendingName);
     renderProjectToolbar();
   }
   showToast(`Заказ «${name}» переименован`);
@@ -267,7 +274,7 @@ function confirmProjectSaveWithoutCurrentProduct() {
   return window.confirm(message);
 }
 
-async function saveProjectRecord(name) {
+export async function saveProjectRecord(name) {
   const cleanName = String(name || "").trim();
   if (!cleanName || projectWritePending) return false;
   const id = activeProjectId, baseline = activeProjectSnapshot;
@@ -287,17 +294,17 @@ async function saveProjectRecord(name) {
     return id ? latest.map(p => p?.id === id ? project : p) : [...latest, project];
   });
   if (!saved) return false;
-  activeProjectId = project.id;
-  activeProjectSnapshot = JSON.stringify(project);
-  activeProjectName = project.name;
-  projectDirty = JSON.stringify(orderItems) !== JSON.stringify(project.items);
+  setActiveProjectId(project.id);
+  setActiveProjectSnapshot(JSON.stringify(project));
+  setActiveProjectName(project.name);
+  setProjectDirty(JSON.stringify(orderItems) !== JSON.stringify(project.items));
   renderProjectToolbar();
   renderProjectsList();
   showToast(`Заказ «${project.name}» сохранён`);
   return true;
 }
 
-function requestProjectSave() {
+export function requestProjectSave() {
   if (!orderItems.length) {
     showToast("Добавьте в заказ хотя бы одно изделие");
     return;
@@ -313,29 +320,29 @@ function requestProjectSave() {
   $("#projectNameInput").focus();
 }
 
-function openProject(projectId) {
+export function openProject(projectId) {
   if (projectWritePending) return;
-  projects = readStoredProjects();
+  setProjects(readStoredProjects());
   const project = projects.find((candidate) => candidate.id === projectId);
   if (!project) return;
   if (!confirmDiscardUnsavedWork(`Открыть заказ «${project.name}»`)) return;
-  orderItems = cloneData(project.items);
-  orderItemSequence = Math.max(
+  setOrderItems(cloneData(project.items));
+  setOrderItemSequence(Math.max(
     Number(project.orderItemSequence) || 0,
     ...orderItems.map((item) => Number(String(item.name || "").match(/\d+/)?.[0]) || 0),
     orderItems.length,
-  );
-  activeProjectId = project.id;
-  activeProjectSnapshot = JSON.stringify(project);
-  activeProjectName = project.name;
-  projectDirty = false;
+  ));
+  setActiveProjectId(project.id);
+  setActiveProjectSnapshot(JSON.stringify(project));
+  setActiveProjectName(project.name);
+  setProjectDirty(false);
   resetCurrentProduct();
   renderProjectsList();
   $("#projectsDialog").close();
   showToast(`Заказ «${project.name}» открыт`);
 }
 
-async function deleteProject(projectId) {
+export async function deleteProject(projectId) {
   const project = projects.find((candidate) => candidate.id === projectId);
   if (!project || !window.confirm(`Удалить заказ «${project.name}»? Восстановить его будет невозможно.`)) return;
   const expected = JSON.stringify(project);
@@ -348,31 +355,31 @@ async function deleteProject(projectId) {
     return latest.filter(p => p?.id !== projectId);
   })) return;
   if (activeProjectId === projectId) {
-    activeProjectId = null;
-    activeProjectSnapshot = null;
-    activeProjectName = "";
-    projectDirty = orderItems.length > 0;
+    setActiveProjectId(null);
+    setActiveProjectSnapshot(null);
+    setActiveProjectName("");
+    setProjectDirty(orderItems.length > 0);
   }
   renderProjectToolbar();
   renderProjectsList();
   showToast(`Заказ «${project.name}» удалён`);
 }
 
-function startNewProject() {
+export function startNewProject() {
   if (projectWritePending) return;
   if (!confirmDiscardUnsavedWork("Создать новый заказ")) return;
-  activeProjectId = null;
-  activeProjectSnapshot = null;
-  activeProjectName = "";
-  projectDirty = false;
-  orderItems = [];
-  orderItemSequence = 0;
+  setActiveProjectId(null);
+  setActiveProjectSnapshot(null);
+  setActiveProjectName("");
+  setProjectDirty(false);
+  setOrderItems([]);
+  setOrderItemSequence(0);
   resetCurrentProduct();
   renderProjectsList();
   showToast("Создан новый заказ");
 }
 
-function saveCurrentOrderItem() {
+export function saveCurrentOrderItem() {
   const blockedSashes = circleSashesBlocked() ? sectionPanes().filter(p => !p.split && p.opening !== "fixed") : [];
   if (blockedSashes.length) {
     if (!window.confirm("Эта профильная система не разрешает круглые створки. Заменить створки глухим остеклением и сохранить изделие?")) return false;
@@ -424,12 +431,12 @@ function saveCurrentOrderItem() {
     orderItems.push(nextItem);
     showToast(`${nextItem.name} добавлено в заказ`);
   }
-  projectDirty = true;
+  setProjectDirty(true);
   resetCurrentProduct(nextItem.configuration);
   return true;
 }
 
-function editOrderItem(itemId) {
+export function editOrderItem(itemId) {
   const item = orderItems.find((candidate) => candidate.id === itemId);
   if (!item) return;
   if (currentProductIsDirty()) {
@@ -438,14 +445,14 @@ function editOrderItem(itemId) {
       if (!saveCurrentOrderItem()) return;
     } else if (choice?.trim() !== "2") return;
   }
-  editingOrderItemId = item.id;
-  draftProductName = item.name || `Изделие ${orderItemSequence}`;
+  setEditingOrderItemId(item.id);
+  setDraftProductName(item.name || `Изделие ${orderItemSequence}`);
   restoreProductState(orderItems.find(candidate => candidate.id === itemId).configuration);
   renderOrder();
   $("#saveOrderItem").scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
-function renameOrderItem(itemId) {
+export function renameOrderItem(itemId) {
   const item = orderItems.find(candidate => candidate.id === itemId);
   if (!item) return;
   const entered = window.prompt("Название изделия:", item.name);
@@ -454,19 +461,19 @@ function renameOrderItem(itemId) {
   if (!name || name.length > 100) return showToast("Название должно содержать от 1 до 100 символов.");
   if (name === item.name) return;
   item.name = name;
-  if(editingOrderItemId===item.id)draftProductName=name;
+  if(editingOrderItemId===item.id)setDraftProductName(name);
   item.updatedAt = new Date().toISOString();
-  projectDirty = true;
+  setProjectDirty(true);
   renderOrder();
   renderProjectToolbar();
   showToast("Название изделия изменено");
 }
 
-function deleteOrderItem(itemId) {
+export function deleteOrderItem(itemId) {
   const item = orderItems.find((candidate) => candidate.id === itemId);
   if (!item || !window.confirm(`Удалить «${item.name}» из заказа?`)) return;
-  orderItems = orderItems.filter((candidate) => candidate.id !== itemId);
-  projectDirty = true;
+  setOrderItems(orderItems.filter((candidate) => candidate.id !== itemId));
+  setProjectDirty(true);
   if (editingOrderItemId === itemId) resetCurrentProduct();
   else {
     renderOrder();
