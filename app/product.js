@@ -8,6 +8,10 @@ export let catalogDraft = null;
 export let catalogMaterial = "pvc";
 let catalogSequence = 0;
 export let impostSequence = 10;
+export function nextImpostSequence() {
+  impostSequence += 1;
+  return impostSequence;
+}
 export let canvasLayout = null;
 export let dragState = null;
 export let canvasZoom = 1;
