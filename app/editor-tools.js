@@ -1,4 +1,7 @@
-(() => {
+import { addInnerImpost } from "./canvas-input.js";
+import { onAfterRender, renderAll } from "./editor-ui.js";
+import { openingAllowed, selectedSections, state } from "./product.js";
+export function installEditorTools() {
   const toolbar = document.querySelector("#editorHistory");
   if (!toolbar || toolbar.querySelector("[data-editor-tool]")) return;
   const tools = [
@@ -54,11 +57,6 @@
     });
     renderAll();
   });
-  const draw = renderAll;
-  renderAll = function (...args) {
-    const result = draw.apply(this, args);
-    refresh();
-    return result;
-  };
+  onAfterRender(refresh);
   refresh();
-})();
+}
