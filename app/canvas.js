@@ -1,6 +1,12 @@
 // Холст: сборка SVG текущего изделия.
+import { moveSelectedImpostBy, selectImpostFromNode, updateCanvasZoomButtons } from "./canvas-input.js";
+import { MATERIALS, materialGlass } from "./catalog.js";
+import { activeProfileEdge, circleFrameTargets, circularOutline, clipSlantedSections, constructionPolygon, customProfileArcs, fittedGlass, fittedOutline, frameCurve, frameSideChain, hasSlantedImposts, impostRibbon, impostSegment, isSelectedImpost, outlineRange, pieceWidth, polyBounds, polyPath, polygonClip, polygonPoints, polygonProfileTargets, profileEdgeTargets, profileOutline, rectPoints, sashOpeningMark, sectionContour, setActiveProfileEdge, shapePaths, slantedBounds, windowOuterBounds } from "./drawing.js";
+import { renderAll } from "./editor-ui.js";
+import { barFace, constructionModel, glassGeometry, glassSizeLabel, impostHostBoundary, innerFrameBoundary, nestedImpostSpans, sectionLayout, sectionNumber } from "./geometry.js";
+import { $$, SASH_LAP, canvasLayout, canvasZoom, escapeHtml, getFinish, getTechnology, multiSections, numberFormatter, setCanvasLayout, setSharedAxis, sharedAxis, state } from "./product.js";
 let paneLongPressUsed = false;
-function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
+export function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
   const maxWidth = 455;
   const maxHeight = 350;
   const ratio = state.width / state.height;
@@ -307,7 +313,7 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
       `;
   });
 
-  canvasLayout = { x, y, width, height, box, xBounds, yBounds, paneRects };
+  setCanvasLayout({ x, y, width, height, box, xBounds, yBounds, paneRects });
   const [gL,gT,gR,gB]=windowOuterBounds();
   const bx0=X(gL),by0=Y(gT),bx1=X(gR),by1=Y(gB);
   const actualWidth=gR-gL,actualHeight=gB-gT;
@@ -554,8 +560,8 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
         multiSections.clear();
         state.selectedPane = index;
       }
-      activeProfileEdge = null;
-      sharedAxis = null;
+      setActiveProfileEdge(null);
+      setSharedAxis(null);
       state.selectedImpost = null;
       renderAll();
     };
@@ -573,8 +579,8 @@ function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
         if (multiSections.has(index)) multiSections.delete(index);
         else multiSections.add(index);
         state.selectedPane = multiSections.has(index) ? index : ([...multiSections].at(-1) ?? null);
-        activeProfileEdge = null;
-        sharedAxis = null;
+        setActiveProfileEdge(null);
+        setSharedAxis(null);
         state.selectedImpost = null;
         renderAll();
       }, 450);
