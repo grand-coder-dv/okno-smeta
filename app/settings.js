@@ -1,4 +1,10 @@
 // Диалог настроек: прайс и каталог профилей.
+import { DEFAULT_MATERIALS, HANDLE_LENGTHS, HANDLE_STYLES, MATERIALS, MATERIAL_TITLES, PRODUCT_TYPES, PROFILE_STORAGE_KEY, PROJECTS_STORAGE_KEY, applyTechnicalSnapshot, captureGlassDraft, cloneData, cloneMaterials, glassCatalog, glassDraft, hardwareCatalog, hardwareDraft, normalizeHandleStyle, persistHardwareCatalog, profileTypeSettings, programStorageSet, rates, readStoredProjects, reloadProgramStateFromDatabase, renderGlassCatalog, sanitizeHardwareCatalog, setGlassDraft, setHardwareCatalog, setHardwareDraft, setMATERIALS, technicalSnapshot } from "./catalog.js";
+import { handlePreviewMarkup } from "./drawing.js";
+import { renderAll, showToast } from "./editor-ui.js";
+import { updateMaterialSelects } from "./geometry.js";
+import { renderProjectsList } from "./order.js";
+import { $, $$, catalogDraft, catalogMaterial, clamp, createCatalogId, escapeHtml, getProfile, normalizeUnsupportedOpenings, projects, setCatalogDraft, setCatalogMaterial, setProjects, setWindowShapeMode, state } from "./product.js";
 const PRICE_BINDINGS = {
   pvcFrame: ["frame", "pvc"],
   aluminumFrame: ["frame", "aluminum"],
@@ -44,14 +50,14 @@ function ensureSkewSurchargeInput() {
   if(form.elements.namedItem("skewSurcharge")) return;
   form.elements.namedItem("circleSurcharge").closest("label").insertAdjacentHTML("afterend", '<label><span>Косая форма</span><input name="skewSurcharge" type="number" min="0" max="300" step="1" /></label>');
 }
-function populatePriceForm() {
+export function populatePriceForm() {
   ensureSkewSurchargeInput();
   Object.entries(PRICE_BINDINGS).forEach(([name, path]) => {
     $("#pricesForm").elements[name].value = getRate(path);
   });
 }
 
-function readPriceForm() {
+export function readPriceForm() {
   ensureSkewSurchargeInput();
   Object.entries(PRICE_BINDINGS).forEach(([name, path]) => {
     const input = $("#pricesForm").elements[name];
@@ -59,7 +65,7 @@ function readPriceForm() {
   });
 }
 
-function setSettingsTab(tab) {
+export function setSettingsTab(tab) {
   if (catalogDraft && $("#pricesDialog").open) {
     readCatalogDraftFromEditor();
     captureGlassDraft();
@@ -89,8 +95,8 @@ function updateCatalogMaterialTabs() {
   });
 }
 
-function renderTechnologyCatalog() {
-  if (!catalogDraft) catalogDraft = cloneMaterials(MATERIALS);
+export function renderTechnologyCatalog() {
+  if (!catalogDraft) setCatalogDraft(cloneMaterials(MATERIALS));
   const material = catalogDraft[catalogMaterial];
   const profileRows = material.profiles.map(profile => `
     <article class="catalog-profile-card catalog-profile-name-row" data-profile-id="${escapeHtml(profile.id)}">
@@ -168,7 +174,7 @@ function renderTechnologyCatalog() {
   updateCatalogMaterialTabs();
 }
 
-function readCatalogDraftFromEditor() {
+export function readCatalogDraftFromEditor() {
   if (!catalogDraft) return;
   const material = catalogDraft[catalogMaterial];
   $$("#technologyCatalogEditor [data-profile-id]").forEach((row) => {
@@ -201,7 +207,7 @@ function readCatalogDraftFromEditor() {
   });
 }
 
-function handleCatalogAction(event) {
+export function handleCatalogAction(event) {
   const button = event.target.closest("[data-catalog-action]");
   if (!button) return;
   readCatalogDraftFromEditor();
@@ -239,17 +245,17 @@ function handleCatalogAction(event) {
   renderGlassCatalog();
 }
 
-function populateTechnologyForm() {
-  catalogDraft = cloneMaterials(MATERIALS);
-  glassDraft = structuredClone(glassCatalog);
-  catalogMaterial = state.material;
+export function populateTechnologyForm() {
+  setCatalogDraft(cloneMaterials(MATERIALS));
+  setGlassDraft(structuredClone(glassCatalog));
+  setCatalogMaterial(state.material);
   renderTechnologyCatalog();
   renderGlassCatalog();
 }
 
-function readTechnologyForm() {
+export function readTechnologyForm() {
   readCatalogDraftFromEditor();
-  MATERIALS = cloneMaterials(catalogDraft);
+  setMATERIALS(cloneMaterials(catalogDraft));
   programStorageSet(PROFILE_STORAGE_KEY, JSON.stringify(MATERIALS));
   updateMaterialSelects();
   if (state.shape === "circle" && !getProfile().allowCircleShape) setWindowShapeMode("rect");
@@ -327,8 +333,8 @@ function hardwareAssignmentMarkup(set) {
     </div>`).join("");
 }
 
-function renderHardwareCatalog() {
-  if (!hardwareDraft) hardwareDraft = cloneData(hardwareCatalog);
+export function renderHardwareCatalog() {
+  if (!hardwareDraft) setHardwareDraft(cloneData(hardwareCatalog));
   const editor = $("#hardwareCatalogEditor");
   const sets = hardwareDraft.sets.map((set) => `
     <article class="hardware-set-card" data-hardware-id="${escapeHtml(set.id)}">
@@ -386,7 +392,7 @@ function renderHardwareCatalog() {
   editor.dataset.ready = "1";
 }
 
-function handleHardwareAction(event) {
+export function handleHardwareAction(event) {
   const button = event.target.closest("[data-hardware-action]");
   if (!button || !hardwareDraft) return;
   captureHardwareDraft();
@@ -428,19 +434,19 @@ function handleHardwareAction(event) {
   renderHardwareCatalog();
 }
 
-function saveHardwareCatalog() {
+export function saveHardwareCatalog() {
   captureHardwareDraft();
   const issue = hardwareDraftIssue();
   if (issue) {
     showToast(issue);
     return;
   }
-  hardwareCatalog = sanitizeHardwareCatalog(hardwareDraft);
+  setHardwareCatalog(sanitizeHardwareCatalog(hardwareDraft));
   if (!persistHardwareCatalog()) {
     showToast("Не удалось сохранить фурнитуру в браузере");
     return;
   }
-  hardwareDraft = cloneData(hardwareCatalog);
+  setHardwareDraft(cloneData(hardwareCatalog));
   $("#pricesDialog").close();
   renderAll();
   showToast("Фурнитура сохранена");
@@ -458,6 +464,7 @@ function downloadDatabaseFile(filename, payload) {
 
 let databaseImportKind = "";
 
+export function bindSettingsEvents() {
 $("#exportTechnicalDb").addEventListener("click", () => {
   downloadDatabaseFile("okno-smeta-technical.json", {
     kind: "okno-smeta-technical",
@@ -509,7 +516,7 @@ $("#databaseFileInput").addEventListener("change", async () => {
     reloadProgramStateFromDatabase();
     populatePriceForm();
     populateTechnologyForm();
-    hardwareDraft = cloneData(hardwareCatalog);
+    setHardwareDraft(cloneData(hardwareCatalog));
     $("#hardwareCatalogEditor").removeAttribute("data-ready");
     showToast("Техническая база загружена в программу");
     return;
@@ -527,7 +534,8 @@ $("#databaseFileInput").addEventListener("change", async () => {
     showToast("Не удалось записать базу проектов");
     return;
   }
-  projects = readStoredProjects();
+  setProjects(readStoredProjects());
   renderProjectsList();
   showToast(`База проектов загружена: ${projects.length}`);
 });
+}
