@@ -1,0 +1,722 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Графический редактор и калькулятор стоимости пластиковых, алюминиевых и деревянных окон"
+    />
+    <title>ОкноСмета — калькулятор окон</title>
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2315253d'/%3E%3Cpath d='M14 15h36v34H14z' fill='%23d9eff8' stroke='%23fff' stroke-width='5'/%3E%3Cpath d='M32 16v32M15 32h34' stroke='%23f28a2e' stroke-width='4'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+<link rel="stylesheet" href="./technology-catalog.css" />
+<link rel="stylesheet" href="./glass-profile-style.css" />
+<link rel="stylesheet" href="./proposal-report.css" />
+      <style>
+      #technologyCatalogEditor { max-height: none; overflow: visible; }
+      #glassCatalogEditor .glass-catalog-card { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 145px), 1fr)); gap: 10px; align-items: end; }
+      #glassCatalogEditor .catalog-remove-button { justify-self: start; }
+      .glass-profile-options { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px 16px; min-width: 0; }
+      .glass-profile-options label { display: inline-flex; align-items: center; gap: 6px; }
+    </style>
+  <style>
+  dialog, dialog :is(input, select, textarea, button) { font-family: inherit; }
+  dialog, #polygonEditDialog, #profileArcDialog {
+    color: #17263a; background: #fff; border: 1px solid #dce3eb;
+    border-radius: 16px; box-shadow: 0 18px 60px rgb(23 38 58 / 22%);
+  }
+  dialog::backdrop { background: rgb(23 38 58 / 42%); }
+  #polygonEditDialog, #profileArcDialog { padding: 0; max-width: calc(100vw - 24px); }
+  #polygonEditDialog form, #profileArcDialog form { margin: 0; }
+  #profileArcDialog label { display: grid; gap: 6px; }
+  #profileArcDialog :is(input, select) {
+    width: 100%; padding: 8px 10px; color: inherit; background: #f5f7fa;
+    border: 1px solid #dce3eb; border-radius: 8px;
+  }
+  #profileArcDialog form > div:last-child { display: flex; flex-wrap: wrap; gap: 8px; }
+  #polygonEditDialog [data-poly-error] { color: #a53429; }
+  :is(#polygonEditDialog, #profileArcDialog) button[value="cancel"] {
+    background: #fff; border: 1px solid #cbd3dc; color: #526173;
+  }
+  #polygonEditDialog button[value="remove"] {
+    background: #fff; border: 1px solid #505a66; color: #303944;
+  }
+  :is(#polygonEditDialog, #profileArcDialog) button[value="cancel"]:hover,
+  #polygonEditDialog button[value="remove"]:enabled:hover { background: #f2f4f7; }
+  #polygonEditDialog button[value="remove"]:disabled { opacity: .45; cursor: not-allowed; }
+</style>
+</head>
+  <body>
+    <header class="app-header">
+      <div class="brand" aria-label="ОкноСмета">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        <span>
+          <strong>ОкноСмета</strong>
+          <small>Редактор и калькулятор</small>
+        </span>
+      </div>
+      <div class="header-actions">
+        <button class="button ghost" id="newCalculation" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+          Новое изделие
+        </button>
+        <button class="button ghost" id="openPrices" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M7 4v6M4 17h16M16 14v6" /></svg>
+          Настройки
+        </button>
+        <button class="button primary" id="printEstimate" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V4h10v5M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M7 14h10v7H7z" /></svg>
+          Отчёт
+        </button>
+      </div>
+    </header>
+
+    <main class="page-shell">
+      <section class="project-toolbar" aria-label="Управление заказом">
+        <div class="project-current">
+          <span>Текущий заказ</span>
+          <strong id="currentProjectName">Новый заказ</strong>
+          <button class="order-name-edit" id="renameCurrentOrder" type="button" title="Переименовать заказ" aria-label="Переименовать текущий заказ">✎</button>
+          <small id="projectSaveStatus">Не сохранён</small>
+        </div>
+        <div class="project-actions">
+          <button class="button ghost" id="newProject" type="button">Новый заказ</button>
+          <button class="button secondary" id="myProjects" type="button">Мои заказы</button>
+          <button class="button primary" id="saveProject" type="button">Сохранить заказ</button>
+        </div>
+      </section>
+
+      <section class="workspace" aria-label="Конфигуратор окна">
+        <aside class="panel controls-panel">
+          <div class="panel-title-row">
+            <div>
+              <span class="eyebrow">Конфигурация</span>
+              <h1>Параметры окна</h1>
+            </div>
+            <span class="step-badge">01</span>
+          </div>
+
+          <fieldset class="control-group">
+            <legend>Материал профиля</legend>
+            <div class="material-grid" id="materialOptions">
+              <label class="material-card active">
+                <input type="radio" name="material" value="pvc" checked />
+                <span class="material-swatch pvc"></span>
+                <span><b>Пластик</b></span>
+              </label>
+              <label class="material-card">
+                <input type="radio" name="material" value="aluminum" />
+                <span class="material-swatch aluminum"></span>
+                <span><b>Алюминий</b></span>
+              </label>
+              <label class="material-card">
+                <input type="radio" name="material" value="wood" />
+                <span class="material-swatch wood"></span>
+                <span><b>Дерево</b></span>
+              </label>
+            </div>
+          </fieldset>
+
+          <div class="form-grid">
+            <label class="field">
+              <span>Профильная система</span>
+              <select id="profileSystem"></select>
+            </label>
+            <label class="field">
+              <span>Цвет / отделка</span>
+              <select id="finish"></select>
+            </label>
+            <label class="field">
+              <span>Тип изделия</span>
+              <select id="productType">
+                <option value="window">Окно</option>
+                <option value="entranceDoor">Входная дверь</option>
+                <option value="balconyDoor">Балконная дверь</option>
+              </select>
+            </label>
+          </div>
+
+          <fieldset class="control-group">
+            <legend>Фурнитура изделия</legend>
+            <div class="form-grid two">
+              <label class="field">
+                <span>Комплект</span>
+                <select id="hardwareSet"></select>
+              </label>
+              <label class="field">
+                <span>Ручка</span>
+                <select id="hardwareHandle"></select>
+              </label>
+            </div>
+            <p id="hardwareRangeNote" class="hardware-range-note"></p>
+          </fieldset>
+
+          <fieldset class="control-group">
+            <legend>Форма</legend>
+            <div class="segmented four" id="shapeOptions">
+              <button class="active" data-value="rect" type="button" aria-pressed="true">
+                <span class="shape-icon rect"></span>Прямое
+              </button>
+              <button data-value="skew" type="button" aria-pressed="false">
+                <span class="shape-icon skew"></span>Косое
+              </button>
+              <button data-value="arch" type="button" aria-pressed="false">
+                <span class="shape-icon arch"></span>Арочное
+              </button>
+              <button data-value="circle" type="button" aria-pressed="false">
+                <span class="shape-icon circle"></span>Круглое
+              </button>
+            </div>
+          </fieldset>
+
+          <fieldset class="control-group">
+            <legend>Габариты</legend>
+            <div class="form-grid two">
+              <label class="field">
+                <span id="widthLabel">Ширина, мм</span>
+                <div class="input-with-unit">
+                  <input id="width" type="number" min="400" max="5000" step="10" value="1300" inputmode="numeric" />
+                  <em>мм</em>
+                </div>
+              </label>
+              <label class="field" id="heightField">
+                <span>Высота, мм</span>
+                <div class="input-with-unit">
+                  <input id="height" type="number" min="400" max="4000" step="10" value="1300" inputmode="numeric" />
+                  <em>мм</em>
+                </div>
+              </label>
+            </div>
+            <label class="field quantity-field">
+              <span>Количество одинаковых окон</span>
+              <div class="stepper">
+                <button type="button" data-step="-1" aria-label="Уменьшить количество">−</button>
+                <input id="quantity" type="number" min="1" max="9999" step="1" value="1" />
+                <button type="button" data-step="1" aria-label="Увеличить количество">+</button>
+              </div>
+            </label>
+          </fieldset>
+
+          <fieldset class="control-group" hidden style="display:none">
+            <legend>Разбивка</legend>
+            <div class="split-presets" id="splitPresets" aria-label="Шаблоны разбивки">
+              <button class="active" type="button" data-cols="2" data-rows="1" aria-label="Две вертикальные секции"><i class="preset two-v"></i></button>
+              <button type="button" data-cols="3" data-rows="1" aria-label="Три вертикальные секции"><i class="preset three-v"></i></button>
+              <button type="button" data-cols="1" data-rows="2" aria-label="Две горизонтальные секции"><i class="preset two-h"></i></button>
+              <button type="button" data-cols="2" data-rows="2" aria-label="Четыре секции"><i class="preset grid"></i></button>
+            </div>
+            <div class="form-grid two split-counters">
+              <label class="field compact"><span>По вертикали</span><input id="columns" type="number" min="1" max="4" value="2" /></label>
+              <label class="field compact"><span>По горизонтали</span><input id="rows" type="number" min="1" max="3" value="1" /></label>
+            </div>
+          </fieldset>
+
+          <label class="field">
+            <span>Стеклопакет по умолчанию</span>
+            <select id="defaultGlass">
+              <option value="single">Однокамерный, 24 мм</option>
+              <option value="double" selected>Двухкамерный, 40 мм</option>
+              <option value="energy">Энергосберегающий, 40 мм</option>
+              <option value="acoustic">Шумоизоляционный, 44 мм</option>
+            </select>
+          </label>
+        </aside>
+
+        <section class="panel editor-panel">
+          <div class="editor-heading">
+            <div>
+              <span class="eyebrow">Графический редактор</span>
+              <h2><span id="editorProductName">Изделие 1</span><button type="button" id="renameEditorProduct" class="order-rename" aria-label="Переименовать изделие" title="Переименовать изделие">✎</button></h2>
+            </div>
+            <div class="editor-meta">
+              <span id="editorDimensions">1400 × 1300 мм</span>
+              <span id="editorArea">1,82 м²</span>
+            </div>
+          </div>
+
+          <div class="canvas-wrap" id="canvasWrap">
+            <div class="canvas-zoom" aria-label="Масштаб чертежа">
+              <button type="button" class="canvas-zoom-btn" id="canvasZoomOut" title="Отдалить" aria-label="Отдалить чертёж">
+                <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="M21 21l-4.35-4.35M8 11h6" />
+                </svg>
+              </button>
+              <button type="button" class="canvas-zoom-btn" id="canvasZoomIn" title="Приблизить" aria-label="Приблизить чертёж">
+                <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="M21 21l-4.35-4.35M8 11h6M11 8v6" />
+                </svg>
+              </button>
+            </div>
+            <svg id="windowCanvas" viewBox="0 0 640 500" role="img" aria-label="Схема окна"></svg>
+            <div class="equal-glass-tools">
+              <button class="equal-glass-btn" id="equalGlassWidth" type="button" title="Равная ширина" aria-label="Равная ширина" hidden>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="3" y="4" width="7" height="16" rx="1" />
+                  <rect x="14" y="4" width="7" height="16" rx="1" />
+                </svg>
+              </button>
+              <button class="equal-glass-btn canvas-delete" id="canvasDelete" type="button" title="Удалить" aria-label="Удалить" hidden>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 7h16" />
+                  <path d="M9 7V5h6v2" />
+                  <path d="M7 7l1 13h8l1-13" />
+                  <path d="M10 11v6M14 11v6" />
+                </svg>
+              </button>
+              <button class="equal-glass-btn" id="equalGlassHeight" type="button" title="Равная высота" aria-label="Равная высота" hidden>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="4" y="3" width="16" height="7" rx="1" />
+                  <rect x="4" y="14" width="16" height="7" rx="1" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="canvas-note">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM12 10v6M12 7h.01" /></svg>
+            Перетаскивайте импосты мышью. Нажмите профиль, чтобы увидеть ширину и длину. Форма включает углы, дуги или окружность.
+          </div>
+
+          <div class="pane-inspector" id="paneInspector">
+            <div class="selected-pane-label">
+              <span>Проём</span>
+              <strong id="selectedPaneName">№ 1</strong>
+            </div>
+            <label class="field">
+              <span>Открывание</span>
+              <select id="openingType">
+                <option value="fixed">Глухая</option>
+                <option value="turn">Поворотная</option>
+                <option value="tiltturn" selected>Поворотно-откидная</option>
+                <option value="tilt">Откидная</option>
+              </select>
+            </label>
+            <label class="field" id="hingeSideField" hidden style="display:none">
+              <span>Петли</span>
+              <select id="hingeSide"><option value="left">Слева · ручка справа</option><option value="right">Справа · ручка слева</option></select>
+            </label>
+            <p id="paneHardwareNote" class="hardware-range-note" hidden></p>
+            <label class="field">
+              <span>Стеклопакет</span>
+              <select id="paneGlass">
+                <option value="single">Однокамерный, 24 мм</option>
+                <option value="double">Двухкамерный, 40 мм</option>
+                <option value="energy">Энергосберегающий, 40 мм</option>
+                <option value="acoustic">Шумоизоляционный, 44 мм</option>
+              </select>
+            </label>
+            <button class="button secondary" id="applyGlassToAll" type="button" title="Применить выбранный стеклопакет ко всем проёмам">Для всех проёмов</button>
+            <div class="inner-impost-actions">
+              <div>
+                <span>Импосты</span>
+                <small id="innerImpostHint">Добавьте импост в выбранный проём</small>
+              </div>
+              <div class="inner-impost-buttons">
+                <button class="button secondary" id="addInnerVertical" type="button" title="Добавить вертикальный импост в выбранный проём">
+                  <span class="mini-impost vertical" aria-hidden="true"></span> Вертикальный
+                </button>
+                <button class="button secondary" id="addInnerHorizontal" type="button" title="Добавить горизонтальный импост в выбранный проём">
+                  <span class="mini-impost horizontal" aria-hidden="true"></span> Горизонтальный
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="impost-inspector" id="impostInspector" hidden>
+            <div class="selected-impost-label">
+              <span id="selectedImpostScope">Импост рамы</span>
+              <strong id="selectedImpostName">Вертикальный</strong>
+            </div>
+            <label class="field impost-position-field">
+              <span id="impostPositionLabel">Положение от края конструкции, мм</span>
+              <select id="impostPositionOrigin" aria-label="Край отсчёта импоста">
+                <option value="start">От левого края конструкции</option>
+                <option value="end">От правого края конструкции</option>
+              </select>
+              <div class="input-with-unit">
+                <input id="impostPosition" type="number" min="100" step="10" inputmode="numeric" />
+                <em>мм</em>
+              </div>
+            </label>
+            <div id="impostEndSizes" class="impost-end-sizes" hidden>
+              <p id="impostEndSize0"></p>
+              <p id="impostEndSize1"></p>
+            </div>
+            <p id="impostProfileFacts" class="impost-end-sizes"></p>
+            <div class="impost-actions">
+              <button class="button secondary" id="centerImpost" type="button">По центру</button>
+              <button class="button secondary" id="toggleShtulp" type="button">Сделать штульпом</button>
+              <button class="button danger" id="removeImpost" type="button">Удалить импост</button>
+            </div>
+          </div>
+
+          <div class="profile-inspector" id="profileInspector" hidden>
+            <div class="selected-pane-label">
+              <span id="profileRole">Рама</span>
+              <strong id="profileKind">Поперечина</strong>
+            </div>
+            <dl class="profile-facts">
+              <div><dt>Ширина</dt><dd id="profileWidth">—</dd></div>
+              <div><dt>Длина</dt><dd id="profileLength">—</dd></div>
+              <div><dt>Стыки</dt><dd id="profileJoints">—</dd></div>
+              <div><dt>Форма стороны</dt><dd id="profileShape">Прямая</dd></div>
+            </dl>
+            <p id="profileHint" class="hardware-range-note"></p>
+            <div class="profile-actions">
+              <button class="button secondary" id="profileEditGeometry" type="button" hidden>Изменить геометрию</button>
+              <button class="button secondary" id="profileAddExtender" type="button" hidden>Расширитель</button>
+              <button class="button secondary" id="profileAddConnector" type="button" hidden>Соединитель</button>
+              <button class="button secondary" id="profileAddCorner" type="button" hidden>Угловой профиль</button>
+              <button class="button secondary" id="profileAddShtulp" type="button" hidden>Штульп</button>
+            </div>
+          </div>
+        </section>
+
+        <aside class="panel summary-panel">
+          <div class="panel-title-row">
+            <div>
+              <span class="eyebrow">Расчёт</span>
+              <h2>Стоимость</h2>
+            </div>
+            <span class="step-badge dark">02</span>
+          </div>
+
+          <div class="price-block">
+            <span>Итого за изделие</span>
+            <strong id="totalPrice">0 ₽</strong>
+            <small id="unitPrice">0 ₽ за одно окно</small>
+          </div>
+
+          <div class="saved-price-comparison" id="savedPriceComparison" hidden>
+            <span>Цена сохранённой позиции</span>
+            <b id="savedItemPrice">—</b>
+            <span>По текущему прайсу</span>
+            <b id="currentItemPrice">—</b>
+          </div>
+
+          <div class="summary-grid">
+            <div><span>Площадь</span><b id="summaryArea">—</b></div>
+            <div><span>Створок</span><b id="summarySashes">—</b></div>
+            <div><span>Проёмы, шт.</span><b id="summaryPanes">—</b></div>
+            <div><span>Площадь стеклопакетов</span><b id="summaryGlassArea">—</b></div>
+            <div><span>Количество</span><b id="summaryQuantity">—</b></div>
+          </div>
+
+          <dl class="summary-list">
+            <div><dt>Тип изделия</dt><dd id="summaryProductType">Окно</dd></div>
+            <div><dt>Материал</dt><dd id="summaryMaterial">ПВХ</dd></div>
+            <div><dt>Система</dt><dd id="summaryProfile">—</dd></div>
+            <div><dt>Ширина профилей</dt><dd id="summaryTechnology">—</dd></div>
+            <div><dt>Форма</dt><dd id="summaryShape">Прямоугольная</dd></div>
+            <div><dt>Отделка</dt><dd id="summaryFinish">—</dd></div>
+            <div><dt>Фурнитура</dt><dd id="summaryHardware">—</dd></div>
+            <div><dt>Ручка</dt><dd id="summaryHandle">—</dd></div>
+          </dl>
+
+          <div class="estimate-note">
+            <span aria-hidden="true">₽</span>
+            <p><b id="currentEstimateStatus">Демонстрационный расчёт</b><span id="currentEstimateHint">Замените тарифы на ваши в разделе «Прайс».</span></p>
+          </div>
+
+          <button class="button primary wide" id="scrollToSpec" type="button">Открыть спецификацию</button>
+          <p class="configuration-error" id="configurationError" role="alert" hidden></p>
+          <button class="button order-save-button wide" id="saveOrderItem" type="button">Сохранить изделие и добавить следующее</button>
+        </aside>
+      </section>
+
+      <section class="panel order-panel" id="orderPanel">
+        <div class="order-header">
+          <div>
+            <span class="eyebrow">Текущий заказ</span>
+            <h2>Изделия в заказе</h2>
+          </div>
+          <span class="order-position-count" id="orderPositionCount">0 позиций</span>
+        </div>
+        <div class="order-empty" id="orderEmpty">
+          Сохраните первое изделие — оно появится здесь, а конфигуратор откроется для следующего окна.
+        </div>
+        <div class="order-items" id="orderItems"></div>
+        <div class="order-totals">
+          <div><span>Позиций</span><b id="orderTotalPositions">0</b></div>
+          <div><span>Всего окон</span><b id="orderTotalQuantity">0</b></div>
+          <div class="order-grand-total"><span id="orderTotalLabel">Сумма заказа</span><b id="orderTotalPrice">0 ₽</b></div>
+        </div>
+      </section>
+
+      <section class="panel specification-panel" id="specification">
+        <div class="spec-header">
+          <div>
+            <span class="eyebrow">Состав изделия</span>
+            <h2>Подробная спецификация</h2>
+          </div>
+          <div class="spec-total">
+            <span>Итого</span>
+            <strong id="specTotal">0 ₽</strong>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>№</th>
+                <th>Наименование</th>
+                <th>Характеристика</th>
+                <th>Кол-во</th>
+                <th>Ед.</th>
+                <th>Цена</th>
+                <th>Сумма</th>
+              </tr>
+            </thead>
+            <tbody id="specificationRows"></tbody>
+          </table>
+        </div>
+        <p class="spec-footnote">Расчёт ориентировочный и не является публичной офертой. Размеры указаны по внешнему габариту рамы.</p>
+      </section>
+
+      <section class="print-order" id="printOrder" aria-label="Печатные отчёты заказа"></section>
+    </main>
+
+    <dialog id="projectNameDialog" class="project-dialog project-name-dialog">
+      <form id="projectNameForm">
+        <div class="dialog-header">
+          <div><span class="eyebrow">Сохранение заказа</span><h2>Название заказа</h2></div>
+          <button class="icon-button" id="closeProjectNameDialog" aria-label="Закрыть" type="button">×</button>
+        </div>
+        <p class="dialog-intro">Укажите понятное название, чтобы позже быстро найти этот заказ.</p>
+        <label class="field">
+          <span>Название заказа</span>
+          <input id="projectNameInput" maxlength="80" autocomplete="off" placeholder="Например, Окна для кухни" required />
+        </label>
+        <p class="project-dialog-error" id="projectNameError" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button class="button ghost" id="cancelProjectName" type="button">Отмена</button>
+          <button class="button primary" type="submit">Сохранить заказ</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="reportsDialog" class="reports-dialog">
+      <div class="dialog-header">
+        <div><span class="eyebrow">Документы заказа</span><h2>Отчёты</h2></div>
+        <button class="icon-button" id="closeReportsDialog" type="button" aria-label="Закрыть">×</button>
+      </div>
+      <p class="dialog-intro">Выберите документы. Они формируются по всем сохранённым изделиям текущего заказа.</p>
+      <div id="reportChoices" class="report-choices"></div>
+      <p id="reportDialogMessage" class="report-dialog-message" role="status"></p>
+      <div class="dialog-actions">
+        <button class="button ghost" id="editReportTemplates" type="button">Настроить отчёты</button>
+        <button class="button secondary" id="previewReports" type="button">Просмотр</button>
+        <button class="button primary" id="printReports" type="button">Печать выбранных</button>
+      </div>
+      <div id="reportPreview" class="report-preview" hidden></div>
+    </dialog>
+
+    <dialog id="projectsDialog" class="project-dialog projects-dialog">
+      <div class="projects-dialog-content">
+        <div class="dialog-header">
+          <div><span class="eyebrow">Сохранённые заказы</span><h2>Мои заказы</h2></div>
+          <button class="icon-button" id="closeProjectsDialog" aria-label="Закрыть" type="button">×</button>
+        </div>
+        <p class="dialog-intro">Заказы хранятся в базе программы. Файл этой базы можно выгрузить и загрузить во вкладке «Баз. данных».</p>
+        <div class="projects-empty" id="projectsEmpty">Сохранённых заказов пока нет.</div>
+        <div class="projects-list" id="projectsList"></div>
+      </div>
+    </dialog>
+
+    <dialog id="pricesDialog" class="prices-dialog">
+      <form method="dialog" id="pricesForm">
+        <div class="dialog-header">
+          <div><span class="eyebrow">Параметры расчёта</span><h2>Настройки</h2></div>
+          <button class="icon-button" value="cancel" aria-label="Закрыть" type="submit">×</button>
+        </div>
+        <div class="settings-tabs" role="tablist" aria-label="Разделы настроек">
+          <button class="active" type="button" role="tab" aria-selected="true" data-settings-tab="prices">Прайс</button>
+          <button type="button" role="tab" aria-selected="false" data-settings-tab="technology">Технологические</button>
+          <button type="button" role="tab" aria-selected="false" data-settings-tab="profile">Настройки профиля</button>
+          <button type="button" role="tab" aria-selected="false" data-settings-tab="hardware">Фурнитура</button>
+          <button type="button" role="tab" aria-selected="false" data-settings-tab="reports">Отчёты</button>
+          <button type="button" role="tab" aria-selected="false" data-settings-tab="database">Баз. данных</button>
+        </div>
+
+        <section class="settings-pane" id="settingsPricesPane" role="tabpanel">
+          <p class="dialog-intro">Введите ваши закупочные или розничные тарифы. Изменения применяются к текущему расчёту.</p>
+
+          <div class="price-settings-grid">
+          <section>
+            <h3>Профиль, ₽/пог. м</h3>
+            <label><span>ПВХ — рама</span><input name="pvcFrame" type="number" min="0" step="10" /></label>
+            <label><span>Алюминий — рама</span><input name="aluminumFrame" type="number" min="0" step="10" /></label>
+            <label><span>Дерево — рама</span><input name="woodFrame" type="number" min="0" step="10" /></label>
+            <label><span>Импост ПВХ</span><input name="pvcImpost" type="number" min="0" step="10" /></label>
+            <label><span>Импост алюминий</span><input name="aluminumImpost" type="number" min="0" step="10" /></label>
+            <label><span>Импост дерево</span><input name="woodImpost" type="number" min="0" step="10" /></label>
+          </section>
+          <section>
+            <h3>Стеклопакет, ₽/м²</h3>
+            <label><span>Однокамерный</span><input name="glassSingle" type="number" min="0" step="10" /></label>
+            <label><span>Двухкамерный</span><input name="glassDouble" type="number" min="0" step="10" /></label>
+            <label><span>Энергосберегающий</span><input name="glassEnergy" type="number" min="0" step="10" /></label>
+            <label><span>Шумоизоляционный</span><input name="glassAcoustic" type="number" min="0" step="10" /></label>
+          </section>
+          <section>
+            <h3>Фурнитура, ₽/компл.</h3>
+            <p class="technology-note">Эти тарифы используются, если для профильной системы не назначен комплект во вкладке «Фурнитура».</p>
+            <label><span>Поворотная</span><input name="hardwareTurn" type="number" min="0" step="10" /></label>
+            <label><span>Поворотно-откидная</span><input name="hardwareTiltturn" type="number" min="0" step="10" /></label>
+            <label><span>Откидная</span><input name="hardwareTilt" type="number" min="0" step="10" /></label>
+            <label><span>Ручка</span><input name="handle" type="number" min="0" step="10" /></label>
+          </section>
+          <section>
+            <h3>Коэффициенты, %</h3>
+            <label><span>Арочная форма</span><input name="archSurcharge" type="number" min="0" max="300" step="1" /></label>
+            <label><span>Круглая форма</span><input name="circleSurcharge" type="number" min="0" max="300" step="1" /></label>
+            <label><span>Наценка</span><input name="markup" type="number" min="0" max="500" step="1" /></label>
+          </section>
+          <section>
+            <h3>Комплектующие</h3>
+            <label><span>Армирование, ₽/м</span><input name="reinforcement" type="number" min="0" step="10" /></label>
+            <label><span>Уплотнитель ПВХ, ₽/м</span><input name="pvcSeal" type="number" min="0" step="10" /></label>
+            <label><span>Уплотнитель алюминий, ₽/м</span><input name="aluminumSeal" type="number" min="0" step="10" /></label>
+            <label><span>Уплотнитель дерево, ₽/м</span><input name="woodSeal" type="number" min="0" step="10" /></label>
+            <label><span>Штапик ПВХ, ₽/м</span><input name="pvcBead" type="number" min="0" step="10" /></label>
+            <label><span>Штапик алюминий, ₽/м</span><input name="aluminumBead" type="number" min="0" step="10" /></label>
+            <label><span>Штапик дерево, ₽/м</span><input name="woodBead" type="number" min="0" step="10" /></label>
+            <label><span>Сборочный комплект ПВХ</span><input name="pvcAssembly" type="number" min="0" step="10" /></label>
+            <label><span>Сборочный комплект алюминий</span><input name="aluminumAssembly" type="number" min="0" step="10" /></label>
+            <label><span>Сборочный комплект дерево</span><input name="woodAssembly" type="number" min="0" step="10" /></label>
+          </section>
+          </div>
+
+          <div class="dialog-actions">
+            <button class="button ghost" id="resetPrices" type="button">Вернуть демонстрационные</button>
+            <button class="button primary" id="savePrices" type="button">Применить цены</button>
+          </div>
+        </section>
+
+        <section class="settings-pane" id="settingsTechnologyPane" role="tabpanel" hidden>
+          <p class="dialog-intro">Создавайте, переименовывайте и удаляйте профильные системы. Технические параметры каждой системы находятся во вкладке «Настройки профиля».</p>
+          <div class="catalog-material-tabs" role="tablist" aria-label="Материал профильной системы">
+            <button class="active" type="button" data-catalog-material="pvc" aria-selected="true">Пластик</button>
+            <button type="button" data-catalog-material="aluminum" aria-selected="false">Алюминий</button>
+            <button type="button" data-catalog-material="wood" aria-selected="false">Дерево</button>
+          </div>
+          <div id="technologyCatalogEditor" class="technology-catalog-editor"></div>
+          <section class="catalog-section" id="glassCatalogSection">
+            <div class="catalog-section-header">
+              <div><h3>Стеклопакеты материала</h3><span id="glassCatalogCount"></span></div>
+              <button type="button" class="button ghost catalog-add-button" id="addGlassCatalog">+ Добавить стеклопакет</button>
+            </div>
+            <div id="glassCatalogEditor" class="catalog-profile-list"></div>
+            <p class="technology-note">Если цена стандартного стеклопакета не указана, используется тариф из вкладки «Цены».</p>
+          </section>
+          <p class="technology-note">Нельзя удалить последнюю систему или последний цвет материала. Изменения сохраняются в базе программы.</p>
+          <div class="dialog-actions">
+            <button class="button ghost" id="resetTechnology" type="button">Вернуть стандартные</button>
+            <button class="button primary" id="saveTechnology" type="button">Сохранить каталог</button>
+          </div>
+        </section>
+
+        <section class="settings-pane" id="settingsProfilePane" role="tabpanel" hidden>
+          <p class="dialog-intro">Технические параметры созданных профильных систем. Изменения применяются после сохранения каталога.</p>
+          <div class="catalog-material-tabs" role="tablist" aria-label="Материал настройки профиля">
+            <button class="active" type="button" data-catalog-material="pvc" aria-selected="true">Пластик</button>
+            <button type="button" data-catalog-material="aluminum" aria-selected="false">Алюминий</button>
+            <button type="button" data-catalog-material="wood" aria-selected="false">Дерево</button>
+          </div>
+          <div id="profileSettingsEditor" class="technology-catalog-editor"></div>
+          <div class="dialog-actions">
+            <button class="button primary" id="saveProfileSettings" type="button">Сохранить каталог</button>
+          </div>
+        </section>
+        <section class="settings-pane" id="settingsHardwarePane" role="tabpanel" hidden>
+          <p class="dialog-intro">Комплект фурнитуры и ручка выбираются на всё изделие. Диапазон — ширина и высота стеклопакета в створке. Отметьте, для каких профильных систем и типов изделия ставится комплект, и в какой фурнитуре применяется ручка.</p>
+          <div id="hardwareCatalogEditor" class="hardware-catalog-editor"></div>
+          <div class="dialog-actions">
+            <button class="button ghost" id="resetHardware" type="button">Вернуть стандартные</button>
+            <button class="button primary" id="saveHardware" type="button">Сохранить фурнитуру</button>
+          </div>
+        </section>
+        <section class="settings-pane" id="settingsDatabasePane" role="tabpanel" hidden>
+          <p class="dialog-intro">База хранится в программе. Техническая часть — прайс, профили, стеклопакеты, фурнитура и шаблоны отчётов. Проекты сохраняются отдельно, когда пользователь записывает заказ.</p>
+          <div class="database-exchange">
+            <section>
+              <h3>Техническая база</h3>
+              <p class="technology-note">Экспорт и импорт не затрагивают сохранённые проекты.</p>
+              <div class="dialog-actions">
+                <button class="button ghost" id="exportTechnicalDb" type="button">Экспорт</button>
+                <button class="button primary" id="importTechnicalDb" type="button">Импорт</button>
+              </div>
+            </section>
+            <section>
+              <h3>База проектов</h3>
+              <p class="technology-note">Импорт заменяет список проектов в программе файлом.</p>
+              <div class="dialog-actions">
+                <button class="button ghost" id="exportProjectsDb" type="button">Экспорт</button>
+                <button class="button primary" id="importProjectsDb" type="button">Импорт</button>
+              </div>
+            </section>
+          </div>
+          <input id="databaseFileInput" type="file" accept="application/json,.json" hidden />
+        </section>
+        <section class="settings-pane" id="settingsReportsPane" role="tabpanel" hidden>
+          <p class="dialog-intro">Настройте внешний вид и текст каждого документа. Данные изделий, цены и спецификация подставляются из текущего заказа.</p>
+          <div id="reportTemplateEditor"></div>
+          <div class="dialog-actions">
+            <button class="button ghost" id="resetReportTemplates" type="button">Вернуть шаблоны</button>
+            <button class="button primary" id="saveReportTemplates" type="button">Сохранить отчёты</button>
+          </div>
+        </section>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="./catalog.js"></script>
+    <script src="./product.js"></script>
+    <script src="./order.js"></script>
+    <script src="./geometry.js"></script>
+    <script src="./estimate.js"></script>
+    <script src="./drawing.js"></script>
+    <script src="./canvas.js"></script>
+    <script src="./canvas-input.js"></script>
+    <script src="./editor-ui.js"></script>
+    <script src="./settings.js"></script>
+    <script src="./boot.js"></script>
+<script src="./reports.js"></script>
+<script src="./impost-selection.js"></script>
+<script src="./editor-history.js"></script>
+<script src="./editor-tools.js"></script>
+  <script>
+(() => {
+  const selectors = '#polygonEditDialog, #profileArcDialog';
+  const main = dialog => dialog.querySelector('button:is([value="apply"],[value="move"],[value="length"],[value="split"]):enabled');
+  document.addEventListener('focusin', event => {
+    const dialog = event.target.closest?.(selectors);
+    if (!dialog) return;
+    const button = main(dialog);
+    if (!button) return;
+    button.classList.add('button', 'primary');
+    dialog.querySelector('button[value="cancel"]')?.classList.add('button', 'ghost');
+    if (event.target.matches('button[value="cancel"]') && !event.relatedTarget?.closest?.(selectors)) button.focus();
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Enter' || event.isComposing || event.repeat || event.defaultPrevented) return;
+    const dialog = event.target.closest?.(selectors);
+    if (!dialog?.open || event.target.matches('select, textarea, [contenteditable]')) return;
+    const button = main(dialog);
+    if (!button?.form) return;
+    event.preventDefault();
+    event.stopPropagation();
+    button.form.requestSubmit(button);
+  }, true);
+})();
+</script>
+</body>
+</html>
