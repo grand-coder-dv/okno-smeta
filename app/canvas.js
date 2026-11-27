@@ -4,7 +4,7 @@ import { MATERIALS, materialGlass } from "./catalog.js";
 import { activeProfileEdge, circleFrameTargets, circularOutline, clipSlantedSections, constructionPolygon, customProfileArcs, fittedGlass, fittedOutline, frameCurve, frameSideChain, hasSlantedImposts, impostRibbon, impostSegment, isSelectedImpost, outlineRange, pieceWidth, polyBounds, polyPath, polygonClip, polygonPoints, polygonProfileTargets, profileEdgeTargets, profileOutline, rectPoints, sashOpeningMark, sectionContour, setActiveProfileEdge, shapePaths, slantedBounds, windowOuterBounds } from "./drawing.js";
 import { renderAll } from "./editor-ui.js";
 import { barFace, constructionModel, glassGeometry, glassSizeLabel, impostHostBoundary, innerFrameBoundary, nestedImpostSpans, sectionLayout, sectionNumber } from "./geometry.js";
-import { $$, SASH_LAP, canvasLayout, canvasZoom, escapeHtml, getFinish, getTechnology, multiSections, numberFormatter, setCanvasLayout, setSharedAxis, sharedAxis, state } from "./product.js";
+import { $, $$, SASH_LAP, canvasLayout, canvasZoom, escapeHtml, getFinish, getTechnology, multiSections, numberFormatter, setCanvasLayout, setSharedAxis, sharedAxis, state } from "./product.js";
 let paneLongPressUsed = false;
 export function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
   const maxWidth = 455;
