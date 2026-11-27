@@ -1,8 +1,11 @@
-(() => {
-  "use strict";
+import { setActiveProfileEdge } from "./drawing.js";
+import { onAfterRender, renderAll, syncFormFromState } from "./editor-ui.js";
+import { ensurePanes } from "./geometry.js";
+import { comparableCurrentState, dragState, multiSections, replaceState, setConfigurationError, setSharedAxis, state } from "./product.js";
+export function installEditorHistory() {
   const canvas = document.querySelector("#windowCanvas");
   const wrap = document.querySelector("#canvasWrap");
-  if (!canvas || !wrap || typeof renderAll !== "function" || document.querySelector("#editorHistory")) return;
+  if (!canvas || !wrap || document.querySelector("#editorHistory")) return;
 
   const toolbar = document.createElement("div");
   toolbar.id = "editorHistory";
@@ -36,12 +39,7 @@
     refresh();
   }
 
-  const originalRender = renderAll;
-  renderAll = function (...args) {
-    const result = originalRender.apply(this, args);
-    record();
-    return result;
-  };
+  onAfterRender(record);
   for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) {
     canvas.addEventListener(type, () => { setTimeout(record, 0); });
   }
@@ -55,14 +53,14 @@
     to.push(current);
     restoring = true;
     try {
-      state = { ...JSON.parse(target), selectedPane: null, selectedImpost: null };
+      replaceState({ ...JSON.parse(target), selectedPane: null, selectedImpost: null });
       owner = state;
-      if (typeof multiSections !== "undefined") multiSections.clear();
-      if (typeof sharedAxis !== "undefined") sharedAxis = null;
-      if (typeof activeProfileEdge !== "undefined") activeProfileEdge = null;
+      multiSections.clear();
+      setSharedAxis(null);
+      setActiveProfileEdge(null);
       ensurePanes();
       syncFormFromState();
-      if (typeof setConfigurationError === "function") setConfigurationError();
+      setConfigurationError();
       renderAll();
       current = snapshot();
     } finally {
@@ -82,4 +80,4 @@
     if (go(key === "KeyZ" && !event.shiftKey)) event.preventDefault();
   });
   refresh();
-})();
+}
