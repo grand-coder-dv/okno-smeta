@@ -1,4 +1,15 @@
 // Старт страницы и регистрация инструментов агента.
+import { MATERIALS, SHAPES, syncAppDatabaseFromCloud, syncHardwareChoice } from "./catalog.js";
+import { installEditorHistory } from "./editor-history.js";
+import { installEditorTools } from "./editor-tools.js";
+import { bindEvents, renderAll, syncFormFromState } from "./editor-ui.js";
+import { buildSpecification } from "./estimate.js";
+import { ensurePanes, makeEvenImposts, updateMaterialSelects } from "./geometry.js";
+import { installImpostSelection } from "./impost-selection.js";
+import { renderOrder, renderProjectsList } from "./order.js";
+import { loadStoredProjects, markCurrentStateBaseline, setWindowShapeMode, state } from "./product.js";
+import { installReports } from "./reports.js";
+import { bindSettingsEvents } from "./settings.js";
 function exposeAgentTools() {
   const context = typeof document === "undefined" ? undefined : document.modelContext;
   if (!context?.registerTool) return;
@@ -103,6 +114,9 @@ function exposeAgentTools() {
   }
 }
 
+loadStoredProjects();
+syncHardwareChoice();
+bindSettingsEvents();
 updateMaterialSelects();
 syncFormFromState();
 markCurrentStateBaseline();
@@ -110,5 +124,9 @@ bindEvents();
 renderAll();
 renderOrder();
 renderProjectsList();
+installReports();
+installImpostSelection();
+installEditorHistory();
+installEditorTools();
 exposeAgentTools();
 void syncAppDatabaseFromCloud();
