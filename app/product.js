@@ -1,11 +1,16 @@
 // Текущее изделие: состояние, размеры, форма, проверки и формат чисел.
-let catalogDraft = null;
-let catalogMaterial = "pvc";
+import { MATERIALS, PRODUCT_TYPES, SHAPES, availableProfiles, cloneData, profileTypeSettings, readStoredProjects, technology } from "./catalog.js";
+import { activeProfileEdge, customProfileArcs, fittedGlass, hasSlantedImposts, setActiveProfileEdge } from "./drawing.js";
+import { renderAll, syncFormFromState } from "./editor-ui.js";
+import { ensurePanes, glassGeometry, sectionLayout, sectionNumber, sectionPanes, updateMaterialSelects } from "./geometry.js";
+import { renderOrder, renderProjectToolbar } from "./order.js";
+export let catalogDraft = null;
+export let catalogMaterial = "pvc";
 let catalogSequence = 0;
-let impostSequence = 10;
-let canvasLayout = null;
-let dragState = null;
-let canvasZoom = 1;
+export let impostSequence = 10;
+export let canvasLayout = null;
+export let dragState = null;
+export let canvasZoom = 1;
 
 function createDefaultState() {
   return {
@@ -33,53 +38,53 @@ function createDefaultState() {
   };
 }
 
-let state = createDefaultState();
-syncHardwareChoice();
-let multiSections = new Set();
-let sharedAxis = null;
-const impostPositionOrigin = {vertical:"start", horizontal:"start"};
-function selectedSections() {
+export let state = createDefaultState();
+export let multiSections = new Set();
+export let sharedAxis = null;
+export const impostPositionOrigin = {vertical:"start", horizontal:"start"};
+export function selectedSections() {
   const entries = sectionLayout();
   const indices = multiSections.size ? [...multiSections] : [state.selectedPane];
   return indices.map(i => entries[i]).filter(entry => entry && !entry.pane.split);
 }
-let orderItems = [];
-let editingOrderItemId = null;
-let orderItemSequence = 0;
-let draftProductName = "Изделие 1";
-let projects = readStoredProjects();
-let activeProjectId = null;
-let activeProjectSnapshot = null;
-let projectWritePending = false;
-let activeProjectName = "";
-let projectDirty = false;
+export let orderItems = [];
+export let editingOrderItemId = null;
+export let orderItemSequence = 0;
+export let draftProductName = "Изделие 1";
+export let projects = [];
+export function loadStoredProjects() { projects = readStoredProjects(); }
+export let activeProjectId = null;
+export let activeProjectSnapshot = null;
+export let projectWritePending = false;
+export let activeProjectName = "";
+export let projectDirty = false;
 let currentStateBaseline = "";
 
-const $ = (selector) => document.querySelector(selector);
-const $$ = (selector) => [...document.querySelectorAll(selector)];
-const numberFormatter = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
+export const $ = (selector) => document.querySelector(selector);
+export const $$ = (selector) => [...document.querySelectorAll(selector)];
+export const numberFormatter = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
 const moneyFormatter = new Intl.NumberFormat("ru-RU", {
   style: "currency",
   currency: "RUB",
   maximumFractionDigits: 0,
 });
 
-function clamp(value, min, max) {
+export function clamp(value, min, max) {
   return Math.min(Math.max(Number(value) || min, min), max);
 }
 
-function formatMoney(value) {
+export function formatMoney(value) {
   return moneyFormatter.format(Math.round(value));
 }
 
-function formatNumber(value, digits = 2) {
+export function formatNumber(value, digits = 2) {
   return new Intl.NumberFormat("ru-RU", {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   }).format(value);
 }
 
-function pluralizeRu(count, one, few, many) {
+export function pluralizeRu(count, one, few, many) {
   const value = Math.abs(Number(count)) % 100;
   const last = value % 10;
   if (value > 10 && value < 20) return many;
@@ -88,7 +93,7 @@ function pluralizeRu(count, one, few, many) {
   return many;
 }
 
-function escapeHtml(value) {
+export function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
@@ -97,25 +102,25 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
-function createCatalogId(prefix) {
+export function createCatalogId(prefix) {
   catalogSequence += 1;
   return `${prefix}-${Date.now().toString(36)}-${catalogSequence}`;
 }
 
-function getProfile() {
+export function getProfile() {
   const profiles = MATERIALS[state.material].profiles;
   const profile = profiles.find(item => item.id === state.profile) || availableProfiles()[0] || profiles[0];
   return { ...profile, ...profileTypeSettings(profile) };
 }
 
-function openingAllowed(opening) {
+export function openingAllowed(opening) {
   if (opening === "fixed") return true;
   const profile = getProfile();
   if (state.shape === "circle" && !profile.allowCircleSashes) return false;
   return profile[{ turn: "allowTurn", tiltturn: "allowTiltturn", tilt: "allowTilt" }[opening]] !== false;
 }
 
-function normalizeUnsupportedOpenings() {
+export function normalizeUnsupportedOpenings() {
   function visit(pane) {
     if (pane.sashFill && !openingAllowed(pane.opening)) { pane.opening = "fixed"; delete pane.hingeSide; }
     if (pane.split) (pane.children || []).forEach(visit);
@@ -124,13 +129,13 @@ function normalizeUnsupportedOpenings() {
   (state.panes || []).forEach(visit);
 }
 
-function getFinish() {
+export function getFinish() {
   return MATERIALS[state.material].finishes.find((item) => item.id === state.finish) || MATERIALS[state.material].finishes[0];
 }
 
 const GLASS_BITE_FIELDS = [["glassBiteFrame", "рама"], ["glassBiteSash", "створка"], ["glassBiteImpost", "импост"]];
-const SASH_LAP = 24;
-function getTechnology() {
+export const SASH_LAP = 24;
+export function getTechnology() {
   const profile = getProfile();
   const fallback = technology[state.material];
   return {
@@ -146,41 +151,41 @@ function getTechnology() {
   };
 }
 
-function createOrderItemId() {
+export function createOrderItemId() {
   orderItemSequence += 1;
   return `order-item-${Date.now().toString(36)}-${orderItemSequence}`;
 }
 
-function snapshotCurrentState() {
+export function snapshotCurrentState() {
   return cloneData({ ...state, selectedImpost: null });
 }
 
-function comparableCurrentState(source = state) {
+export function comparableCurrentState(source = state) {
   const comparable = cloneData(source);
   delete comparable.selectedPane;
   delete comparable.selectedImpost;
   return JSON.stringify(comparable);
 }
 
-function markCurrentStateBaseline() {
+export function markCurrentStateBaseline() {
   currentStateBaseline = comparableCurrentState();
 }
 
-function currentProductIsDirty() {
+export function currentProductIsDirty() {
   return Boolean(currentStateBaseline && comparableCurrentState() !== currentStateBaseline);
 }
 
-function isPreliminaryShape(shape = state.shape) {
+export function isPreliminaryShape(shape = state.shape) {
   return shape === "circle";
 }
-function inferredShapeMode(config) {
+export function inferredShapeMode(config) {
   if(config.shapeModeVersion || config.shape!=="rect")return config.shape;
   if(config.framePolygon?.length>=3)return "skew";
   const hasArc=arcs=>Object.values(arcs||{}).some(Boolean);
   const anySash=panes=>(panes||[]).some(p=>hasArc(p.sashArcs)||anySash(p.children));
   return hasArc(config.frameArcs)||anySash(config.panes)?"arch":"rect";
 }
-function setWindowShapeMode(mode) {
+export function setWindowShapeMode(mode) {
   if(!Object.hasOwn(SHAPES,mode)||mode===state.shape)return;
   state.shape=mode;
   state.shapeModeVersion=1;
@@ -198,19 +203,19 @@ function setWindowShapeMode(mode) {
   state.selectedPane=0;
   state.selectedImpost=null;
   multiSections.clear();
-  activeProfileEdge=null;
+  setActiveProfileEdge(null);
   sharedAxis=null;
   if(mode==="skew") state.framePolygon=[[0,0],[1,0],[1,1],[0,1]];
   if(mode==="circle")state.height=state.width;
 }
 
-function setConfigurationError(message = "") {
+export function setConfigurationError(message = "") {
   const node = $("#configurationError");
   node.textContent = message;
   node.hidden = !message;
 }
 
-function validateCurrentProduct() {
+export function validateCurrentProduct() {
   if (!Number.isFinite(state.width) || state.width < 400 || state.width > 5000) return "Ширина изделия должна быть от 400 до 5000 мм.";
   if (!Number.isFinite(state.height) || state.height < 400 || state.height > 4000) return "Высота изделия должна быть от 400 до 4000 мм.";
   if (!Number.isInteger(state.quantity) || state.quantity < 1 || state.quantity > 9999) return "Количество должно быть целым числом от 1 до 9999.";
@@ -237,11 +242,11 @@ function validateCurrentProduct() {
   return "";
 }
 
-function restoreProductState(configuration) {
+export function restoreProductState(configuration) {
   state = cloneData(configuration);
   state.shape = inferredShapeMode(state);
   state.shapeModeVersion = 1;
-  activeProfileEdge = null;
+  setActiveProfileEdge(null);
   multiSections.clear();
   sharedAxis = null;
   state.selectedImpost = null;
@@ -254,7 +259,7 @@ function restoreProductState(configuration) {
   renderAll();
 }
 
-function resetCurrentProduct(previous = null) {
+export function resetCurrentProduct(previous = null) {
   editingOrderItemId = null;
   draftProductName = `Изделие ${orderItemSequence + 1}`;
   state = createDefaultState();
@@ -266,7 +271,7 @@ function resetCurrentProduct(previous = null) {
     if (state.shape === "arch" && previous.frameArcs) state.frameArcs = cloneData(previous.frameArcs);
     state.panes = [{ opening: "fixed", glass: state.defaultGlass, innerImposts: [] }];
   }
-  activeProfileEdge = null;
+  setActiveProfileEdge(null);
   multiSections.clear();
   sharedAxis = null;
   syncFormFromState();
@@ -276,3 +281,39 @@ function resetCurrentProduct(previous = null) {
   renderOrder();
   renderProjectToolbar();
 }
+
+export function setActiveProjectId(value) { activeProjectId = value; }
+
+export function setActiveProjectName(value) { activeProjectName = value; }
+
+export function setActiveProjectSnapshot(value) { activeProjectSnapshot = value; }
+
+export function setCanvasLayout(value) { canvasLayout = value; }
+
+export function setCanvasZoom(value) { canvasZoom = value; }
+
+export function setCatalogDraft(value) { catalogDraft = value; }
+
+export function setCatalogMaterial(value) { catalogMaterial = value; }
+
+export function setDraftProductName(value) { draftProductName = value; }
+
+export function setDragState(value) { dragState = value; }
+
+export function setEditingOrderItemId(value) { editingOrderItemId = value; }
+
+export function setMultiSections(value) { multiSections = value; }
+
+export function setOrderItemSequence(value) { orderItemSequence = value; }
+
+export function setOrderItems(value) { orderItems = value; }
+
+export function setProjectDirty(value) { projectDirty = value; }
+
+export function setProjectWritePending(value) { projectWritePending = value; }
+
+export function setProjects(value) { projects = value; }
+
+export function setSharedAxis(value) { sharedAxis = value; }
+
+export function replaceState(value) { state = value; }
