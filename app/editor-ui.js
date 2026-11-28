@@ -1,5 +1,5 @@
 // Экран редактора: инспектор, итог, кнопки и общий пересчёт.
-import { addInnerImpost, bindCanvasDragging, bindCanvasZoom, equalizeSelectedGlass } from "./canvas-input.js";
+import { addInnerImpost, bindCanvasDragging, bindCanvasNavigation, equalizeSelectedGlass } from "./canvas-input.js";
 import { renderCanvas } from "./canvas.js";
 import { APP_DATABASE_KEY, GLASS, MATERIALS, OPENINGS, PRODUCT_TYPES, RATES_STORAGE_KEY, SHAPES, appDatabase, captureGlassDraft, cloneData, cloneMaterials, cloneRates, defaultHardwareCatalog, fitsGlassProfile, glassCatalog, glassCatalogKey, glassDraft, handlesForSet, hardwareCatalog, hardwareDraft, hardwareSetsForProduct, persistRates, profileTypeSettings, programStorageRemove, programStorageSet, rates, readRawAppDatabase, readStoredProjects, renderGlassCatalog, selectedHandle, selectedHardware, setAppDatabase, setGlassCatalog, setGlassDraft, setHardwareDraft, setRates, standardGlassCatalog, syncGlassChoices, syncHardwareChoice } from "./catalog.js";
 import { activeProfileEdge, commitOverallDimension, customProfileArcs, editPolygon, editProfileSide, fittedGlass, handlePreviewMarkup, hasSlantedImposts, overallSizeLabel, refreshProfileEdit, sharedImpostLimits, syncOverallInputs } from "./drawing.js";
@@ -896,7 +896,7 @@ export function bindEvents() {
   });
 
   bindCanvasDragging();
-  bindCanvasZoom();
+  bindCanvasNavigation();
   $("#profileEditGeometry").addEventListener("click", () => {
     const edge = activeProfileEdge?.owner === state ? activeProfileEdge : null;
     if (!edge) return;
