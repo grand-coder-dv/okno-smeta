@@ -2,8 +2,9 @@
 import { renderAll, showToast } from "./editor-ui.js";
 import { sectionPanes } from "./geometry.js";
 import { renderProjectsList } from "./order.js";
-import { $, $$, catalogDraft, catalogMaterial, escapeHtml, projectWritePending, projects, setProjectWritePending, setProjects, state } from "./product.js";
+import { $, escapeHtml, projectWritePending, projects, setProjectWritePending, setProjects, state } from "./product.js";
 import { reloadReportSettings } from "./reports.js";
+import { PART_NAMES } from "./profile-parts.js";
 export const DEFAULT_MATERIALS = {
   pvc: {
     label: "ПВХ",
@@ -185,6 +186,7 @@ function readStoredMaterials() {
     Object.keys(next).forEach((materialKey) => {
       const storedMaterial = stored?.[materialKey];
       if (!storedMaterial) return;
+      if (storedMaterial.catalogPricing) next[materialKey].catalogPricing = true;
       if (Array.isArray(storedMaterial.parts)) next[materialKey].parts = storedMaterial.parts;
       if (Array.isArray(storedMaterial.profiles) && storedMaterial.profiles.length) {
         next[materialKey].profiles = storedMaterial.profiles.map((profile) => {
@@ -199,13 +201,11 @@ function readStoredMaterials() {
         });
       }
     });
-    return next;
+    return migrateMaterialPrices(next, rates);
   } catch {
-    return cloneMaterials();
+    return migrateMaterialPrices(cloneMaterials(), rates);
   }
 }
-
-export let MATERIALS = readStoredMaterials();
 
 export const PRODUCT_TYPES = { window: "Окно", entranceDoor: "Входная дверь", balconyDoor: "Балконная дверь" };
 export function profileTypeSettings(profile, type = state.productType || "window") {
@@ -362,71 +362,91 @@ function readStoredTechnology() {
 }
 
 export let rates = readStoredRates();
+export let MATERIALS = readStoredMaterials();
+
+function migrateMaterialPrices(materials, legacy) {
+  for (const [key, material] of Object.entries(materials)) {
+    if (material.catalogPricing) continue;
+    const parts = material.parts ||= [];
+    const systems = material.profiles.map(profile => profile.id);
+    const types = Object.keys(PRODUCT_TYPES);
+    const fallbackRates = {
+      frame: legacy.frame[key], sash: legacy.frame[key], impost: legacy.impost[key], shtulp: legacy.impost[key],
+      extender: legacy.frame[key], connector: legacy.frame[key], corner: legacy.frame[key],
+      bead: legacy.bead[key], seal: legacy.seal[key], assembly: legacy.assembly[key],
+    };
+    const templates = Object.entries(fallbackRates).map(([role, price]) => ({
+      id: `standard-${key}-${role}`, article: `STD-${key.toUpperCase()}-${role.toUpperCase()}`,
+      name: `${PART_NAMES[role]} · ${material.label}`, role, price, systems, types,
+    }));
+    parts.push(...templates.filter(part => !parts.some(item => item.id === part.id)));
+    if (key === "pvc" && !parts.some(part => part.id === "standard-pvc-steel")) {
+      parts.push({
+        id: "standard-pvc-steel", article: "STD-PVC-STEEL", name: "Стальное армирование",
+        role: "steel", price: legacy.reinforcement,
+        hosts: templates.filter(part => !["bead", "seal", "assembly"].includes(part.role)).map(part => part.id),
+      });
+    }
+    material.catalogPricing = true;
+  }
+  return materials;
+}
+
+export function standardMaterials() {
+  return migrateMaterialPrices(cloneMaterials(), DEFAULT_RATES);
+}
+
 export const glassCatalogKey = "oknoSmetaGlassCatalog";
-export function standardGlassCatalog() {
-  return Object.fromEntries(["pvc", "aluminum", "wood"].map(material => [material, structuredClone(GLASS)]));
+export function standardGlassCatalog(prices = DEFAULT_RATES.glass) {
+  return Object.fromEntries(Object.keys(DEFAULT_MATERIALS).map(material => [
+    material, Object.fromEntries(Object.entries(GLASS).map(([id, item]) => [id, { ...item, rate: prices[id] }])),
+  ]));
 }
 function loadGlassCatalog() {
-  const defaults = standardGlassCatalog();
+  const defaults = standardGlassCatalog(rates.glass);
   try {
     const saved = JSON.parse(programStorageGet(glassCatalogKey));
     for (const material of Object.keys(defaults)) {
-      if (saved?.[material] && Object.keys(saved[material]).length) defaults[material] = saved[material];
+      if (saved?.[material] && typeof saved[material] === "object" && !Array.isArray(saved[material])) {
+        defaults[material] = Object.fromEntries(Object.entries(saved[material]).map(([id, item]) => [
+          id, { ...item, rate: item?.rate ?? rates.glass[item?.rateKey || id] ?? null },
+        ]));
+      }
     }
   } catch {}
   return defaults;
 }
 export let glassCatalog = loadGlassCatalog();
-export let glassDraft;
-export function fitsGlassProfile(item, profile) {
-  return !Array.isArray(item.profileIds) || item.profileIds.includes(profile);
+export function glassApplication(item, profileId, productType) {
+  if (Array.isArray(item.applications)) {
+    return item.applications.find(link => link?.profileId === profileId && link.productType === productType);
+  }
+  if (!Array.isArray(item.profileIds) || item.profileIds.includes(profileId)) return { beadId: "" };
 }
 export function materialGlass() {
   return Object.fromEntries(Object.entries(glassCatalog[state.material])
-    .filter(([, item]) => fitsGlassProfile(item, state.profile)));
+    .filter(([, item]) => glassApplication(item, state.profile, state.productType || "window")));
 }
 export function syncGlassChoices() {
   const catalog = materialGlass();
-  if (!Object.hasOwn(catalog, state.defaultGlass)) state.defaultGlass = Object.hasOwn(catalog, "double") ? "double" : Object.keys(catalog)[0];
-  sectionPanes().forEach(pane => { if (!Object.hasOwn(catalog, pane.glass)) pane.glass = state.defaultGlass; });
+  const ids = Object.keys(catalog);
+  if (ids.length) {
+    if (!Object.hasOwn(catalog, state.defaultGlass)) state.defaultGlass = Object.hasOwn(catalog, "double") ? "double" : ids[0];
+    sectionPanes().forEach(pane => { if (!Object.hasOwn(catalog, pane.glass)) pane.glass = state.defaultGlass; });
+  }
   const options = Object.entries(catalog).map(([id, item]) =>
-    `<option value="${escapeHtml(id)}">${escapeHtml(item.name)}${item.detail ? ` · ${escapeHtml(item.detail)}` : ""}</option>`).join("");
+    `<option value="${escapeHtml(id)}">${escapeHtml(item.name)}${item.detail ? ` · ${escapeHtml(item.detail)}` : ""}</option>`).join("")
+    || '<option value="">Нет совместимых стеклопакетов</option>';
   for (const id of ["defaultGlass", "paneGlass"]) {
     const select = $("#" + id);
     if (select.innerHTML !== options && select.dataset.glassOptions !== options) {
       select.innerHTML = options;
       select.dataset.glassOptions = options;
     }
+    select.disabled = !ids.length;
+    if (select.disabled) select.value = "";
   }
-  $("#defaultGlass").value = state.defaultGlass;
-}
-export function renderGlassCatalog() {
-  const profiles = catalogDraft[catalogMaterial].profiles;
-  const items = Object.entries(glassDraft[catalogMaterial]);
-  $("#glassCatalogCount").textContent = `${items.length} шт.`;
-  $("#glassCatalogEditor").innerHTML = items.map(([id, item]) => `
-    <article class="catalog-profile-card glass-catalog-card" data-glass-id="${escapeHtml(id)}">
-      <label class="catalog-field"><span>Название</span><input data-glass-name value="${escapeHtml(item.name)}"></label>
-      <label class="catalog-field"><span>Толщина и описание</span><input data-glass-detail value="${escapeHtml(item.detail)}"></label>
-      <label class="catalog-field"><span>Цена за м²</span><input data-glass-rate type="number" min="0" step="any" value="${item.rate ?? ""}" ${Object.hasOwn(GLASS,id) ? `placeholder="${rates.glass[id]}"` : ""}></label>
-      <button type="button" class="catalog-remove-button" data-remove-glass>Удалить</button>
-      <fieldset class="glass-profile-options">
-        <legend>Подходит для профильных систем</legend>
-        ${profiles.map(profile => `<label><input type="checkbox" data-glass-profile value="${escapeHtml(profile.id)}" ${fitsGlassProfile(item, profile.id) ? "checked" : ""}><span>${escapeHtml(profile.name)}</span></label>`).join("")}
-      </fieldset>
-    </article>`).join("");
-}
-export function captureGlassDraft() {
-  $$("#glassCatalogEditor [data-glass-id]").forEach(row => {
-    const item = glassDraft[catalogMaterial][row.dataset.glassId];
-    item.name = row.querySelector("[data-glass-name]").value.trim();
-    item.detail = row.querySelector("[data-glass-detail]").value.trim();
-    const raw = row.querySelector("[data-glass-rate]").value;
-    item.rate = raw === "" ? null : Number(raw);
-    const boxes = [...row.querySelectorAll("[data-glass-profile]")];
-    const checked = boxes.filter(box => box.checked).map(box => box.value);
-    if (Array.isArray(item.profileIds) || checked.length !== boxes.length) item.profileIds = checked;
-  });
+  if (ids.length) $("#defaultGlass").value = state.defaultGlass;
 }
 
 export let technology = readStoredTechnology();
@@ -584,8 +604,8 @@ export function applyTechnicalSnapshot(data) {
 }
 
 export function reloadProgramStateFromDatabase() {
-  MATERIALS = readStoredMaterials();
   rates = readStoredRates();
+  MATERIALS = readStoredMaterials();
   technology = readStoredTechnology();
   glassCatalog = loadGlassCatalog();
   hardwareCatalog = loadHardwareCatalog();
@@ -600,8 +620,6 @@ export function setMATERIALS(value) { MATERIALS = value; }
 export function setAppDatabase(value) { appDatabase = value; }
 
 export function setGlassCatalog(value) { glassCatalog = value; }
-
-export function setGlassDraft(value) { glassDraft = value; }
 
 export function setHardwareCatalog(value) { hardwareCatalog = value; }
 
