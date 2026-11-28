@@ -240,6 +240,7 @@
           </div>
 
           <div class="canvas-wrap" id="canvasWrap">
+            <div class="canvas-edit-tools" id="canvasEditTools" role="group" aria-label="Добавить элементы окна" hidden></div>
             <div class="canvas-zoom" aria-label="Масштаб чертежа">
               <button type="button" class="canvas-zoom-btn" id="canvasZoomOut" title="Отдалить" aria-label="Отдалить чертёж">
                 <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -313,20 +314,6 @@
               </select>
             </label>
             <button class="button secondary" id="applyGlassToAll" type="button" title="Применить выбранный стеклопакет ко всем проёмам">Для всех проёмов</button>
-            <div class="inner-impost-actions">
-              <div>
-                <span>Импосты</span>
-                <small id="innerImpostHint">Добавьте импост в выбранный проём</small>
-              </div>
-              <div class="inner-impost-buttons">
-                <button class="button secondary" id="addInnerVertical" type="button" title="Добавить вертикальный импост в выбранный проём">
-                  <span class="mini-impost vertical" aria-hidden="true"></span> Вертикальный
-                </button>
-                <button class="button secondary" id="addInnerHorizontal" type="button" title="Добавить горизонтальный импост в выбранный проём">
-                  <span class="mini-impost horizontal" aria-hidden="true"></span> Горизонтальный
-                </button>
-              </div>
-            </div>
           </div>
 
           <div class="impost-inspector" id="impostInspector" hidden>
