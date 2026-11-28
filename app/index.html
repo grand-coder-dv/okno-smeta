@@ -14,7 +14,7 @@
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2315253d'/%3E%3Cpath d='M14 15h36v34H14z' fill='%23d9eff8' stroke='%23fff' stroke-width='5'/%3E%3Cpath d='M32 16v32M15 32h34' stroke='%23f28a2e' stroke-width='4'/%3E%3C/svg%3E"
     />
     <link rel="stylesheet" href="./styles.css" />
-<link rel="stylesheet" href="./technology-catalog.css?v=2" />
+<link rel="stylesheet" href="./technology-catalog.css?v=3" />
 <link rel="stylesheet" href="./glass-profile-style.css" />
 <link rel="stylesheet" href="./proposal-report.css" />
       <style>
@@ -403,7 +403,7 @@
           <div class="saved-price-comparison" id="savedPriceComparison" hidden>
             <span>Цена сохранённой позиции</span>
             <b id="savedItemPrice">—</b>
-            <span>По текущему прайсу</span>
+            <span>По ценам каталогов</span>
             <b id="currentItemPrice">—</b>
           </div>
 
@@ -511,9 +511,9 @@
           <button class="icon-button" value="cancel" aria-label="Закрыть" type="submit">×</button>
         </div>
         <div class="settings-tabs" role="tablist" aria-label="Разделы настроек">
-          <button class="active" type="button" role="tab" aria-selected="true" data-settings-tab="prices">Прайс</button>
+          <button class="active" type="button" role="tab" aria-selected="true" data-settings-tab="general">Общее</button>
           <button type="button" role="tab" aria-selected="false" data-settings-tab="technology">Технологические</button>
-          <button type="button" role="tab" aria-selected="false" data-settings-tab="profile">Настройки профиля</button>
+          <button type="button" role="tab" aria-selected="false" data-settings-tab="glass">Стеклопакеты</button>
           <button type="button" role="tab" aria-selected="false" data-settings-tab="materials">Материалы</button>
           <button type="button" role="tab" aria-selected="false" data-settings-tab="hardware">Фурнитура</button>
           <button type="button" role="tab" aria-selected="false" data-settings-tab="reports">Отчёты</button>
@@ -521,76 +521,29 @@
         </div>
 
         <section class="settings-pane" id="settingsPricesPane" role="tabpanel">
-          <p class="dialog-intro">Введите ваши закупочные или розничные тарифы. Изменения применяются к текущему расчёту.</p>
-
           <div class="price-settings-grid">
-          <section>
-            <h3>Профиль, ₽/пог. м</h3>
-            <label><span>ПВХ — рама</span><input name="pvcFrame" type="number" min="0" step="10" /></label>
-            <label><span>Алюминий — рама</span><input name="aluminumFrame" type="number" min="0" step="10" /></label>
-            <label><span>Дерево — рама</span><input name="woodFrame" type="number" min="0" step="10" /></label>
-            <label><span>Импост ПВХ</span><input name="pvcImpost" type="number" min="0" step="10" /></label>
-            <label><span>Импост алюминий</span><input name="aluminumImpost" type="number" min="0" step="10" /></label>
-            <label><span>Импост дерево</span><input name="woodImpost" type="number" min="0" step="10" /></label>
-          </section>
-          <section>
-            <h3>Стеклопакет, ₽/м²</h3>
-            <label><span>Однокамерный</span><input name="glassSingle" type="number" min="0" step="10" /></label>
-            <label><span>Двухкамерный</span><input name="glassDouble" type="number" min="0" step="10" /></label>
-            <label><span>Энергосберегающий</span><input name="glassEnergy" type="number" min="0" step="10" /></label>
-            <label><span>Шумоизоляционный</span><input name="glassAcoustic" type="number" min="0" step="10" /></label>
-          </section>
-          <section>
-            <h3>Фурнитура, ₽/компл.</h3>
-            <p class="technology-note">Эти тарифы используются, если для профильной системы не назначен комплект во вкладке «Фурнитура».</p>
-            <label><span>Поворотная</span><input name="hardwareTurn" type="number" min="0" step="10" /></label>
-            <label><span>Поворотно-откидная</span><input name="hardwareTiltturn" type="number" min="0" step="10" /></label>
-            <label><span>Откидная</span><input name="hardwareTilt" type="number" min="0" step="10" /></label>
-            <label><span>Ручка</span><input name="handle" type="number" min="0" step="10" /></label>
-          </section>
           <section>
             <h3>Коэффициенты, %</h3>
             <label><span>Арочная форма</span><input name="archSurcharge" type="number" min="0" max="300" step="1" /></label>
             <label><span>Круглая форма</span><input name="circleSurcharge" type="number" min="0" max="300" step="1" /></label>
+            <label><span>Косая форма</span><input name="skewSurcharge" type="number" min="0" max="300" step="1" /></label>
             <label><span>Наценка</span><input name="markup" type="number" min="0" max="500" step="1" /></label>
-          </section>
-          <section>
-            <h3>Комплектующие</h3>
-            <label><span>Армирование, ₽/м</span><input name="reinforcement" type="number" min="0" step="10" /></label>
-            <label><span>Уплотнитель ПВХ, ₽/м</span><input name="pvcSeal" type="number" min="0" step="10" /></label>
-            <label><span>Уплотнитель алюминий, ₽/м</span><input name="aluminumSeal" type="number" min="0" step="10" /></label>
-            <label><span>Уплотнитель дерево, ₽/м</span><input name="woodSeal" type="number" min="0" step="10" /></label>
-            <label><span>Штапик ПВХ, ₽/м</span><input name="pvcBead" type="number" min="0" step="10" /></label>
-            <label><span>Штапик алюминий, ₽/м</span><input name="aluminumBead" type="number" min="0" step="10" /></label>
-            <label><span>Штапик дерево, ₽/м</span><input name="woodBead" type="number" min="0" step="10" /></label>
-            <label><span>Сборочный комплект ПВХ</span><input name="pvcAssembly" type="number" min="0" step="10" /></label>
-            <label><span>Сборочный комплект алюминий</span><input name="aluminumAssembly" type="number" min="0" step="10" /></label>
-            <label><span>Сборочный комплект дерево</span><input name="woodAssembly" type="number" min="0" step="10" /></label>
           </section>
           </div>
 
           <div class="dialog-actions">
-            <button class="button ghost" id="resetPrices" type="button">Вернуть демонстрационные</button>
-            <button class="button primary" id="savePrices" type="button">Применить цены</button>
+            <button class="button ghost" id="resetPrices" type="button">Сбросить коэффициенты</button>
+            <button class="button primary" id="savePrices" type="button">Сохранить коэффициенты</button>
           </div>
         </section>
 
         <section class="settings-pane" id="settingsTechnologyPane" role="tabpanel" hidden>
-          <p class="dialog-intro">Создавайте, переименовывайте и удаляйте профильные системы. Технические параметры каждой системы находятся во вкладке «Настройки профиля».</p>
           <div class="catalog-material-tabs" role="tablist" aria-label="Материал профильной системы">
             <button class="active" type="button" data-catalog-material="pvc" aria-selected="true">Пластик</button>
             <button type="button" data-catalog-material="aluminum" aria-selected="false">Алюминий</button>
             <button type="button" data-catalog-material="wood" aria-selected="false">Дерево</button>
           </div>
           <div id="technologyCatalogEditor" class="technology-catalog-editor"></div>
-          <section class="catalog-section" id="glassCatalogSection">
-            <div class="catalog-section-header">
-              <div><h3>Стеклопакеты материала</h3><span id="glassCatalogCount"></span></div>
-              <button type="button" class="button ghost catalog-add-button" id="addGlassCatalog">+ Добавить стеклопакет</button>
-            </div>
-            <div id="glassCatalogEditor" class="catalog-profile-list"></div>
-            <p class="technology-note">Если цена стандартного стеклопакета не указана, используется тариф из вкладки «Цены».</p>
-          </section>
           <p class="technology-note">Нельзя удалить последнюю систему или последний цвет материала. Изменения сохраняются в базе программы.</p>
           <div class="dialog-actions">
             <button class="button ghost" id="resetTechnology" type="button">Вернуть стандартные</button>
@@ -598,20 +551,23 @@
           </div>
         </section>
 
+        <section class="settings-pane" id="settingsGlassPane" role="tabpanel" hidden>
+          <section class="catalog-section">
+            <div class="catalog-section-header">
+              <div><h3>Каталог стеклопакетов</h3></div>
+              <button type="button" class="button ghost catalog-add-button" id="addGlassCatalog">+ Добавить стеклопакет</button>
+            </div>
+            <div id="glassCatalogEditor" class="catalog-profile-list"></div>
+          </section>
+          <div class="dialog-actions">
+            <button class="button ghost" id="resetGlassCatalog" type="button">Вернуть стандартные</button>
+            <button class="button primary" id="saveGlassCatalog" type="button">Сохранить стеклопакеты</button>
+          </div>
+        </section>
+
         <section class="settings-pane" id="settingsMaterialsPane" role="tabpanel" hidden>
           <div id="partsEditor"></div>
           <button class="button primary" id="saveMaterials" type="button">Сохранить каталог</button>
-        </section>
-        <section class="settings-pane" id="settingsProfilePane" role="tabpanel" hidden>
-          <div class="catalog-material-tabs" role="tablist" aria-label="Материал настройки профиля">
-            <button class="active" type="button" data-catalog-material="pvc" aria-selected="true">Пластик</button>
-            <button type="button" data-catalog-material="aluminum" aria-selected="false">Алюминий</button>
-            <button type="button" data-catalog-material="wood" aria-selected="false">Дерево</button>
-          </div>
-          <div id="profileSettingsEditor" class="technology-catalog-editor"></div>
-          <div class="dialog-actions">
-            <button class="button primary" id="saveProfileSettings" type="button">Сохранить каталог</button>
-          </div>
         </section>
         <section class="settings-pane" id="settingsHardwarePane" role="tabpanel" hidden>
           <p class="dialog-intro">Комплект фурнитуры и ручка выбираются на всё изделие. Диапазон — ширина и высота стеклопакета в створке. Отметьте, для каких профильных систем и типов изделия ставится комплект, и в какой фурнитуре применяется ручка.</p>
@@ -622,7 +578,7 @@
           </div>
         </section>
         <section class="settings-pane" id="settingsDatabasePane" role="tabpanel" hidden>
-          <p class="dialog-intro">База хранится в программе. Техническая часть — прайс, профили, стеклопакеты, фурнитура и шаблоны отчётов. Проекты сохраняются отдельно, когда пользователь записывает заказ.</p>
+          <p class="dialog-intro">База хранится в программе. Техническая часть — коэффициенты, материалы, стеклопакеты, фурнитура и шаблоны отчётов. Проекты сохраняются отдельно, когда пользователь записывает заказ.</p>
           <div class="database-exchange">
             <section>
               <h3>Техническая база</h3>
