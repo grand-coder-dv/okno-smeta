@@ -1,6 +1,6 @@
 import { resolveParts } from "./profile-parts.js";
 // Текущее изделие: состояние, размеры, форма, проверки и формат чисел.
-import { MATERIALS, PRODUCT_TYPES, SHAPES, availableProfiles, cloneData, profileTypeSettings, readStoredProjects, technology } from "./catalog.js";
+import { MATERIALS, PRODUCT_TYPES, SHAPES, availableProfiles, cloneData, materialGlass, profileTypeSettings, readStoredProjects, technology } from "./catalog.js";
 import { activeProfileEdge, customProfileArcs, fittedGlass, hasSlantedImposts, setActiveProfileEdge } from "./drawing.js";
 import { renderAll, syncFormFromState } from "./editor-ui.js";
 import { ensurePanes, glassGeometry, sectionLayout, sectionNumber, sectionPanes, updateMaterialSelects } from "./geometry.js";
@@ -122,9 +122,9 @@ export function getProfile() {
   const result = { ...profile, ...profileTypeSettings(profile) };
   result.parts = resolveParts(MATERIALS, state, profile);
   for (const [role, part] of Object.entries(result.parts)) {
-    result[role + "Width"] = part.width;
+    if (part.width != null) result[role + "Width"] = part.width;
     const biteField = { frame: "glassBiteFrame", sash: "glassBiteSash", impost: "glassBiteImpost" }[role];
-    if (biteField) result[biteField] = part.bite;
+    if (biteField && part.bite != null) result[biteField] = part.bite;
   }
   return result;
 }
@@ -243,6 +243,7 @@ export function validateCurrentProduct() {
   if (!material) return "Выбран неизвестный материал профиля.";
   if (!PRODUCT_TYPES[state.productType || "window"]) return "Выбран неизвестный тип изделия.";
   if (!availableProfiles().some((item) => item.id === state.profile)) return "Для этого типа изделия нет доступной профильной системы.";
+  if (!Object.keys(materialGlass()).length) return "Назначьте совместимый стеклопакет во вкладке «Стеклопакеты».";
   if (state.shape === "circle" && !getProfile().allowCircleShape) return "Для этой профильной системы круглая форма недоступна.";
   if (!material.finishes.some((item) => item.id === state.finish)) return "Выбранный цвет или отделка больше недоступны.";
   if (!Array.isArray(state.panes) || state.panes.length !== state.cols * state.rows) return "Количество секций не соответствует выбранной разбивке.";
