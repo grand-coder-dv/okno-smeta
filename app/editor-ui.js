@@ -818,7 +818,7 @@ export function bindEvents() {
       ? "Отменить редактирование позиции? Несохранённые изменения текущего изделия будут потеряны."
       : "Начать настройку нового изделия? Текущая конфигурация будет сброшена, список заказа сохранится.";
     if (!window.confirm(message)) return;
-    resetCurrentProduct();
+    resetCurrentProduct(null, null, { preferDraft: true });
     showToast("Создан новый расчёт");
   });
 
