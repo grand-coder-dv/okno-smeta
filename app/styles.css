@@ -2583,14 +2583,15 @@ tbody tr:hover {
 
   .editor-heading {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) max-content;
     align-items: start;
-    column-gap: 12px;
-    row-gap: 4px;
+    column-gap: 16px;
+    row-gap: 2px;
     margin-bottom: 12px;
   }
 
-  .editor-heading > div:first-child {
+  .editor-heading > div:first-child,
+  .editor-meta {
     display: contents;
   }
 
@@ -2598,32 +2599,30 @@ tbody tr:hover {
     grid-column: 1;
     grid-row: 1;
     margin-bottom: 0;
-    align-self: start;
+    align-self: center;
+    line-height: 1.2;
   }
 
   .editor-heading h2 {
     grid-column: 1;
-    grid-row: 2;
-  }
-
-  .editor-meta {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-    flex-direction: column;
-    align-items: flex-end;
-    justify-content: flex-start;
-    gap: 2px;
-    max-width: 46%;
+    grid-row: 2 / span 2;
+    align-self: start;
+    margin-top: 4px;
   }
 
   .editor-meta span {
     padding: 0;
     background: none;
     border-radius: 0;
+    white-space: nowrap;
   }
 
   .editor-area {
-    order: 1;
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+    align-self: center;
+    order: 0;
     color: var(--navy);
     font-size: 0.84rem;
     font-weight: 780;
@@ -2631,26 +2630,36 @@ tbody tr:hover {
   }
 
   .editor-dimensions {
-    order: 2;
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: end;
+    align-self: start;
+    order: 0;
+    margin-top: 4px;
     color: #58657a;
-    font-size: 0.7rem;
+    font-size: 0.72rem;
     font-weight: 700;
+    line-height: 1.2;
     text-align: right;
   }
 
   .editor-item-total {
     display: grid;
+    grid-column: 2;
+    grid-row: 3;
+    justify-self: end;
     justify-items: end;
-    order: 3;
-    margin-top: 5px;
+    margin-top: 6px;
   }
 
   .editor-item-total span {
     color: var(--muted);
     font-size: 0.6rem;
     font-weight: 760;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.06em;
+    line-height: 1.2;
     text-transform: uppercase;
+    white-space: nowrap;
   }
 
   .editor-item-total b {
@@ -2659,6 +2668,7 @@ tbody tr:hover {
     font-weight: 780;
     letter-spacing: -0.03em;
     line-height: 1.15;
+    white-space: nowrap;
   }
 
   .canvas-wrap {
