@@ -1,12 +1,12 @@
 // Экран редактора: инспектор, итог, кнопки и общий пересчёт.
-import { addInnerImpost, bindCanvasDragging, bindCanvasNavigation, equalizeSelectedGlass } from "./canvas-input.js";
+import { bindCanvasDragging, bindCanvasNavigation, equalizeSelectedGlass } from "./canvas-input.js";
 import { renderCanvas } from "./canvas.js";
 import { APP_DATABASE_KEY, GLASS, MATERIALS, OPENINGS, PRODUCT_TYPES, RATES_STORAGE_KEY, SHAPES, appDatabase, captureGlassDraft, cloneData, cloneMaterials, cloneRates, defaultHardwareCatalog, fitsGlassProfile, glassCatalog, glassCatalogKey, glassDraft, handlesForSet, hardwareCatalog, hardwareDraft, hardwareSetsForProduct, persistRates, profileTypeSettings, programStorageRemove, programStorageSet, rates, readRawAppDatabase, readStoredProjects, renderGlassCatalog, selectedHandle, selectedHardware, setAppDatabase, setGlassCatalog, setGlassDraft, setHardwareDraft, setRates, standardGlassCatalog, syncGlassChoices, syncHardwareChoice } from "./catalog.js";
 import { activeProfileEdge, commitOverallDimension, customProfileArcs, editPolygon, editProfileSide, fittedGlass, handlePreviewMarkup, hasSlantedImposts, overallSizeLabel, refreshProfileEdit, sharedImpostLimits, syncOverallInputs } from "./drawing.js";
 import { buildSpecification, hardwareFitsSize, hardwareRangeProblems, sashProfileSize } from "./estimate.js";
 import { adjacentBar, circleSashesBlocked, constructionModel, createImpostId, ensurePanes, getPanePhysicalRect, getSelectedImpostRecord, glassGeometry, glassSizeLabel, makeEvenImposts, nestedImpostLimits, removeRootImpost, rootImpostLimits, sectionLayout, sectionNumber, sectionPanes, updateMaterialSelects } from "./geometry.js";
 import { deleteOrderItem, deleteProject, editOrderItem, hasUnsavedProjectWork, openProject, renameCurrentOrder, renameOrderItem, renameStoredOrder, renderOrder, renderProjectToolbar, renderProjectsList, requestProjectSave, saveCurrentOrderItem, saveProjectRecord, startNewProject } from "./order.js";
-import { $, $$, catalogDraft, catalogMaterial, clamp, draftProductName, editingOrderItemId, escapeHtml, formatMoney, formatNumber, getProfile, getTechnology, impostPositionOrigin, isPreliminaryShape, multiSections, normalizeUnsupportedOpenings, openingAllowed, orderItems, projectDirty, projects, resetCurrentProduct, selectedSections, setCatalogDraft, setCatalogMaterial, setDraftProductName, setProjectDirty, setProjects, setSharedAxis, setWindowShapeMode, sharedAxis, state, validateCurrentProduct } from "./product.js";
+import { $, $$, applyPaneChanges, catalogDraft, catalogMaterial, clamp, draftProductName, editingOrderItemId, escapeHtml, formatMoney, formatNumber, getProfile, getTechnology, impostPositionOrigin, isPreliminaryShape, multiSections, normalizeUnsupportedOpenings, openingAllowed, orderItems, projectDirty, projects, resetCurrentProduct, sectionOpeningPanes, selectedSections, setCatalogDraft, setCatalogMaterial, setDraftProductName, setProjectDirty, setProjects, setSharedAxis, setWindowShapeMode, sharedAxis, state, validateCurrentProduct } from "./product.js";
 import { openReportsDialog } from "./reports.js";
 import { handleCatalogAction, handleHardwareAction, populatePriceForm, populateTechnologyForm, readCatalogDraftFromEditor, readPriceForm, readTechnologyForm, renderHardwareCatalog, renderTechnologyCatalog, saveHardwareCatalog, setSettingsTab } from "./settings.js";
 function profileTarget(edge) {
@@ -243,11 +243,6 @@ function renderInspector() {
       ? `${hardware.name}: створка ${size.width}×${size.height} мм${outside ? ` вне диапазона ${hardware.minWidth}–${hardware.maxWidth} × ${hardware.minHeight}–${hardware.maxHeight}` : ""}${handleItem ? ` · ручка ${handleItem.name}` : ""}`
       : `${hardware.name}${handleItem ? ` · ручка ${handleItem.name}` : ""}`;
   }
-  const innerCount = pane.innerImposts.length;
-  const paneKind = pane.opening === "fixed" ? "глухом проёме" : "створке";
-  $("#innerImpostHint").textContent = innerCount
-    ? `Установлено: ${innerCount}`
-    : "Добавьте вертикальный или горизонтальный";
 }
 
 function renderSummary(calculation) {
@@ -542,18 +537,12 @@ export function bindEvents() {
   });
 
   $("#openingType").addEventListener("change", (event) => {
-    if (!openingAllowed(event.target.value)) { renderInspector(); return; }
-    const targets = [...new Set(selectedSections().map(entry=>entry.sashOwner?.pane || entry.pane))];
-    const old = targets.map(pane => pane.opening);
-    targets.forEach(pane => { pane.opening = event.target.value; });
-    const issue = validateCurrentProduct();
-    if (issue) {
-      targets.forEach((pane, i) => { pane.opening = old[i]; });
-      renderAll();
-      showToast(issue);
-      return;
-    }
+    const opening = event.target.value;
+    if (!openingAllowed(opening)) { renderInspector(); return; }
+    const changes = sectionOpeningPanes().map(pane => ({pane, values:{opening}}));
+    const issue = applyPaneChanges(changes);
     renderAll();
+    if (issue) showToast(issue);
   });
   $("#hingeSide").addEventListener("change", event => {
     const entry=sectionLayout()[state.selectedPane];
@@ -575,10 +564,8 @@ export function bindEvents() {
     showToast("Стеклопакет применён ко всем проёмам");
   });
 
-  $("#addInnerVertical").addEventListener("click", () => addInnerImpost("vertical"));
   $("#equalGlassWidth").addEventListener("click",()=>equalizeSelectedGlass("vertical"));
   $("#equalGlassHeight").addEventListener("click",()=>equalizeSelectedGlass("horizontal"));
-  $("#addInnerHorizontal").addEventListener("click", () => addInnerImpost("horizontal"));
   $("#impostPositionOrigin").addEventListener("change", event => {
     const record=getSelectedImpostRecord();
     if(!record)return;
