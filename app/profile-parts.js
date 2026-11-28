@@ -1,6 +1,7 @@
 export const PART_NAMES = {
   frame: "Рама", sash: "Створка", impost: "Импост", shtulp: "Штульп", bead: "Штапик",
   extender: "Расширитель", connector: "Соединитель", corner: "Угловой профиль", steel: "Армирование",
+  seal: "Уплотнитель", assembly: "Сборочный комплект",
 };
 
 export function allParts(materials) {
@@ -8,7 +9,8 @@ export function allParts(materials) {
 }
 
 export function compatibleParts(parts, role, system, type) {
-  return parts.filter(part => part.role === role && part.systems?.includes(system) && part.types?.includes(type));
+  return parts.filter(part => part.role === role && part.systems?.includes(system) && part.types?.includes(type))
+    .sort((a, b) => Number(a.id.startsWith("standard-")) - Number(b.id.startsWith("standard-")));
 }
 
 export function resolveParts(materials, product, profile) {
