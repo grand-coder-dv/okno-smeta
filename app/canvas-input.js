@@ -1,5 +1,5 @@
 // Холст: выбор, перетаскивание импостов и выравнивание стеклопакетов.
-import { renderCanvas } from "./canvas.js";
+import { cancelCanvasPaneHold } from "./canvas.js";
 import { activeImpostEndpoint, activeProfileEdge, commitOverallDimension, editPolygon, overallSize, refreshProfileEdit, setActiveImpostEndpoint, setActiveProfileEdge } from "./drawing.js";
 import { renderAll, showToast } from "./editor-ui.js";
 import { createImpostId, getPanePhysicalRect, getSelectedImpostRecord, glassGeometry, nestedImpostLimits, rootImpostLimits, sectionLayout, sectionPanes } from "./geometry.js";
@@ -7,12 +7,14 @@ import { $, canvasLayout, canvasZoom, clamp, dragState, getTechnology, impostPos
 const CANVAS_ZOOM_MIN = 0.5;
 const CANVAS_ZOOM_MAX = 4;
 const CANVAS_ZOOM_STEP = 1.25;
+const CANVAS_PAN_THRESHOLD = 4;
+const canvasViewOffset = { x: 0, y: 0 };
 
 function clampCanvasZoom(value) {
   return Math.min(CANVAS_ZOOM_MAX, Math.max(CANVAS_ZOOM_MIN, value));
 }
 
-export function updateCanvasZoomButtons() {
+function updateCanvasZoomButtons() {
   const zoomIn = $("#canvasZoomIn");
   const zoomOut = $("#canvasZoomOut");
   if (!zoomIn || !zoomOut) return;
@@ -20,20 +22,136 @@ export function updateCanvasZoomButtons() {
   zoomOut.disabled = canvasZoom <= CANVAS_ZOOM_MIN + 1e-6;
 }
 
-export function bindCanvasZoom() {
-  $("#canvasZoomIn")?.addEventListener("click", () => {
-    const next = clampCanvasZoom(canvasZoom * CANVAS_ZOOM_STEP);
-    if (next === canvasZoom) return;
-    setCanvasZoom(next);
-    renderCanvas();
-  });
-  $("#canvasZoomOut")?.addEventListener("click", () => {
-    const next = clampCanvasZoom(canvasZoom / CANVAS_ZOOM_STEP);
-    if (next === canvasZoom) return;
-    setCanvasZoom(next);
-    renderCanvas();
-  });
+export function setCanvasViewBox(svg, x, y, width, height) {
+  if (svg.id !== "windowCanvas") {
+    svg.setAttribute("viewBox", `${x} ${y} ${width} ${height}`);
+    return;
+  }
+  const viewWidth = width / canvasZoom;
+  const viewHeight = height / canvasZoom;
+  const viewX = x + (width - viewWidth) / 2 + canvasViewOffset.x;
+  const viewY = y + (height - viewHeight) / 2 + canvasViewOffset.y;
+  svg.setAttribute("viewBox", `${viewX} ${viewY} ${viewWidth} ${viewHeight}`);
+}
+
+function moveCanvasView(svg, zoom, from, to = from) {
+  const view = svg.viewBox.baseVal;
+  const { x, y, width, height } = view;
+  const nextZoom = clampCanvasZoom(zoom);
+  const ratio = canvasZoom / nextZoom;
+  const nextWidth = width * ratio;
+  const nextHeight = height * ratio;
+  let nextX = x + (width - nextWidth) / 2;
+  let nextY = y + (height - nextHeight) / 2;
+  if (from) {
+    // Keep the drawing point at the gesture origin under the cursor or the moving pinch midpoint.
+    const matrix = svg.getScreenCTM()?.inverse();
+    if (!matrix) return;
+    const anchor = new DOMPoint(from.clientX, from.clientY).matrixTransform(matrix);
+    const destination = new DOMPoint(to.clientX, to.clientY).matrixTransform(matrix);
+    nextX = anchor.x - (destination.x - x) * ratio;
+    nextY = anchor.y - (destination.y - y) * ratio;
+  }
+  if (nextZoom === canvasZoom && nextX === x && nextY === y) return;
+  canvasViewOffset.x += nextX - x + (nextWidth - width) / 2;
+  canvasViewOffset.y += nextY - y + (nextHeight - height) / 2;
+  setCanvasZoom(nextZoom);
+  svg.setAttribute("viewBox", `${nextX} ${nextY} ${nextWidth} ${nextHeight}`);
   updateCanvasZoomButtons();
+}
+
+function pinchPosition(touches) {
+  const [first, second] = touches.values();
+  return {
+    clientX: (first.clientX + second.clientX) / 2,
+    clientY: (first.clientY + second.clientY) / 2,
+    distance: Math.max(1, Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY)),
+  };
+}
+
+export function bindCanvasNavigation() {
+  const svg = $("#windowCanvas");
+  const wrap = $("#canvasWrap");
+  const touches = new Map();
+  let pan = null;
+  let pinching = false;
+  let suppressClick = false;
+  const isBackground = target => target === svg || target === wrap;
+  const isDrawing = target => target === wrap || svg.contains(target);
+  const stopPan = () => {
+    pan = null;
+    wrap.classList.remove("is-panning");
+  };
+
+  $("#canvasZoomIn")?.addEventListener("click", () => moveCanvasView(svg, canvasZoom * CANVAS_ZOOM_STEP));
+  $("#canvasZoomOut")?.addEventListener("click", () => moveCanvasView(svg, canvasZoom / CANVAS_ZOOM_STEP));
+  updateCanvasZoomButtons();
+  wrap.addEventListener("wheel", event => {
+    if (!isDrawing(event.target) || !event.deltaY) return;
+    event.preventDefault();
+    if (dragState || pan || pinching) return;
+    const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? wrap.clientHeight : 1;
+    const steps = clamp(-event.deltaY * unit / 100, -4, 4);
+    moveCanvasView(svg, canvasZoom * CANVAS_ZOOM_STEP ** steps, event);
+  }, { passive: false });
+
+  wrap.addEventListener("pointerdown", event => {
+    if (event.button !== 0 || !isDrawing(event.target)) return;
+    if (!pan && !pinching) suppressClick = false;
+    if (event.pointerType === "touch") {
+      touches.set(event.pointerId, event);
+      if (touches.size >= 2) {
+        pinching = true;
+        suppressClick = true;
+        stopPan();
+        cancelCanvasPaneHold();
+        if (dragState && touches.has(dragState.pointerId)) stopImpostDrag();
+        for (const id of touches.keys()) wrap.setPointerCapture(id);
+        event.stopPropagation();
+        return;
+      }
+    }
+    if (pinching || pan || dragState || !isBackground(event.target)) return;
+    pan = { id: event.pointerId, position: event };
+    event.target.setPointerCapture(event.pointerId);
+  }, true);
+
+  wrap.addEventListener("pointermove", event => {
+    if (touches.has(event.pointerId)) {
+      const previous = touches.size >= 2 ? pinchPosition(touches) : null;
+      touches.set(event.pointerId, event);
+      if (pinching) {
+        if (previous) {
+          const current = pinchPosition(touches);
+          moveCanvasView(svg, canvasZoom * current.distance / previous.distance, previous, current);
+        }
+        return;
+      }
+    }
+    if (pan?.id !== event.pointerId) return;
+    const previous = pan.position;
+    if (!suppressClick && Math.hypot(event.clientX - previous.clientX, event.clientY - previous.clientY) < CANVAS_PAN_THRESHOLD) return;
+    suppressClick = true;
+    wrap.classList.add("is-panning");
+    moveCanvasView(svg, canvasZoom, previous, event);
+    pan.position = event;
+  });
+
+  const finishNavigation = event => {
+    if (pan?.id === event.pointerId) stopPan();
+    touches.delete(event.pointerId);
+    if (!touches.size) pinching = false;
+  };
+  window.addEventListener("pointerup", finishNavigation, true);
+  window.addEventListener("pointercancel", finishNavigation, true);
+  wrap.addEventListener("lostpointercapture", event => {
+    if (pan?.id === event.pointerId || event.target === wrap) finishNavigation(event);
+  });
+  wrap.addEventListener("click", event => {
+    if (!suppressClick || !event.detail || !isDrawing(event.target)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, true);
 }
 const impostSelectGuards = [];
 export function beforeSelectImpost(guard) { impostSelectGuards.push(guard); }
@@ -101,6 +219,11 @@ function getCanvasPoint(event) {
   const svg = $("#windowCanvas");
   const matrix = svg.getScreenCTM();
   return matrix ? new DOMPoint(event.clientX,event.clientY).matrixTransform(matrix.inverse()) : {x:0,y:0};
+}
+
+function stopImpostDrag() {
+  setDragState(null);
+  document.body.style.cursor = "";
 }
 
 export function bindCanvasDragging() {
@@ -211,7 +334,7 @@ export function bindCanvasDragging() {
   });
   svg.addEventListener("pointerdown", (event) => {
     const node = event.target.closest?.(".impost-hit");
-    if (!node) return;
+    if (!node || dragState) return;
     event.preventDefault();
     selectImpostFromNode(node);
     setDragState({ pointerId: event.pointerId });
@@ -232,8 +355,7 @@ export function bindCanvasDragging() {
   });
   const finishDrag = (event) => {
     if (!dragState || dragState.pointerId !== event.pointerId) return;
-    setDragState(null);
-    document.body.style.cursor = "";
+    stopImpostDrag();
     try {
       svg.releasePointerCapture(event.pointerId);
     } catch {}
