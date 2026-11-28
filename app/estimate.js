@@ -1,3 +1,4 @@
+import { PART_NAMES, allParts, compatibleSteel } from "./profile-parts.js";
 // Смета: строки спецификации и стоимость текущего изделия.
 import { HANDLE_LENGTHS, HANDLE_STYLES, MATERIALS, OPENINGS, PRODUCT_TYPES, SHAPES, materialGlass, rates, selectedHandle, selectedHardware } from "./catalog.js";
 import { customProfileArcs, overallSizeLabel } from "./drawing.js";
@@ -58,10 +59,15 @@ export function buildSpecification() {
     const shown = parts.slice(0, 12).map((member) => String(Math.round(member.lengthMm)));
     return `${shown.join(" + ")}${parts.length > 12 ? ` + ещё ${parts.length - 12}` : ""} мм`;
   };
-  const frameRate = rates.frame[state.material] * profile.factor;
+  const partRate = (role, fallback) => (profile.parts[role]?.price ?? fallback) * profile.factor;
+  const partName = (role, fallback) => {
+    const part = profile.parts[role];
+    return part ? fallback + " · " + part.article + " · " + part.name : fallback;
+  };
+  const frameRate = partRate("frame", rates.frame[state.material]);
   const frameUnitTotal = dimensions.perimeter * frameRate;
   addLine({
-    name: "Профиль рамы",
+    name: partName("frame", "Профиль рамы"),
     note: `${PRODUCT_TYPES[state.productType || "window"]}; наружный габарит: ${overallSizeLabel()}; ${lengthNote(frameParts)}`,
     characteristic: `${profile.name}; ${finish.name}; ширина ${tech.frame} мм; ${frameParts.length} шт.`,
     qty: dimensions.perimeter * quantity,
@@ -74,9 +80,10 @@ export function buildSpecification() {
     const parts = profileMeters(role);
     const meters = parts.reduce((sum, member) => sum + member.lengthMm, 0) / 1000;
     if (meters <= 0.001) return 0;
+    rate = partRate(role, rate);
     const unitTotal = meters * rate;
     addLine({
-      name,
+      name: partName(role, name),
       note: `${note ? `${note}; ` : ""}${lengthNote(parts)}`,
       characteristic: `${profile.name}; ${finish.name}; ширина ${Math.round(widthMm)} мм; ${parts.length} шт.`,
       qty: meters * quantity,
@@ -85,13 +92,13 @@ export function buildSpecification() {
     });
     return unitTotal;
   };
-  const sashUnitTotal = addProfileMeters("sash", "Профиль створки", frameRate, tech.sash, "Стойки и поперечины створки по наружному контуру");
-  const impostRate = rates.impost[state.material] * profile.factor;
+  const sashUnitTotal = addProfileMeters("sash", "Профиль створки", rates.frame[state.material], tech.sash, "Стойки и поперечины створки по наружному контуру");
+  const impostRate = partRate("impost", rates.impost[state.material]);
   let impostUnitTotal = 0;
   if (dimensions.impost > 0.001) {
     impostUnitTotal = dimensions.impost * impostRate;
     addLine({
-      name: "Импост",
+      name: partName("impost", "Импост"),
       note: `Ось внутри рамы или створки; ${lengthNote(profileMeters("impost"))}`,
       characteristic: `Ширина ${tech.impost} мм; в раме: ${profileMeters("impost").filter((member) => member.scope === "root").length}; в секциях: ${dimensions.nestedCount}`,
       qty: dimensions.impost * quantity,
@@ -99,21 +106,33 @@ export function buildSpecification() {
       rate: impostRate,
     });
   }
-  const shtulpUnitTotal = addProfileMeters("shtulp", "Штульп", impostRate, tech.shtulp, "Профиль притвора створок");
-  const extenderUnitTotal = addProfileMeters("extender", "Расширитель", frameRate, tech.extender, "Добор по наружной стороне рамы");
-  const connectorUnitTotal = addProfileMeters("connector", "Соединитель", frameRate, tech.connector, "Стыковочный профиль по стороне рамы");
-  const cornerUnitTotal = addProfileMeters("corner", "Угловой профиль", frameRate, tech.corner, "Угловой соединитель на вершине рамы");
+  const shtulpUnitTotal = addProfileMeters("shtulp", "Штульп", rates.impost[state.material], tech.shtulp, "Профиль притвора створок");
+  const extenderUnitTotal = addProfileMeters("extender", "Расширитель", rates.frame[state.material], tech.extender, "Добор по наружной стороне рамы");
+  const connectorUnitTotal = addProfileMeters("connector", "Соединитель", rates.frame[state.material], tech.connector, "Стыковочный профиль по стороне рамы");
+  const cornerUnitTotal = addProfileMeters("corner", "Угловой профиль", rates.frame[state.material], tech.corner, "Угловой соединитель на вершине рамы");
 
-  if (state.material === "pvc") {
-    addLine({
-      name: "Стальное армирование",
-      note: "Усиление рамы, створки, импостов и доборных профилей",
-      characteristic: "Оцинкованный профиль",
-      qty: (dimensions.perimeter + dimensions.sash + dimensions.impost + dimensions.shtulp + dimensions.extender + dimensions.connector + dimensions.corner) * quantity,
-      unit: "пог. м",
-      rate: rates.reinforcement,
+  const parts = allParts(MATERIALS);
+  let legacySteelMeters = 0;
+  for (const [role, title] of Object.entries(PART_NAMES)) {
+    const meters = role === "frame" ? dimensions.perimeter : dimensions[role];
+    if (!meters || role === "steel") continue;
+    const host = profile.parts[role];
+    if (!host) {
+      if (state.material === "pvc" && role !== "bead") legacySteelMeters += meters;
+      continue;
+    }
+    const choices = compatibleSteel(parts, host);
+    const steel = choices.find(item => item.id === host.steelId) || choices[0];
+    if (steel) addLine({
+      name: "Армирование · " + steel.article + " · " + steel.name,
+      note: title + " · " + host.article, characteristic: host.name,
+      qty: meters * quantity, unit: "пог. м", rate: steel.price,
     });
   }
+  if (legacySteelMeters) addLine({
+    name: "Стальное армирование", note: "Усиление системных профилей", characteristic: "Оцинкованный профиль",
+    qty: legacySteelMeters * quantity, unit: "пог. м", rate: rates.reinforcement,
+  });
 
   addLine({
     name: "Контур уплотнения",
@@ -126,12 +145,12 @@ export function buildSpecification() {
 
   const beadLength = dimensions.bead;
   addLine({
-    name: "Штапик",
+    name: partName("bead", "Штапик"),
     note: "По контуру стеклопакетов",
     characteristic: `Системный, ${material.label}`,
     qty: beadLength * quantity,
     unit: "пог. м",
-    rate: rates.bead[state.material],
+    rate: profile.parts.bead ? partRate("bead", 0) : rates.bead[state.material],
   });
 
   const glassGroups = sectionPanes().reduce((groups, pane, index) => {
