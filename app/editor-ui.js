@@ -7,7 +7,7 @@ import { buildSpecification, hardwareFitsSize, hardwareRangeProblems, sashProfil
 import { adjacentBar, circleSashesBlocked, constructionModel, createImpostId, ensurePanes, getPanePhysicalRect, getSelectedImpostRecord, glassGeometry, glassSizeLabel, makeEvenImposts, nestedImpostLimits, removeRootImpost, rootImpostLimits, sectionLayout, sectionNumber, sectionPanes, updateMaterialSelects } from "./geometry.js";
 import { bindGlassSettings, populateGlassSettings } from "./glass-settings.js";
 import { deleteOrderItem, deleteProject, editNameInPlace, editOrderItem, hasUnsavedProjectWork, openProject, renameCurrentOrder, renameOrderItem, renameStoredOrder, renderOrder, renderProjectToolbar, renderProjectsList, requestProjectSave, saveCurrentOrderItem, startNewProject } from "./order.js";
-import { $, $$, applyPaneChanges, catalogDraft, clamp, draftProductName, editingOrderItemId, escapeHtml, formatMoney, formatNumber, getProfile, getTechnology, impostPositionOrigin, isPreliminaryShape, multiSections, normalizeUnsupportedOpenings, openingAllowed, orderItems, projectDirty, projects, resetCurrentProduct, sectionOpeningPanes, selectedSections, setCatalogDraft, setCatalogMaterial, setDraftProductName, setProjectDirty, setProjects, setSharedAxis, setWindowShapeMode, sharedAxis, state, validateCurrentProduct } from "./product.js";
+import { $, $$, applyPaneChanges, catalogDraft, clamp, defaultViewSide, draftProductName, editingOrderItemId, escapeHtml, formatMoney, formatNumber, getProfile, getTechnology, impostPositionOrigin, isPreliminaryShape, multiSections, normalizeUnsupportedOpenings, openingAllowed, orderItems, projectDirty, projects, resetCurrentProduct, sectionOpeningPanes, selectedSections, setCatalogDraft, setCatalogMaterial, setDraftProductName, setProjectDirty, setProjects, setSharedAxis, setWindowShapeMode, sharedAxis, state, validateCurrentProduct } from "./product.js";
 import { openReportsDialog } from "./reports.js";
 import { handleCatalogAction, handleHardwareAction, populateCoefficientForm, populateTechnologyForm, readCatalogDraftFromEditor, readCoefficientForm, readTechnologyForm, resetCoefficientForm, renderHardwareCatalog, renderTechnologyCatalog, saveHardwareCatalog, setSettingsTab } from "./settings.js";
 function profileTarget(edge) {
@@ -465,6 +465,7 @@ export function bindEvents() {
     state.partChoices = {};
     state.profile = event.target.value;
     state.productType = "window";
+    state.viewSide = defaultViewSide(state.productType);
     updateMaterialSelects(false, true);
     if (state.shape === "circle" && !getProfile().allowCircleShape) setWindowShapeMode("rect");
     normalizeUnsupportedOpenings();
@@ -473,6 +474,7 @@ export function bindEvents() {
   $("#productType").addEventListener("change", event => {
     state.partChoices = {};
     state.productType = event.target.value;
+    state.viewSide = defaultViewSide(state.productType);
     updateMaterialSelects();
     const typeDimensions = {
       window: { width: 1300, height: 1400 },
