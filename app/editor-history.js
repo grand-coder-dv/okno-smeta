@@ -4,17 +4,8 @@ import { ensurePanes } from "./geometry.js";
 import { comparableCurrentState, dragState, multiSections, replaceState, setConfigurationError, setSharedAxis, state } from "./product.js";
 export function installEditorHistory() {
   const canvas = document.querySelector("#windowCanvas");
-  const wrap = document.querySelector("#canvasWrap");
-  if (!canvas || !wrap || document.querySelector("#editorHistory")) return;
-
-  const toolbar = document.createElement("div");
-  toolbar.id = "editorHistory";
-  toolbar.setAttribute("role", "group");
-  toolbar.setAttribute("aria-label", "История действий редактора");
-  toolbar.style.cssText = "display:flex;justify-content:flex-start;flex-wrap:wrap;gap:8px;margin:0 0 10px";
-  toolbar.innerHTML = `<button type="button" class="button ghost" data-history="undo" title="Отменить (Ctrl+Z)">↶ Назад</button>
-    <button type="button" class="button ghost" data-history="redo" title="Повторить (Ctrl+Shift+Z)">↷ Вперёд</button>`;
-  wrap.before(toolbar);
+  const toolbar = document.querySelector("#editorHistory");
+  if (!canvas || !toolbar) return;
   const undo = toolbar.querySelector('[data-history="undo"]');
   const redo = toolbar.querySelector('[data-history="redo"]');
   const limit = 80;
