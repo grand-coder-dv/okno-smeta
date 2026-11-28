@@ -241,8 +241,18 @@
 
           <div class="editor-toolbar" id="editorHistory" role="group" aria-label="Действия редактора">
             <div class="editor-history-actions">
-              <button type="button" class="button ghost" data-history="undo" title="Отменить (Ctrl+Z)" disabled>↶ Назад</button>
-              <button type="button" class="button ghost" data-history="redo" title="Повторить (Ctrl+Shift+Z)" disabled>↷ Вперёд</button>
+              <button type="button" class="button ghost editor-history-button" data-history="undo"
+                title="Отменить (Ctrl+Z)" aria-label="Отменить действие" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M9 5 4 10l5 5M4 10h10a5 5 0 0 1 0 10h-2"/>
+                </svg>
+              </button>
+              <button type="button" class="button ghost editor-history-button" data-history="redo"
+                title="Повторить (Ctrl+Shift+Z)" aria-label="Повторить действие" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="m15 5 5 5-5 5m5-5H10a5 5 0 0 0 0 10h2"/>
+                </svg>
+              </button>
             </div>
             <button type="button" class="button order-save-button" id="saveOrderItem"
               title="Сохранить изделие и добавить следующее" aria-label="Сохранить изделие и добавить следующее">
@@ -292,11 +302,6 @@
                 </svg>
               </button>
             </div>
-          </div>
-
-          <div class="canvas-note">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM12 10v6M12 7h.01" /></svg>
-            Перетаскивайте импосты мышью. Нажмите профиль, чтобы увидеть ширину и длину. Форма включает углы, дуги или окружность.
           </div>
 
           <div class="pane-inspector" id="paneInspector">
@@ -421,9 +426,9 @@
             <div><dt>Ручка</dt><dd id="summaryHandle">—</dd></div>
           </dl>
 
-          <div class="estimate-note">
+          <div class="estimate-note" id="currentEstimateNote" hidden>
             <span aria-hidden="true">₽</span>
-            <p><b id="currentEstimateStatus">Демонстрационный расчёт</b><span id="currentEstimateHint">Замените тарифы на ваши в разделе «Прайс».</span></p>
+            <p><b id="currentEstimateStatus"></b><span id="currentEstimateHint"></span></p>
           </div>
 
           <p class="configuration-error" id="configurationError" role="alert" hidden></p>
