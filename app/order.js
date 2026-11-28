@@ -5,7 +5,7 @@ import { overallSizeLabel } from "./drawing.js";
 import { showToast } from "./editor-ui.js";
 import { buildSpecification } from "./estimate.js";
 import { circleSashesBlocked, ensurePanes, sectionPanes } from "./geometry.js";
-import { $, activeProjectId, activeProjectName, activeProjectSnapshot, canvasLayout, createOrderItemId, currentProductIsDirty, draftProductName, editingOrderItemId, escapeHtml, formatMoney, formatNumber, isPreliminaryShape, orderItemSequence, orderItems, pluralizeRu, projectDirty, projectWritePending, projects, replaceState, resetCurrentProduct, restoreProductState, setActiveProjectId, setActiveProjectName, setActiveProjectSnapshot, setCanvasLayout, setConfigurationError, setDraftProductName, setEditingOrderItemId, setOrderItemSequence, setOrderItems, setProjectDirty, setProjects, snapshotCurrentState, state, validateCurrentProduct } from "./product.js";
+import { $, activeProjectId, activeProjectName, activeProjectSnapshot, canvasLayout, createOrderItemId, currentProductIsDirty, draftProductName, editingOrderItemId, escapeHtml, finishDescription, formatMoney, formatNumber, getFinishes, isPreliminaryShape, orderItemSequence, orderItems, pluralizeRu, projectDirty, projectWritePending, projects, replaceState, resetCurrentProduct, restoreProductState, setActiveProjectId, setActiveProjectName, setActiveProjectSnapshot, setCanvasLayout, setConfigurationError, setDraftProductName, setEditingOrderItemId, setOrderItemSequence, setOrderItems, setProjectDirty, setProjects, snapshotCurrentState, state, validateCurrentProduct } from "./product.js";
 export function orderItemSketch(config, detailed = false) {
   // Draw the saved configuration with the same renderer as the large editor.
   const previousState = state;
@@ -92,7 +92,7 @@ function renderPrintOrder() {
       const configuration = item.configuration;
       const material = MATERIALS[configuration.material];
       const profile = material?.profiles.find((candidate) => candidate.id === configuration.profile);
-      const finish = material?.finishes.find((candidate) => candidate.id === configuration.finish);
+      const finish = finishDescription(getFinishes(configuration));
       const presentation = item.presentation || {};
       const dimensions = overallSizeLabel(configuration);
       const specificationRows = (item.specification || [])
@@ -117,7 +117,7 @@ function renderPrintOrder() {
               <span>Позиция ${itemIndex + 1}</span>
               <h2>${escapeHtml(item.name || `Изделие ${itemIndex + 1}`)}</h2>
               <p>${escapeHtml(PRODUCT_TYPES[configuration.productType || "window"] || "Окно")} · ${escapeHtml(presentation.material || material?.label || configuration.material)} · ${escapeHtml(presentation.shape || SHAPES[configuration.shape] || configuration.shape)} · ${dimensions}</p>
-              <p>${escapeHtml(presentation.profile || profile?.name || configuration.profile)} · ${escapeHtml(presentation.finish || finish?.name || configuration.finish)}</p>
+              <p>${escapeHtml(presentation.profile || profile?.name || configuration.profile)} · ${escapeHtml(presentation.finish || finish || configuration.finish)}</p>
             </div>
             <div class="print-order-item-total">
               ${item.preliminary ? "<span>Предварительный расчёт</span>" : "<span>Сумма позиции</span>"}
@@ -418,7 +418,7 @@ export function saveCurrentOrderItem() {
       productType: PRODUCT_TYPES[state.productType || "window"],
       material: calculation.material.label,
       profile: calculation.profile.name,
-      finish: calculation.finish.name,
+      finish: calculation.finishName,
       shape: SHAPES[state.shape],
     },
     specification: cloneData(calculation.lines),
