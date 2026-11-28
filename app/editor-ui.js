@@ -272,10 +272,11 @@ function renderSummary(calculation) {
   $("#editorArea").textContent = `${formatNumber(calculation.area)} м²`;
 
   const preliminary = isPreliminaryShape();
-  $("#currentEstimateStatus").textContent = preliminary ? "Предварительный расчёт" : "Демонстрационный расчёт";
+  $("#currentEstimateNote").hidden = !preliminary;
+  $("#currentEstimateStatus").textContent = preliminary ? "Предварительный расчёт" : "";
   $("#currentEstimateHint").textContent = preliminary
     ? "Арочные и круглые изделия требуют проверки технологии и окончательной цены."
-    : "Замените тарифы на ваши в разделе «Прайс».";
+    : "";
 
   const savedItem = editingOrderItemId ? orderItems.find((item) => item.id === editingOrderItemId) : null;
   const currentRoundedTotal = Math.round(calculation.total);
@@ -376,10 +377,12 @@ export function renderAll() {
   }
   renderSummary(calculation);
   if(customProfileArcs()) {
+    $("#currentEstimateNote").hidden = false;
     $("#currentEstimateStatus").textContent="Расчёт изделия с дугами";
     $("#currentEstimateHint").textContent="Площадь стеклопакетов рассчитана по контуру дуг, длина импостов — по контуру рамы. Перед изготовлением проверьте технологические размеры.";
   }
   if (circleSashesBlocked() && sectionPanes().some(p => !p.split && p.opening !== "fixed")) {
+    $("#currentEstimateNote").hidden = false;
     $("#currentEstimateStatus").textContent = "Створка не разрешена текущим профилем";
     $("#currentEstimateHint").textContent = "Конфигурация сохранена в редакторе. Чтобы сохранить изделие, разрешите круглые створки в технологии, выберите совместимый профиль или подтвердите замену на глухое остекление.";
   }
