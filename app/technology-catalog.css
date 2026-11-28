@@ -98,3 +98,62 @@
 @media (max-width: 760px) {
   #settingsProfilePane .profile-type-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+
+#partsEditor { display: grid; gap: 8px; margin: 12px 0 16px; }
+#partsEditor > details { border: 1px solid #d5dfe9; border-radius: 10px; overflow: hidden; }
+#partsEditor summary, .system-picker summary { cursor: pointer; }
+#partsEditor > details > summary {
+  padding: 10px 14px; background: #eaf0f6; color: #203751; font-weight: 750;
+}
+#partsEditor details details { margin-inline: 14px; padding-left: 10px; border-left: 2px solid #d9e3ed; }
+#partsEditor details details:first-of-type { margin-top: 6px; }
+#partsEditor details details:last-of-type { margin-bottom: 6px; }
+#partsEditor details details summary { padding: 7px 4px; font-size: .85rem; font-weight: 600; }
+#partsEditor details details + details { border-top: 1px solid #edf1f4; }
+.part-table { min-width: 0; table-layout: fixed; }
+.part-table :is(th,td) { white-space: normal; overflow-wrap: anywhere; padding: 7px; }
+.part-table th { text-transform: none; letter-spacing: 0; }
+.part-table :is(td,th):first-child { width: 21%; text-align: left; }
+.part-table :is(td,th):nth-child(2) { width: 38%; }
+.part-table tr[data-id] { cursor: pointer; }
+.part-table tbody tr:is(:hover,:focus-within) { background: #edf4fb; }
+.part-link, .part-add { cursor: pointer; font: inherit; color: #214e76; }
+.part-link { background: transparent; border: 0; padding: 0; font-weight: 700; text-align: left; overflow-wrap: anywhere; }
+.part-add { margin: 6px 6px 8px 0; padding: 5px 10px; border: 1px solid #ccd9e4; border-radius: 6px; background: white; font-size: .8rem; }
+#settingsProfilePane .catalog-system-settings[hidden] { display: none; }
+#settingsProfilePane .system-choice { margin-bottom: 10px; font-weight: 700; }
+#settingsProfilePane select, .part-dialog :is(input:not([type=checkbox]),select) {
+  width: 100%; min-width: 0; box-sizing: border-box; padding: 7px 9px; color: #192e46;
+  border: 1px solid #cad6e1; background: white; border-radius: 6px; font: inherit;
+}
+dialog.part-dialog {
+  box-sizing: border-box; width: min(530px, calc(100vw - 20px)); max-height: 88dvh; overflow: auto;
+  margin: auto; padding: 20px; border: 1px solid #dae3ec; border-radius: 14px; color: #213650;
+}
+.part-dialog::backdrop { background: rgb(23 39 58 / 45%); }
+.part-dialog form, .part-dialog label { display: grid; gap: 5px; min-width: 0; }
+.part-dialog form { gap: 12px; font-size: .85rem; }
+.part-dialog h3 { margin: 0; font-size: 1.1rem; }
+.part-dialog .part-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px 12px; }
+.part-dialog fieldset, .system-picker { margin: 0; min-width: 0; border: 1px solid #d5dfe9; border-radius: 7px; padding: 6px 10px; }
+.part-dialog fieldset { max-height: 200px; overflow: auto; }
+.part-dialog fieldset label { display: inline-flex; align-items: center; gap: 6px; padding: 4px; }
+.system-picker summary { padding: 4px 0; }
+.system-picker strong { color: #335d83; font-size: .8rem; }
+.system-picker fieldset { margin-top: 6px; border: 0; padding: 0; }
+.system-picker fieldset legend { position: absolute; clip-path: inset(50%); }
+.system-picker fieldset label { display: flex; }
+.part-dialog form > div:last-child { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.part-dialog .button.ghost { color: #334b63; border-color: #cad6e1; }
+.part-dialog [role=alert]:empty { display: none; }
+@media (max-width: 500px) {
+  #partsEditor details details { margin-inline: 5px; padding-left: 5px; }
+  .part-table :is(th,td) { padding: 6px 3px; }
+  dialog.part-dialog { padding: 12px; }
+}
+
+#settingsProfilePane .profile-options {
+  grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 7px 16px;
+  padding-top: 8px; border-top: 1px solid #e4eaf0;
+}
