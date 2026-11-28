@@ -239,6 +239,9 @@ export function updateMaterialSelects(reset = false, preserveProfile = false) {
     .join("");
 }
 
+export function barBite(item, tech) {
+  return item?.shtulp ? tech.shtulpBite : tech.bite["импост"];
+}
 export function barFace(item, tech = getTechnology()) {
   if (!item) return tech.impost;
   return item.shtulp ? tech.shtulp : tech.impost;
@@ -284,7 +287,7 @@ export function glassGeometry(entry, tech = getTechnology()) {
   const sashBox = sash ? [l-SASH_LAP,t-SASH_LAP,r+SASH_LAP,b+SASH_LAP] : null;
   const d = sash ? tech.sash-SASH_LAP : 0;
   const opening = [l+d,t+d,r-d,b-d];
-  const bites = edges.map((outer,i) => tech.bite[sash || ownerEdges?.[i] ? "створка" : outer ? "рама" : "импост"]);
+  const bites = edges.map((outer,i) => sash || ownerEdges?.[i] ? tech.bite["створка"] : outer ? tech.bite["рама"] : barBite(adjacentBar(entry, i), tech));
   const intervals = (axis, lo, hi, origin, size, first, last) => {
     const items = pane.innerImposts.filter(i => !pane.split && i.orientation === axis)
       .slice().sort((a,b) => a.position-b.position);
@@ -292,7 +295,7 @@ export function glassGeometry(entry, tech = getTechnology()) {
     return Array.from({length:marks.length+1},(_,i)=>{
       const start=i ? marks[i-1]+barFace(items[i-1], tech)/2 : lo;
       const end=i<marks.length ? marks[i]-barFace(items[i], tech)/2 : hi;
-      const a=i ? tech.bite["импост"] : first, b=i<marks.length ? tech.bite["импост"] : last;
+      const a=i ? barBite(items[i-1], tech) : first, b=i<marks.length ? barBite(items[i], tech) : last;
       return {start:start-a, size:end-start+a+b, clear:end-start};
     });
   };
