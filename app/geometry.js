@@ -667,6 +667,7 @@ function buildConstruction() {
   members.push(...addonMemberList(tech, frames));
   const paneGlazingAreas = [];
   const paneGlassCounts = [];
+  const paneBeadLengths = [];
   let glassUnits = 0;
   let bead = 0;
   const curved = state.shape === "circle" || state.shape === "skew" || hasSlantedImposts() || customProfileArcs();
@@ -674,6 +675,7 @@ function buildConstruction() {
     if (entry.pane.split) return;
     const geo = glassGeometry(entry, tech);
     let paneArea = 0;
+    let paneBead = 0;
     let count = 0;
     geo.fields.forEach((field) => {
       if (field.clearW <= 1e-6 || field.clearH <= 1e-6 || field.w <= 0 || field.h <= 0) return;
@@ -682,10 +684,12 @@ function buildConstruction() {
       if (area <= 1e-7) return;
       count += 1;
       paneArea += area;
-      bead += fitted.boundary?.length >= 3 ? contourLength(fitted.boundary) : 2 * (field.w + field.h);
+      paneBead += fitted.boundary?.length >= 3 ? contourLength(fitted.boundary) : 2 * (field.w + field.h);
     });
     paneGlassCounts[index] = count;
     paneGlazingAreas[index] = paneArea / 1e6;
+    paneBeadLengths[index] = paneBead / 1000;
+    bead += paneBead;
     glassUnits += count;
   });
   const sum = (role) => members.filter((member) => member.role === role).reduce((total, member) => total + member.lengthMm, 0);
@@ -700,6 +704,7 @@ function buildConstruction() {
     members,
     paneGlazingAreas,
     paneGlassCounts,
+    paneBeadLengths,
     glassUnits,
     glazingArea: paneGlazingAreas.reduce((total, value) => total + (value || 0), 0),
     nestedCount: nested.length,
@@ -738,6 +743,7 @@ export function geometry() {
     glazingArea: model.glazingArea,
     paneGlazingAreas: model.paneGlazingAreas,
     paneGlassCounts: model.paneGlassCounts,
+    paneBeadLengths: model.paneBeadLengths,
     members: model.members,
     overall: overallSize(),
   };
