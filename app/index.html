@@ -239,6 +239,20 @@
             </div>
           </div>
 
+          <div class="editor-toolbar" id="editorHistory" role="group" aria-label="Действия редактора">
+            <div class="editor-history-actions">
+              <button type="button" class="button ghost" data-history="undo" title="Отменить (Ctrl+Z)" disabled>↶ Назад</button>
+              <button type="button" class="button ghost" data-history="redo" title="Повторить (Ctrl+Shift+Z)" disabled>↷ Вперёд</button>
+            </div>
+            <button type="button" class="button order-save-button" id="saveOrderItem"
+              title="Сохранить изделие и добавить следующее" aria-label="Сохранить изделие и добавить следующее">
+              <svg viewBox="0 0 24 24" aria-hidden="true" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M5 3h11l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/>
+                <path d="M7 3v6h9V3M7 21v-8h10v8"/>
+              </svg>
+            </button>
+          </div>
+
           <div class="canvas-wrap" id="canvasWrap">
             <div class="canvas-edit-tools" id="canvasEditTools" role="group" aria-label="Добавить элементы окна" hidden></div>
             <div class="canvas-zoom" aria-label="Масштаб чертежа">
@@ -413,7 +427,6 @@
           </div>
 
           <p class="configuration-error" id="configurationError" role="alert" hidden></p>
-          <button class="button order-save-button wide" id="saveOrderItem" type="button">Сохранить изделие и добавить следующее</button>
         </aside>
       </section>
 
