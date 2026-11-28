@@ -1,11 +1,17 @@
 // Холст: сборка SVG текущего изделия.
-import { moveSelectedImpostBy, selectImpostFromNode, updateCanvasZoomButtons } from "./canvas-input.js";
+import { moveSelectedImpostBy, selectImpostFromNode, setCanvasViewBox } from "./canvas-input.js";
 import { MATERIALS, materialGlass } from "./catalog.js";
 import { activeProfileEdge, circleFrameTargets, circularOutline, clipSlantedSections, constructionPolygon, customProfileArcs, fittedGlass, fittedOutline, frameCurve, frameSideChain, hasSlantedImposts, impostRibbon, impostSegment, isSelectedImpost, outlineRange, pieceWidth, polyBounds, polyPath, polygonClip, polygonPoints, polygonProfileTargets, profileEdgeTargets, profileOutline, rectPoints, sashOpeningMark, sectionContour, setActiveProfileEdge, shapePaths, slantedBounds, windowOuterBounds } from "./drawing.js";
 import { renderAll } from "./editor-ui.js";
 import { barFace, constructionModel, glassGeometry, glassSizeLabel, impostHostBoundary, innerFrameBoundary, nestedImpostSpans, sectionLayout, sectionNumber } from "./geometry.js";
-import { $, $$, SASH_LAP, canvasLayout, canvasZoom, escapeHtml, getFinish, getTechnology, multiSections, numberFormatter, setCanvasLayout, setSharedAxis, sharedAxis, state } from "./product.js";
+import { $, SASH_LAP, canvasLayout, escapeHtml, getFinish, getTechnology, multiSections, numberFormatter, setCanvasLayout, setSharedAxis, sharedAxis, state } from "./product.js";
 let paneLongPressUsed = false;
+let activePaneHold;
+
+export function cancelCanvasPaneHold() {
+  activePaneHold?.();
+}
+
 export function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {}) {
   const maxWidth = 455;
   const maxHeight = 350;
@@ -439,11 +445,6 @@ export function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {
   const viewBottom=Math.max(500,bottomDimensionY+21,...extraView.map(p=>p[1]));
   const fitWidth = viewRight - viewLeft;
   const fitHeight = viewBottom - viewTop;
-  const fitCenterX = (viewLeft + viewRight) / 2;
-  const fitCenterY = (viewTop + viewBottom) / 2;
-  const zoom = thumbnail ? 1 : canvasZoom;
-  const viewW = fitWidth / zoom;
-  const viewH = fitHeight / zoom;
   const offsetChain = (points, width) => {
     if (!points || points.length < 2 || !(width > 0)) return [];
     const center = [state.width / 2, state.height / 2];
@@ -497,7 +498,7 @@ export function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {
     if (outer.length < 2 || inner.length < 2) return;
     addonMarkup += `<path d="${polyPath([...inner, ...outer.slice().reverse()], X, Y)}" fill="${profileColor}" stroke="${material.edge}" stroke-width=".8" ${dash}/>`;
   });
-  svg.setAttribute("viewBox", `${fitCenterX - viewW / 2} ${fitCenterY - viewH / 2} ${viewW} ${viewH}`);
+  setCanvasViewBox(svg, viewLeft, viewTop, fitWidth, fitHeight);
   svg.innerHTML = `
     <defs>
       <filter id="windowShadow" x="-30%" y="-30%" width="160%" height="170%">
@@ -545,9 +546,9 @@ export function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {
     return;
   }
 
-  updateCanvasZoomButtons();
-
-  $$("#windowCanvas .pane-hit").forEach((node) => {
+  if (svg.id !== "windowCanvas") return;
+  cancelCanvasPaneHold();
+  svg.querySelectorAll(".pane-hit").forEach((node) => {
     const choose = event => {
       if (paneLongPressUsed) { paneLongPressUsed = false; return; }
       const index = Number(node.dataset.pane);
@@ -567,13 +568,20 @@ export function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {
     };
     let holdTimer = 0;
     let holdAt = null;
-    const cancelHold = () => { clearTimeout(holdTimer); holdTimer = 0; holdAt = null; };
+    const cancelHold = () => {
+      clearTimeout(holdTimer);
+      holdTimer = 0;
+      holdAt = null;
+      if (activePaneHold === cancelHold) activePaneHold = undefined;
+    };
     node.addEventListener("pointerdown", event => {
       if (event.button !== 0 || state.selectedPane === null) return;
+      cancelCanvasPaneHold();
       const index = Number(node.dataset.pane);
       holdAt = {x: event.clientX, y: event.clientY};
+      activePaneHold = cancelHold;
       holdTimer = setTimeout(() => {
-        holdTimer = 0;
+        cancelHold();
         paneLongPressUsed = true;
         if (!multiSections.size) multiSections.add(state.selectedPane);
         if (multiSections.has(index)) multiSections.delete(index);
@@ -600,7 +608,7 @@ export function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {
     });
   });
 
-  $$("#windowCanvas .impost-hit").forEach((node) => {
+  svg.querySelectorAll(".impost-hit").forEach((node) => {
     node.addEventListener("keydown", (event) => {
       const vertical = node.dataset.orientation === "vertical";
       const backward = vertical ? event.key === "ArrowLeft" : event.key === "ArrowUp";
