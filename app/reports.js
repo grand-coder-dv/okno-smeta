@@ -2,7 +2,7 @@ import { GLASS, MATERIALS, OPENINGS, PRODUCT_TYPES, SHAPES, glassCatalog, progra
 import { overallSizeLabel } from "./drawing.js";
 import { showToast } from "./editor-ui.js";
 import { orderItemSketch } from "./order.js";
-import { escapeHtml, formatMoney, formatNumber, orderItems, pluralizeRu } from "./product.js";
+import { escapeHtml, finishDescription, formatMoney, formatNumber, getFinishes, orderItems, pluralizeRu } from "./product.js";
 import { setSettingsTab } from "./settings.js";
 export let openReportsDialog = () => {};
 export let reloadReportSettings = () => {};
@@ -78,7 +78,7 @@ export function installReports() {
       name:item.name||`Изделие ${index+1}`,
       desc:[PRODUCT_TYPES[c.productType||"window"]||"Окно",presentation.material||material?.label||c.material,presentation.shape||SHAPES[c.shape]||c.shape,overallSizeLabel(c)].join(" · "),
       profile:presentation.profile||material?.profiles.find(p=>p.id===c.profile)?.name||c.profile,
-      finish:presentation.finish||material?.finishes.find(f=>f.id===c.finish)?.name||c.finish,
+      finish:presentation.finish||finishDescription(getFinishes(c))||c.finish,
     };
   }
   function summary() {
