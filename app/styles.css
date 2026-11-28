@@ -1164,11 +1164,6 @@ h3 {
   background: #ffe5e1;
 }
 
-.summary-panel {
-  position: sticky;
-  top: 96px;
-}
-
 .price-block {
   margin-top: 22px;
   padding: 18px;
@@ -1260,11 +1255,33 @@ h3 {
   line-height: 1.45;
 }
 
+.editor-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+
+.editor-history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .order-save-button {
-  margin-top: 10px;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  padding: 0;
   color: white;
   background: #16735b;
   border-color: #16735b;
+}
+
+.order-save-button svg {
+  width: 22px;
+  height: 22px;
 }
 
 .order-save-button:hover {
@@ -2234,7 +2251,6 @@ tbody tr:hover {
   }
 
   .summary-panel {
-    position: static;
     grid-column: 1 / -1;
     display: grid;
     grid-template-columns: 1.2fr 1fr 1.5fr;
@@ -2246,8 +2262,7 @@ tbody tr:hover {
     display: none;
   }
 
-  .summary-panel .estimate-note,
-  .summary-panel #saveOrderItem {
+  .summary-panel .estimate-note {
     grid-column: 1 / -1;
   }
 
@@ -2607,6 +2622,7 @@ tbody tr:hover {
   .canvas-note,
   .canvas-zoom,
   .canvas-edit-tools,
+  .order-save-button,
   .pane-inspector,
   .order-panel,
   .impost-inspector,
@@ -2635,7 +2651,6 @@ tbody tr:hover {
   }
 
   .summary-panel {
-    position: static;
     display: grid;
     grid-template-columns: 1fr 1fr 1.4fr;
   }
@@ -2815,18 +2830,18 @@ tbody tr:hover {
 }
 
 @media screen {
-  #editorHistory .button:enabled {
+  .editor-history-actions .button:enabled {
     background: #23364b;
     border-color: #23364b;
     color: #fff;
     opacity: 1;
     cursor: pointer;
   }
-  #editorHistory .button:enabled:hover {
+  .editor-history-actions .button:enabled:hover {
     background: #304961;
     border-color: #304961;
   }
-  #editorHistory .button:disabled {
+  .editor-history-actions .button:disabled {
     background: #e9edf3;
     border-color: #dce3eb;
     color: #68778a;
