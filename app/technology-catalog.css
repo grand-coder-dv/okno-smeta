@@ -21,6 +21,18 @@
 #settingsTechnologyPane .catalog-profile-card[data-profile-id] .catalog-name-field {
   grid-column: 1 / -1;
 }
+#settingsTechnologyPane .catalog-color-row {
+  grid-template-columns: 44px minmax(0, 1fr) repeat(2, minmax(90px, 0.6fr)) auto;
+}
+@media (max-width: 640px) {
+  #settingsTechnologyPane .catalog-color-row {
+    grid-template-columns: 44px minmax(0, 1fr) minmax(0, 1fr);
+  }
+  #settingsTechnologyPane .catalog-color-name { grid-column: 2 / -1; }
+  #settingsTechnologyPane .catalog-color-factor { grid-column: auto; }
+  #settingsTechnologyPane .catalog-color-factor:has([data-finish-field="factor"]) { grid-column: 1 / 3; }
+  #settingsTechnologyPane .catalog-color-row .catalog-remove-button { grid-column: 1 / -1; }
+}
 #settingsTechnologyPane :is(.catalog-field, .catalog-color-picker) {
   display: grid;
   gap: 5px;
