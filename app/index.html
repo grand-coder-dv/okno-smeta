@@ -13,11 +13,25 @@
       type="image/svg+xml"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2315253d'/%3E%3Cpath d='M14 15h36v34H14z' fill='%23d9eff8' stroke='%23fff' stroke-width='5'/%3E%3Cpath d='M32 16v32M15 32h34' stroke='%23f28a2e' stroke-width='4'/%3E%3C/svg%3E"
     />
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=4" />
 <link rel="stylesheet" href="./technology-catalog.css?v=3" />
 <link rel="stylesheet" href="./glass-profile-style.css" />
 <link rel="stylesheet" href="./proposal-report.css" />
       <style>
+      @media (max-width: 900px) {
+        .controls-panel .form-grid.two {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .controls-panel .form-grid.two.stack-on-phone {
+          grid-template-columns: 1fr;
+        }
+        .controls-panel .form-grid.two > .field,
+        .controls-panel .form-grid.two select,
+        .controls-panel .form-grid.two input {
+          min-width: 0;
+          max-width: 100%;
+        }
+      }
       #technologyCatalogEditor { max-height: none; overflow: visible; }
       #glassCatalogEditor .glass-catalog-card { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 145px), 1fr)); gap: 10px; align-items: end; }
       #glassCatalogEditor .catalog-remove-button { justify-self: start; }
@@ -146,7 +160,7 @@
 
           <fieldset class="control-group">
             <legend>Фурнитура изделия</legend>
-            <div class="form-grid two">
+            <div class="form-grid two stack-on-phone">
               <label class="field">
                 <span>Комплект</span>
                 <select id="hardwareSet"></select>
