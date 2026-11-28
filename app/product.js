@@ -51,6 +51,10 @@ export function selectedSections() {
   const indices = multiSections.size ? [...multiSections] : [state.selectedPane];
   return indices.map(i => entries[i]).filter(entry => entry && !entry.pane.split);
 }
+
+export function sectionOpeningPanes(sections = selectedSections()) {
+  return [...new Set(sections.map(({ pane, sashOwner }) => sashOwner?.pane || pane))];
+}
 export let orderItems = [];
 export let editingOrderItemId = null;
 export let orderItemSequence = 0;
@@ -244,6 +248,26 @@ export function validateCurrentProduct() {
     }
   }
   return "";
+}
+
+export function applyPaneChanges(changes, { preview = false } = {}) {
+  const previous = changes.map(({ pane }) => ({ ...pane }));
+  let accepted = false;
+  try {
+    changes.forEach(({ pane, values }) => Object.assign(pane, values));
+    const issue = validateCurrentProduct();
+    accepted = !preview && !issue;
+    return issue;
+  } finally {
+    if (!accepted) {
+      changes.forEach(({ pane, values }, index) => {
+        for (const key of Object.keys(values)) {
+          if (Object.hasOwn(previous[index], key)) pane[key] = previous[index][key];
+          else delete pane[key];
+        }
+      });
+    }
+  }
 }
 
 export function restoreProductState(configuration) {
