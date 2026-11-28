@@ -718,10 +718,8 @@ h3 {
 
 .canvas-wrap {
   position: relative;
-  min-height: 470px;
+  aspect-ratio: 4 / 5;
   margin-top: 17px;
-  display: grid;
-  place-items: center;
   overflow: hidden;
   touch-action: none;
   cursor: grab;
@@ -734,6 +732,23 @@ h3 {
   border-radius: 14px;
 }
 
+.canvas-edit-tools {
+  position: absolute;
+  z-index: 3;
+  top: 12px;
+  right: 62px;
+  left: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.canvas-edit-tools[hidden],
+.canvas-edit-btn[hidden] {
+  display: none;
+}
+
 .canvas-zoom {
   position: absolute;
   z-index: 2;
@@ -744,7 +759,8 @@ h3 {
   gap: 6px;
 }
 
-.canvas-zoom-btn {
+.canvas-zoom-btn,
+.canvas-edit-btn {
   display: grid;
   place-items: center;
   width: 38px;
@@ -759,12 +775,17 @@ h3 {
   transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
 }
 
+.canvas-edit-btn {
+  pointer-events: auto;
+}
+
 .canvas-zoom-btn svg {
   width: 20px;
   height: 20px;
 }
 
-.canvas-zoom-btn:hover:not(:disabled) {
+.canvas-zoom-btn:hover:not(:disabled),
+.canvas-edit-btn:hover {
   color: var(--accent);
   border-color: rgba(242, 138, 46, 0.35);
   background: #fff;
@@ -788,10 +809,11 @@ h3 {
 }
 
 #windowCanvas {
-  position: relative;
+  position: absolute;
+  inset: 0;
   z-index: 1;
   width: 100%;
-  max-height: 480px;
+  height: 100%;
   overflow: visible;
   touch-action: none;
   user-select: none;
@@ -1036,60 +1058,6 @@ h3 {
 .pane-inspector .button {
   min-height: 40px;
   font-size: 0.76rem;
-}
-
-.inner-impost-actions {
-  grid-column: 1 / -1;
-  padding-top: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-top: 1px solid var(--line);
-}
-
-.inner-impost-actions > div:first-child {
-  display: grid;
-  gap: 3px;
-}
-
-.inner-impost-actions > div:first-child > span {
-  color: #46546a;
-  font-size: 0.76rem;
-  font-weight: 760;
-}
-
-.inner-impost-actions small {
-  color: var(--muted);
-  font-size: 0.66rem;
-}
-
-.inner-impost-buttons {
-  display: flex;
-  gap: 7px;
-}
-
-.inner-impost-buttons .button:disabled {
-  opacity: 0.46;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.mini-impost {
-  width: 16px;
-  height: 16px;
-  display: inline-block;
-  border: 1px solid #8793a3;
-  background: #cde6ef;
-  border-radius: 2px;
-}
-
-.mini-impost.vertical {
-  background: linear-gradient(90deg, #cde6ef 42%, var(--navy) 42%, var(--navy) 58%, #cde6ef 58%);
-}
-
-.mini-impost.horizontal {
-  background: linear-gradient(0deg, #cde6ef 42%, var(--navy) 42%, var(--navy) 58%, #cde6ef 58%);
 }
 
 .impost-inspector {
@@ -2359,14 +2327,6 @@ tbody tr:hover {
     grid-column: 2 / -1;
   }
 
-  .inner-impost-actions {
-    grid-column: 1 / -1;
-  }
-
-  .inner-impost-buttons .button {
-    grid-column: auto;
-  }
-
   .impost-inspector {
     grid-template-columns: 135px 1fr;
   }
@@ -2408,10 +2368,6 @@ tbody tr:hover {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 0 18px;
-  }
-
-  .canvas-wrap {
-    min-height: 390px;
   }
 
   .order-item {
@@ -2543,7 +2499,6 @@ tbody tr:hover {
   }
 
   .canvas-wrap {
-    min-height: 315px;
     margin-right: -7px;
     margin-left: -7px;
   }
@@ -2559,19 +2514,6 @@ tbody tr:hover {
 
   .pane-inspector .button {
     grid-column: auto;
-  }
-
-  .inner-impost-actions {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .inner-impost-buttons {
-    width: 100%;
-  }
-
-  .inner-impost-buttons .button {
-    flex: 1;
   }
 
   .impost-inspector {
@@ -2683,9 +2625,7 @@ tbody tr:hover {
 }
 
 .pane-inspector > .field,
-.pane-inspector > .button,
-.inner-impost-actions,
-.inner-impost-buttons {
+.pane-inspector > .button {
   min-width: 0;
 }
 
@@ -2707,41 +2647,13 @@ tbody tr:hover {
   white-space: normal;
 }
 
-.inner-impost-actions {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 8px;
-}
-
-.inner-impost-buttons {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 7px;
-  width: 100%;
-}
-
-.inner-impost-buttons .button {
-  grid-column: auto;
-  min-width: 0;
-  width: 100%;
-  padding-inline: 7px;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-
-.inner-impost-buttons .button[hidden] {
-  display: none;
-}
-
 @container (max-width: 520px) {
   .pane-inspector {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .pane-inspector > .selected-pane-label,
-  .pane-inspector > #applyGlassToAll,
-  .inner-impost-actions {
+  .pane-inspector > #applyGlassToAll {
     grid-column: 1;
   }
 }
@@ -2761,6 +2673,7 @@ tbody tr:hover {
   .controls-panel,
   .canvas-note,
   .canvas-zoom,
+  .canvas-edit-tools,
   .pane-inspector,
   .order-panel,
   .impost-inspector,
@@ -2806,7 +2719,8 @@ tbody tr:hover {
   }
 
   .canvas-wrap {
-    min-height: 360px;
+    aspect-ratio: auto;
+    height: 360px;
   }
 
   .specification-panel {
