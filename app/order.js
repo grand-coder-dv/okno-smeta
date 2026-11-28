@@ -165,7 +165,8 @@ function projectTotals(project) {
 
 export function renderProjectToolbar() {
   const currentDirty = currentProductIsDirty();
-  $("#currentProjectName").textContent = activeProjectName || "Новый заказ";
+  const projectName = $("#currentProjectName");
+  if (!projectName.querySelector("input")) projectName.textContent = activeProjectName || "Новый заказ";
   const status = $("#projectSaveStatus");
   if (activeProjectId && !projectDirty && !currentDirty) {
     status.textContent = "Сохранён";
@@ -214,24 +215,61 @@ export function hasUnsavedProjectWork() {
   return projectDirty || currentProductIsDirty();
 }
 
-function askOrderName(current) {
-  const entered = window.prompt("Название заказа:", current || "Новый заказ");
-  if (entered === null) return null;
-  const name = entered.trim();
-  if (!name || name.length > 80) {
-    showToast("Название заказа должно содержать от 1 до 80 символов.");
-    return null;
-  }
-  return name;
+export function editNameInPlace(element, { value, maxLength, label, invalidMessage, commit }) {
+  if (!element || element.querySelector("input")) return;
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "inline-name-input";
+  input.maxLength = maxLength;
+  input.value = value;
+  input.autocomplete = "off";
+  input.setAttribute("aria-label", label);
+  element.replaceChildren(input);
+  input.focus();
+  input.select();
+  let settled = false;
+  const finish = (save) => {
+    if (settled) return;
+    const next = input.value.trim();
+    if (!save || next === value) {
+      settled = true;
+      if (element.isConnected) element.textContent = value;
+      return;
+    }
+    if (!next || next.length > maxLength) {
+      showToast(invalidMessage);
+      setTimeout(() => input.focus(), 0);
+      return;
+    }
+    settled = true;
+    element.textContent = next;
+    commit(next);
+  };
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      finish(true);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      finish(false);
+    }
+  });
+  input.addEventListener("blur", () => finish(true));
 }
 
 export function renameCurrentOrder() {
-  const name = askOrderName(activeProjectName);
-  if (!name || name === activeProjectName) return;
-  setActiveProjectName(name);
-  setProjectDirty(true);
-  renderProjectToolbar();
-  showToast("Название заказа изменено. Сохраните заказ, чтобы записать его.");
+  editNameInPlace($("#currentProjectName"), {
+    value: activeProjectName || "Новый заказ",
+    maxLength: 80,
+    label: "Название заказа",
+    invalidMessage: "Название заказа должно содержать от 1 до 80 символов.",
+    commit(name) {
+      setActiveProjectName(name);
+      setProjectDirty(true);
+      renderProjectToolbar();
+      showToast("Название заказа изменено. Сохраните заказ, чтобы записать его.");
+    },
+  });
 }
 
 export async function renameStoredOrder(projectId) {
@@ -239,8 +277,18 @@ export async function renameStoredOrder(projectId) {
   setProjects(readStoredProjects());
   const project = projects.find(item => item.id === projectId);
   if (!project) return;
-  const name = askOrderName(project.name);
-  if (!name || name === project.name) return;
+  const label = document.querySelector(`[data-project-id="${CSS.escape(projectId)}"] .project-card-title strong`);
+  if (!label) return;
+  editNameInPlace(label, {
+    value: project.name,
+    maxLength: 80,
+    label: "Название заказа",
+    invalidMessage: "Название заказа должно содержать от 1 до 80 символов.",
+    commit: (name) => storeRenamedOrder(projectId, project, name),
+  });
+}
+
+async function storeRenamedOrder(projectId, project, name) {
   const baseline = JSON.stringify(project);
   const now = new Date().toISOString();
   const renamed = { ...project, name, updatedAt: now, revision: createProjectId() };
@@ -312,14 +360,12 @@ export function requestProjectSave() {
     return;
   }
   if (!confirmProjectSaveWithoutCurrentProduct()) return;
-  if (activeProjectId) {
-    saveProjectRecord(activeProjectName);
+  const name = (activeProjectName || "Новый заказ").trim();
+  if (!name || name.length > 80) {
+    showToast("Название заказа должно содержать от 1 до 80 символов.");
     return;
   }
-  $("#projectNameInput").value = activeProjectName || "";
-  $("#projectNameError").hidden = true;
-  $("#projectNameDialog").showModal();
-  $("#projectNameInput").focus();
+  saveProjectRecord(name);
 }
 
 export function openProject(projectId) {
@@ -457,18 +503,23 @@ export function editOrderItem(itemId) {
 export function renameOrderItem(itemId) {
   const item = orderItems.find(candidate => candidate.id === itemId);
   if (!item) return;
-  const entered = window.prompt("Название изделия:", item.name);
-  if (entered === null) return;
-  const name = entered.trim();
-  if (!name || name.length > 100) return showToast("Название должно содержать от 1 до 100 символов.");
-  if (name === item.name) return;
-  item.name = name;
-  if(editingOrderItemId===item.id)setDraftProductName(name);
-  item.updatedAt = new Date().toISOString();
-  setProjectDirty(true);
-  renderOrder();
-  renderProjectToolbar();
-  showToast("Название изделия изменено");
+  const label = document.querySelector(`[data-order-item-id="${CSS.escape(itemId)}"] .order-item-heading strong`);
+  if (!label) return;
+  editNameInPlace(label, {
+    value: item.name,
+    maxLength: 100,
+    label: "Название изделия",
+    invalidMessage: "Название должно содержать от 1 до 100 символов.",
+    commit(name) {
+      item.name = name;
+      if (editingOrderItemId === item.id) setDraftProductName(name);
+      item.updatedAt = new Date().toISOString();
+      setProjectDirty(true);
+      renderOrder();
+      renderProjectToolbar();
+      showToast("Название изделия изменено");
+    },
+  });
 }
 
 export function deleteOrderItem(itemId) {
