@@ -438,7 +438,7 @@ function editImpostEndpoint() {
 }
 export function refreshProfileEdit() {
   let button=$("#editProfileGeometry");
-  const host=$("#editorHistory");
+  const host=$("#editorHistory .editor-history-actions");
   if(!button){
     button=document.createElement("button"); button.id="editProfileGeometry"; button.type="button";button.className="button ghost";
     button.innerHTML='<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20l4-1 12-12-3-3L5 16zM14 7l3 3"/></svg> Изменить';
