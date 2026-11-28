@@ -1,0 +1,17 @@
+# GitBook-страницы содержат теги {% hint %}, {% stepper %} и {% tabs %}.
+# Jekyll на GitHub Pages принимает их за свои команды и останавливает публикацию.
+exclude:
+  - docs
+  - graphify-out
+  - tools
+  - .cursor
+  - .sass-cache
+  - .jekyll-cache
+  - gemfiles
+  - Gemfile
+  - Gemfile.lock
+  - node_modules
+  - vendor/bundle
+  - vendor/cache
+  - vendor/gems
+  - vendor/ruby
