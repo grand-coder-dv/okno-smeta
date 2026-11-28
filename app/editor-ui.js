@@ -249,6 +249,7 @@ function renderInspector() {
 function renderSummary(calculation) {
   const totalArea = calculation.area * state.quantity;
   $("#totalPrice").textContent = formatMoney(calculation.total);
+  $("#editorTotalPrice").textContent = formatMoney(calculation.total);
   $("#unitPrice").textContent = `${formatMoney(calculation.unitPrice)} за одно окно`;
   $("#summaryArea").textContent = `${formatNumber(totalArea)} м²`;
   $("#summarySashes").textContent = `${calculation.sashCount * state.quantity}`;
@@ -416,6 +417,7 @@ export function renderAll() {
     $("#currentEstimateStatus").textContent = "Нет совместимых стеклопакетов";
     $("#currentEstimateHint").textContent = "Назначьте стеклопакет профильной системе и типу изделия во вкладке «Стеклопакеты».";
     $("#totalPrice").textContent = "—";
+    $("#editorTotalPrice").textContent = "—";
     $("#unitPrice").textContent = "Расчёт недоступен";
   }
   updateActiveControls();
