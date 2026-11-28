@@ -80,7 +80,7 @@
       <section class="project-toolbar" aria-label="Управление заказом">
         <div class="project-current">
           <span>Текущий заказ</span>
-          <strong id="currentProjectName">Новый заказ</strong>
+          <strong id="currentProjectName" title="Изменить название заказа">Новый заказ</strong>
           <button class="order-name-edit" id="renameCurrentOrder" type="button" title="Переименовать заказ" aria-label="Переименовать текущий заказ">✎</button>
           <small id="projectSaveStatus">Не сохранён</small>
         </div>
@@ -234,7 +234,7 @@
           <div class="editor-heading">
             <div>
               <span class="eyebrow">Графический редактор</span>
-              <h2><span id="editorProductName">Изделие 1</span><button type="button" id="renameEditorProduct" class="order-rename" aria-label="Переименовать изделие" title="Переименовать изделие">✎</button></h2>
+              <h2><span id="editorProductName" title="Изменить название изделия">Изделие 1</span><button type="button" id="renameEditorProduct" class="order-rename" aria-label="Переименовать изделие" title="Переименовать изделие">✎</button></h2>
             </div>
             <div class="editor-meta">
               <span id="editorDimensions">1400 × 1300 мм</span>
@@ -283,10 +283,13 @@
               </button>
             </div>
             <svg id="windowCanvas" viewBox="0 0 640 500" role="img" aria-label="Схема окна"></svg>
-            <select class="canvas-view-side" id="canvasViewSide" aria-label="Вид изделия">
-              <option value="interior">Вид из помещения</option>
-              <option value="exterior">Вид с улицы</option>
-            </select>
+            <div class="canvas-view-menu" id="canvasViewSide">
+              <button type="button" class="canvas-view-side" aria-haspopup="listbox" aria-expanded="false" aria-controls="canvasViewSideList">Вид из помещения</button>
+              <ul class="canvas-view-list" id="canvasViewSideList" role="listbox" aria-label="Вид изделия" hidden>
+                <li role="option" tabindex="-1" data-value="interior" aria-selected="true">Вид из помещения</li>
+                <li role="option" tabindex="-1" data-value="exterior" aria-selected="false">Вид с улицы</li>
+              </ul>
+            </div>
             <div class="equal-glass-tools">
               <button class="equal-glass-btn" id="equalGlassWidth" type="button" title="Равная ширина" aria-label="Равная ширина" hidden>
                 <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -463,25 +466,6 @@
 
       <section class="print-order" id="printOrder" aria-label="Печатные отчёты заказа"></section>
     </main>
-
-    <dialog id="projectNameDialog" class="project-dialog project-name-dialog">
-      <form id="projectNameForm">
-        <div class="dialog-header">
-          <div><span class="eyebrow">Сохранение заказа</span><h2>Название заказа</h2></div>
-          <button class="icon-button" id="closeProjectNameDialog" aria-label="Закрыть" type="button">×</button>
-        </div>
-        <p class="dialog-intro">Укажите понятное название, чтобы позже быстро найти этот заказ.</p>
-        <label class="field">
-          <span>Название заказа</span>
-          <input id="projectNameInput" maxlength="80" autocomplete="off" placeholder="Например, Окна для кухни" required />
-        </label>
-        <p class="project-dialog-error" id="projectNameError" role="alert" hidden></p>
-        <div class="dialog-actions">
-          <button class="button ghost" id="cancelProjectName" type="button">Отмена</button>
-          <button class="button primary" type="submit">Сохранить заказ</button>
-        </div>
-      </form>
-    </dialog>
 
     <dialog id="reportsDialog" class="reports-dialog">
       <div class="dialog-header">
