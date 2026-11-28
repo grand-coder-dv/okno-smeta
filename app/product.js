@@ -1,3 +1,4 @@
+import { resolveParts } from "./profile-parts.js";
 // Текущее изделие: состояние, размеры, форма, проверки и формат чисел.
 import { MATERIALS, PRODUCT_TYPES, SHAPES, availableProfiles, cloneData, profileTypeSettings, readStoredProjects, technology } from "./catalog.js";
 import { activeProfileEdge, customProfileArcs, fittedGlass, hasSlantedImposts, setActiveProfileEdge } from "./drawing.js";
@@ -118,7 +119,14 @@ export function createCatalogId(prefix) {
 export function getProfile() {
   const profiles = MATERIALS[state.material].profiles;
   const profile = profiles.find(item => item.id === state.profile) || availableProfiles()[0] || profiles[0];
-  return { ...profile, ...profileTypeSettings(profile) };
+  const result = { ...profile, ...profileTypeSettings(profile) };
+  result.parts = resolveParts(MATERIALS, state, profile);
+  for (const [role, part] of Object.entries(result.parts)) {
+    result[role + "Width"] = part.width;
+    const biteField = { frame: "glassBiteFrame", sash: "glassBiteSash", impost: "glassBiteImpost" }[role];
+    if (biteField) result[biteField] = part.bite;
+  }
+  return result;
 }
 
 export function openingAllowed(opening) {
@@ -154,6 +162,7 @@ export function getTechnology() {
     extender: clamp(profile.extenderWidth ?? 40, 10, 250),
     connector: clamp(profile.connectorWidth ?? 20, 10, 250),
     corner: clamp(profile.cornerWidth ?? profile.frameWidth ?? fallback.frame, 10, 250),
+    shtulpBite: profile.parts.shtulp?.bite ?? profile.glassBiteImpost ?? 14,
     bite: Object.fromEntries(GLASS_BITE_FIELDS.map(([field, part]) =>
       [part, clamp(profile[field] ?? profile.glassBite ?? 14, 0, 100)])),
   };
@@ -165,7 +174,10 @@ export function createOrderItemId() {
 }
 
 export function snapshotCurrentState() {
-  return cloneData({ ...state, selectedImpost: null });
+  const selected = Object.entries(getProfile().parts);
+  const snapshot = cloneData({ ...state, selectedImpost: null });
+  if (selected.length) snapshot.partChoices = Object.fromEntries(selected.map(([role, part]) => [role, part.id]));
+  return snapshot;
 }
 
 export function comparableCurrentState(source = state) {
