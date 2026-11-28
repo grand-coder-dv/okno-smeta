@@ -6,7 +6,7 @@ import { activeProfileEdge, commitOverallDimension, customProfileArcs, editPolyg
 import { buildSpecification, hardwareFitsSize, hardwareRangeProblems, sashProfileSize } from "./estimate.js";
 import { adjacentBar, circleSashesBlocked, constructionModel, createImpostId, ensurePanes, getPanePhysicalRect, getSelectedImpostRecord, glassGeometry, glassSizeLabel, makeEvenImposts, nestedImpostLimits, removeRootImpost, rootImpostLimits, sectionLayout, sectionNumber, sectionPanes, updateMaterialSelects } from "./geometry.js";
 import { bindGlassSettings, populateGlassSettings } from "./glass-settings.js";
-import { deleteOrderItem, deleteProject, editOrderItem, hasUnsavedProjectWork, openProject, renameCurrentOrder, renameOrderItem, renameStoredOrder, renderOrder, renderProjectToolbar, renderProjectsList, requestProjectSave, saveCurrentOrderItem, saveProjectRecord, startNewProject } from "./order.js";
+import { deleteOrderItem, deleteProject, editNameInPlace, editOrderItem, hasUnsavedProjectWork, openProject, renameCurrentOrder, renameOrderItem, renameStoredOrder, renderOrder, renderProjectToolbar, renderProjectsList, requestProjectSave, saveCurrentOrderItem, startNewProject } from "./order.js";
 import { $, $$, applyPaneChanges, catalogDraft, clamp, draftProductName, editingOrderItemId, escapeHtml, formatMoney, formatNumber, getProfile, getTechnology, impostPositionOrigin, isPreliminaryShape, multiSections, normalizeUnsupportedOpenings, openingAllowed, orderItems, projectDirty, projects, resetCurrentProduct, sectionOpeningPanes, selectedSections, setCatalogDraft, setCatalogMaterial, setDraftProductName, setProjectDirty, setProjects, setSharedAxis, setWindowShapeMode, sharedAxis, state, validateCurrentProduct } from "./product.js";
 import { openReportsDialog } from "./reports.js";
 import { handleCatalogAction, handleHardwareAction, populateCoefficientForm, populateTechnologyForm, readCatalogDraftFromEditor, readCoefficientForm, readTechnologyForm, resetCoefficientForm, renderHardwareCatalog, renderTechnologyCatalog, saveHardwareCatalog, setSettingsTab } from "./settings.js";
@@ -340,13 +340,24 @@ function renderHardwareChoices() {
 const afterRenderHooks = [];
 export function onAfterRender(hook) { afterRenderHooks.push(hook); }
 
+function syncCanvasViewSide() {
+  const menu = $("#canvasViewSide");
+  const value = state.viewSide === "exterior" ? "exterior" : "interior";
+  const labels = { interior: "Вид из помещения", exterior: "Вид с улицы" };
+  menu.querySelector("button").textContent = labels[value];
+  menu.querySelectorAll("[role='option']").forEach((option) => {
+    option.setAttribute("aria-selected", String(option.dataset.value === value));
+  });
+}
+
 export function renderAll() {
   ensurePanes();
   renderHardwareChoices();
-  $("#editorProductName").textContent=draftProductName;
+  const productName = $("#editorProductName");
+  if (!productName.querySelector("input")) productName.textContent = draftProductName;
   syncGlassChoices();
   const calculation = buildSpecification();
-  $("#canvasViewSide").value = state.viewSide === "exterior" ? "exterior" : "interior";
+  syncCanvasViewSide();
   renderCanvas();
   syncOverallInputs();
   refreshProfileEdit();
@@ -484,9 +495,46 @@ export function bindEvents() {
       renderAll();
     });
   }
-  $("#canvasViewSide").addEventListener("change", event => {
-    state.viewSide = event.target.value;
+  const viewMenu = $("#canvasViewSide");
+  const viewButton = viewMenu.querySelector("button");
+  const viewList = viewMenu.querySelector("[role='listbox']");
+  const closeViewList = () => {
+    viewList.hidden = true;
+    viewButton.setAttribute("aria-expanded", "false");
+  };
+  viewButton.addEventListener("click", () => {
+    const open = viewList.hidden;
+    viewList.hidden = !open;
+    viewButton.setAttribute("aria-expanded", String(open));
+    if (open) viewList.querySelector("[aria-selected='true']")?.focus();
+  });
+  viewList.addEventListener("click", (event) => {
+    const option = event.target.closest("[role='option']");
+    if (!option) return;
+    state.viewSide = option.dataset.value === "exterior" ? "exterior" : "interior";
+    closeViewList();
     renderAll();
+  });
+  viewMenu.addEventListener("keydown", (event) => {
+    const options = [...viewList.querySelectorAll("[role='option']")];
+    if (event.key === "Escape") {
+      closeViewList();
+      viewButton.focus();
+      return;
+    }
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    event.preventDefault();
+    if (viewList.hidden) {
+      viewList.hidden = false;
+      viewButton.setAttribute("aria-expanded", "true");
+    }
+    const current = options.indexOf(document.activeElement);
+    const start = current < 0 ? (event.key === "ArrowDown" ? -1 : 0) : current;
+    const step = event.key === "ArrowDown" ? 1 : -1;
+    options[(start + step + options.length) % options.length].focus();
+  });
+  document.addEventListener("click", (event) => {
+    if (!viewMenu.contains(event.target)) closeViewList();
   });
   $("#hardwareSet").addEventListener("change", (event) => {
     state.hardwareId = event.target.value;
@@ -685,28 +733,51 @@ export function bindEvents() {
     openReportsDialog();
   });
   $("#saveOrderItem").addEventListener("click", saveCurrentOrderItem);
-  $("#renameEditorProduct").addEventListener("click",()=>{
-    const entered=window.prompt("Название изделия:",draftProductName);
-    if(entered===null)return;
-    const name=entered.trim();
-    if(!name||name.length>100)return showToast("Название должно содержать от 1 до 100 символов.");
-    setDraftProductName(name);
-    $("#editorProductName").textContent=name;
-    if(editingOrderItemId){
-      const item=orderItems.find(candidate=>candidate.id===editingOrderItemId);
-      if(item){item.name=name;item.updatedAt=new Date().toISOString();setProjectDirty(true);renderOrder();renderProjectToolbar();}
-    }
+  const renameDraftProduct = () => {
+    editNameInPlace($("#editorProductName"), {
+      value: draftProductName,
+      maxLength: 100,
+      label: "Название изделия",
+      invalidMessage: "Название должно содержать от 1 до 100 символов.",
+      commit(name) {
+        setDraftProductName(name);
+        $("#editorProductName").textContent = name;
+        if (editingOrderItemId) {
+          const item = orderItems.find(candidate => candidate.id === editingOrderItemId);
+          if (item) {
+            item.name = name;
+            item.updatedAt = new Date().toISOString();
+            setProjectDirty(true);
+            renderOrder();
+            renderProjectToolbar();
+          }
+        }
+      },
+    });
+  };
+  $("#renameEditorProduct").addEventListener("click", renameDraftProduct);
+  $("#editorProductName").addEventListener("click", (event) => {
+    if (!event.target.closest("input")) renameDraftProduct();
   });
   $("#orderItems").addEventListener("click", (event) => {
-    const button = event.target.closest("[data-order-action]");
     const item = event.target.closest("[data-order-item-id]");
-    if (!button || !item) return;
+    if (!item || event.target.closest("input")) return;
+    const title = event.target.closest(".order-item-heading strong");
+    if (title) {
+      renameOrderItem(item.dataset.orderItemId);
+      return;
+    }
+    const button = event.target.closest("[data-order-action]");
+    if (!button) return;
     if (button.dataset.orderAction === "edit") editOrderItem(item.dataset.orderItemId);
     if (button.dataset.orderAction === "rename") renameOrderItem(item.dataset.orderItemId);
     if (button.dataset.orderAction === "delete") deleteOrderItem(item.dataset.orderItemId);
   });
   $("#newProject").addEventListener("click", startNewProject);
   $("#renameCurrentOrder").addEventListener("click", renameCurrentOrder);
+  $("#currentProjectName").addEventListener("click", (event) => {
+    if (!event.target.closest("input")) renameCurrentOrder();
+  });
   $("#saveProject").addEventListener("click", requestProjectSave);
   window.addEventListener("storage", event => {
     if (event.key !== APP_DATABASE_KEY && event.key !== null) return;
@@ -720,19 +791,6 @@ export function bindEvents() {
     renderProjectsList();
     $("#projectsDialog").showModal();
   });
-  $("#projectNameForm").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const name = $("#projectNameInput").value.trim();
-    if (!name) {
-      $("#projectNameError").textContent = "Введите название заказа";
-      $("#projectNameError").hidden = false;
-      return;
-    }
-    if (await saveProjectRecord(name)) $("#projectNameDialog").close();
-  });
-  ["#cancelProjectName", "#closeProjectNameDialog"].forEach((selector) => {
-    $(selector).addEventListener("click", () => $("#projectNameDialog").close());
-  });
   $("#closeProjectsDialog").addEventListener("click", () => $("#projectsDialog").close());
   $("#projectsList").addEventListener("click", (event) => {
     const button = event.target.closest("[data-project-action]");
@@ -742,10 +800,8 @@ export function bindEvents() {
     if (button.dataset.projectAction === "rename") renameStoredOrder(card.dataset.projectId);
     if (button.dataset.projectAction === "delete") deleteProject(card.dataset.projectId);
   });
-  ["#projectNameDialog", "#projectsDialog"].forEach((selector) => {
-    $(selector).addEventListener("click", (event) => {
-      if (event.target === $(selector)) $(selector).close();
-    });
+  $("#projectsDialog").addEventListener("click", (event) => {
+    if (event.target === $("#projectsDialog")) $("#projectsDialog").close();
   });
 
   $("#newCalculation").addEventListener("click", () => {
