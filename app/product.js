@@ -21,6 +21,36 @@ export function defaultViewSide(productType = "window") {
   return productType === "entranceDoor" ? "exterior" : "interior";
 }
 
+function parseNumberedProductName(name) {
+  const trimmed = String(name || "").trim();
+  const match = trimmed.match(/^(.*?)(\d+)$/u);
+  if (!match) return null;
+  const number = Number(match[2]);
+  if (!Number.isFinite(number)) return null;
+  return { prefix: match[1], number };
+}
+
+export function nextProductName(name, items = orderItems) {
+  const parsed = parseNumberedProductName(name);
+  if (!parsed) return null;
+  let nextNumber = parsed.number;
+  for (const item of items) {
+    const itemParsed = parseNumberedProductName(item?.name);
+    if (itemParsed?.prefix === parsed.prefix && Number.isFinite(itemParsed.number)) {
+      nextNumber = Math.max(nextNumber, itemParsed.number);
+    }
+  }
+  return `${parsed.prefix}${nextNumber + 1}`;
+}
+
+function suggestDraftProductName({ savedName, currentDraft, items, fallbackIndex, preferDraft = false }) {
+  const reference = savedName
+    || (preferDraft ? currentDraft : null)
+    || items[items.length - 1]?.name
+    || currentDraft;
+  return nextProductName(reference, items) || `Изделие ${fallbackIndex}`;
+}
+
 function createDefaultState() {
   return {
     material: "pvc",
@@ -320,9 +350,15 @@ export function restoreProductState(configuration) {
   renderAll();
 }
 
-export function resetCurrentProduct(previous = null) {
+export function resetCurrentProduct(previous = null, savedName = null, { preferDraft = false } = {}) {
   editingOrderItemId = null;
-  draftProductName = `Изделие ${orderItemSequence + 1}`;
+  draftProductName = suggestDraftProductName({
+    savedName,
+    currentDraft: draftProductName,
+    items: orderItems,
+    fallbackIndex: orderItemSequence + 1,
+    preferDraft,
+  });
   state = createDefaultState();
   if (previous) {
     for (const key of ["material", "profile", "finish", "exteriorFinish", "productType", "shape", "width", "height", "defaultGlass", "hardwareId", "handleId"]) {
