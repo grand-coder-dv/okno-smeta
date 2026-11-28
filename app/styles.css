@@ -304,7 +304,6 @@ summary:focus-visible,
 
 .panel-title-row,
 .editor-heading,
-.spec-header,
 .dialog-header {
   display: flex;
   align-items: flex-start;
@@ -1620,40 +1619,6 @@ h3 {
   font-size: 0.72rem;
 }
 
-.specification-panel {
-  margin-top: 18px;
-  padding: 24px;
-}
-
-.spec-header {
-  align-items: center;
-}
-
-.spec-total {
-  padding-left: 22px;
-  display: grid;
-  text-align: right;
-  border-left: 1px solid var(--line);
-}
-
-.spec-total span {
-  color: var(--muted);
-  font-size: 0.7rem;
-}
-
-.spec-total strong {
-  margin-top: 2px;
-  color: var(--navy);
-  font-size: 1.35rem;
-}
-
-.table-wrap {
-  margin-top: 19px;
-  overflow-x: auto;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-}
-
 table {
   width: 100%;
   min-width: 850px;
@@ -1699,28 +1664,6 @@ tbody tr:last-child td {
 
 tbody tr:hover {
   background: #fbfcfd;
-}
-
-.spec-name {
-  display: grid;
-  gap: 3px;
-}
-
-.spec-name b {
-  font-size: 0.8rem;
-}
-
-.spec-name small,
-.spec-characteristic {
-  color: var(--muted);
-  font-size: 0.7rem;
-}
-
-.spec-footnote {
-  margin: 12px 0 0;
-  color: var(--muted);
-  font-size: 0.69rem;
-  line-height: 1.5;
 }
 
 .prices-dialog {
@@ -2304,7 +2247,6 @@ tbody tr:hover {
   }
 
   .summary-panel .estimate-note,
-  .summary-panel #scrollToSpec,
   .summary-panel #saveOrderItem {
     grid-column: 1 / -1;
   }
@@ -2442,8 +2384,7 @@ tbody tr:hover {
 
   .controls-panel,
   .editor-panel,
-  .summary-panel,
-  .specification-panel {
+  .summary-panel {
     padding: 17px;
   }
 
@@ -2533,14 +2474,6 @@ tbody tr:hover {
     justify-content: start;
     align-items: baseline;
     gap: 7px;
-  }
-
-  .spec-header {
-    align-items: flex-start;
-  }
-
-  .spec-total {
-    padding-left: 12px;
   }
 
   .price-settings-grid {
@@ -2694,8 +2627,7 @@ tbody tr:hover {
   }
 
   .editor-panel,
-  .summary-panel,
-  .specification-panel {
+  .summary-panel {
     margin: 0 0 14px;
     break-inside: avoid;
     border: 1px solid #ccd3dc;
@@ -2723,10 +2655,6 @@ tbody tr:hover {
     height: 360px;
   }
 
-  .specification-panel {
-    padding: 18px;
-  }
-
   table {
     min-width: 0;
   }
@@ -2738,7 +2666,6 @@ tbody tr:hover {
   }
 
   body.printing-order .workspace,
-  body.printing-order .specification-panel,
   body.printing-order .order-panel {
     display: none !important;
   }
