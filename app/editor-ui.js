@@ -1,14 +1,15 @@
 // Экран редактора: инспектор, итог, кнопки и общий пересчёт.
 import { bindCanvasDragging, bindCanvasNavigation, equalizeSelectedGlass } from "./canvas-input.js";
 import { renderCanvas } from "./canvas.js";
-import { APP_DATABASE_KEY, GLASS, MATERIALS, OPENINGS, PRODUCT_TYPES, RATES_STORAGE_KEY, SHAPES, appDatabase, captureGlassDraft, cloneData, cloneMaterials, cloneRates, defaultHardwareCatalog, fitsGlassProfile, glassCatalog, glassCatalogKey, glassDraft, handlesForSet, hardwareCatalog, hardwareDraft, hardwareSetsForProduct, persistRates, profileTypeSettings, programStorageRemove, programStorageSet, rates, readRawAppDatabase, readStoredProjects, renderGlassCatalog, selectedHandle, selectedHardware, setAppDatabase, setGlassCatalog, setGlassDraft, setHardwareDraft, setRates, standardGlassCatalog, syncGlassChoices, syncHardwareChoice } from "./catalog.js";
+import { APP_DATABASE_KEY, MATERIALS, OPENINGS, PRODUCT_TYPES, SHAPES, appDatabase, cloneData, defaultHardwareCatalog, handlesForSet, hardwareCatalog, hardwareDraft, hardwareSetsForProduct, persistRates, profileTypeSettings, standardMaterials, readRawAppDatabase, readStoredProjects, selectedHandle, selectedHardware, setAppDatabase, setHardwareDraft, syncGlassChoices, syncHardwareChoice } from "./catalog.js";
 import { activeProfileEdge, commitOverallDimension, customProfileArcs, editPolygon, editProfileSide, fittedGlass, handlePreviewMarkup, hasSlantedImposts, overallSizeLabel, refreshProfileEdit, sharedImpostLimits, syncOverallInputs } from "./drawing.js";
 import { buildSpecification, hardwareFitsSize, hardwareRangeProblems, sashProfileSize } from "./estimate.js";
 import { adjacentBar, circleSashesBlocked, constructionModel, createImpostId, ensurePanes, getPanePhysicalRect, getSelectedImpostRecord, glassGeometry, glassSizeLabel, makeEvenImposts, nestedImpostLimits, removeRootImpost, rootImpostLimits, sectionLayout, sectionNumber, sectionPanes, updateMaterialSelects } from "./geometry.js";
+import { bindGlassSettings, populateGlassSettings } from "./glass-settings.js";
 import { deleteOrderItem, deleteProject, editOrderItem, hasUnsavedProjectWork, openProject, renameCurrentOrder, renameOrderItem, renameStoredOrder, renderOrder, renderProjectToolbar, renderProjectsList, requestProjectSave, saveCurrentOrderItem, saveProjectRecord, startNewProject } from "./order.js";
-import { $, $$, applyPaneChanges, catalogDraft, catalogMaterial, clamp, draftProductName, editingOrderItemId, escapeHtml, formatMoney, formatNumber, getProfile, getTechnology, impostPositionOrigin, isPreliminaryShape, multiSections, normalizeUnsupportedOpenings, openingAllowed, orderItems, projectDirty, projects, resetCurrentProduct, sectionOpeningPanes, selectedSections, setCatalogDraft, setCatalogMaterial, setDraftProductName, setProjectDirty, setProjects, setSharedAxis, setWindowShapeMode, sharedAxis, state, validateCurrentProduct } from "./product.js";
+import { $, $$, applyPaneChanges, catalogDraft, clamp, draftProductName, editingOrderItemId, escapeHtml, formatMoney, formatNumber, getProfile, getTechnology, impostPositionOrigin, isPreliminaryShape, multiSections, normalizeUnsupportedOpenings, openingAllowed, orderItems, projectDirty, projects, resetCurrentProduct, sectionOpeningPanes, selectedSections, setCatalogDraft, setCatalogMaterial, setDraftProductName, setProjectDirty, setProjects, setSharedAxis, setWindowShapeMode, sharedAxis, state, validateCurrentProduct } from "./product.js";
 import { openReportsDialog } from "./reports.js";
-import { handleCatalogAction, handleHardwareAction, populatePriceForm, populateTechnologyForm, readCatalogDraftFromEditor, readPriceForm, readTechnologyForm, renderHardwareCatalog, renderTechnologyCatalog, saveHardwareCatalog, setSettingsTab } from "./settings.js";
+import { handleCatalogAction, handleHardwareAction, populateCoefficientForm, populateTechnologyForm, readCatalogDraftFromEditor, readCoefficientForm, readTechnologyForm, resetCoefficientForm, renderHardwareCatalog, renderTechnologyCatalog, saveHardwareCatalog, setSettingsTab } from "./settings.js";
 function profileTarget(edge) {
   if (!edge) return null;
   if (edge.type === "circle-frame") return { side: "ring", vertex: null };
@@ -216,7 +217,7 @@ function renderInspector() {
   $("#hingeSide").value = openingPane.opening === "tilt"
     ? (openingPane.hingeSide === "top" ? "top" : "bottom") : (openingPane.hingeSide === "right" ? "right" : "left");
   const select = $("#paneGlass");
-  select.value = pane.glass;
+  select.value = select.disabled ? "" : pane.glass;
   let note = $("#paneGlassSize");
   if (!note) { note = document.createElement("small"); note.id = "paneGlassSize"; select.after(note); }
   const tech=getTechnology();
@@ -266,8 +267,8 @@ function renderSummary(calculation) {
   $("#summaryTechnology").textContent = `рама ${tech.frame} · створка ${tech.sash} · импост ${tech.impost}${extras.length ? ` · ${extras.join(" · ")}` : ""} мм`;
   $("#summaryShape").textContent = SHAPES[state.shape];
   $("#summaryFinish").textContent = calculation.finish.name;
-  $("#summaryHardware").textContent = selectedHardware()?.name || "Тариф прайса";
-  $("#summaryHandle").textContent = selectedHandle()?.name || "Стандартная";
+  $("#summaryHardware").textContent = selectedHardware()?.name || "Комплект не назначен";
+  $("#summaryHandle").textContent = selectedHandle()?.name || "Ручка не назначена";
   $("#editorDimensions").textContent = overallSizeLabel();
   $("#editorArea").textContent = `${formatNumber(calculation.area)} м²`;
 
@@ -385,6 +386,18 @@ export function renderAll() {
     $("#currentEstimateNote").hidden = false;
     $("#currentEstimateStatus").textContent = "Створка не разрешена текущим профилем";
     $("#currentEstimateHint").textContent = "Конфигурация сохранена в редакторе. Чтобы сохранить изделие, разрешите круглые створки в технологии, выберите совместимый профиль или подтвердите замену на глухое остекление.";
+  }
+  if (calculation.unpriced.length) {
+    $("#currentEstimateNote").hidden = false;
+    $("#currentEstimateStatus").textContent = "Расчёт неполный";
+    $("#currentEstimateHint").textContent = `Назначьте позиции в каталогах: ${calculation.unpriced.join(", ")}.`;
+  }
+  if ($("#defaultGlass").disabled) {
+    $("#currentEstimateNote").hidden = false;
+    $("#currentEstimateStatus").textContent = "Нет совместимых стеклопакетов";
+    $("#currentEstimateHint").textContent = "Назначьте стеклопакет профильной системе и типу изделия во вкладке «Стеклопакеты».";
+    $("#totalPrice").textContent = "—";
+    $("#unitPrice").textContent = "Расчёт недоступен";
   }
   updateActiveControls();
   renderProjectToolbar();
@@ -738,48 +751,36 @@ export function bindEvents() {
   });
 
   $("#openPrices").addEventListener("click", () => {
-    populatePriceForm();
+    populateCoefficientForm();
     populateTechnologyForm();
+    populateGlassSettings();
     setHardwareDraft(cloneData(hardwareCatalog));
     $("#hardwareCatalogEditor").removeAttribute("data-ready");
-    setSettingsTab("prices");
+    setSettingsTab("general");
     $("#pricesDialog").showModal();
   });
   $("#pricesDialog").addEventListener("click", (event) => {
     if (event.target === $("#pricesDialog")) $("#pricesDialog").close();
   });
   $("#savePrices").addEventListener("click", () => {
-    readPriceForm();
+    readCoefficientForm();
     if (!persistRates()) {
-      showToast("Не удалось сохранить прайс в браузере");
+      showToast("Не удалось сохранить коэффициенты в браузере");
       return;
     }
     $("#pricesDialog").close();
     renderAll();
-    showToast("Новые тарифы сохранены и применены");
+    showToast("Коэффициенты сохранены");
   });
-  $("#resetPrices").addEventListener("click", () => {
-    setRates(cloneRates());
-    try {
-      programStorageRemove(RATES_STORAGE_KEY);
-    } catch {
-      showToast("Не удалось очистить сохранённый прайс");
-      return;
-    }
-    populatePriceForm();
-    renderAll();
-    showToast("Демонстрационные тарифы восстановлены");
-  });
+  $("#resetPrices").addEventListener("click", resetCoefficientForm);
   $$("[data-settings-tab]").forEach((button) => {
     button.addEventListener("click", () => setSettingsTab(button.dataset.settingsTab));
   });
   $$("[data-catalog-material]").forEach((button) => {
     button.addEventListener("click", () => {
       readCatalogDraftFromEditor();
-      captureGlassDraft();
       setCatalogMaterial(button.dataset.catalogMaterial);
       renderTechnologyCatalog();
-      renderGlassCatalog();
     });
   });
   $("#technologyCatalogEditor").addEventListener("click", handleCatalogAction);
@@ -800,7 +801,7 @@ export function bindEvents() {
     renderHardwareCatalog();
     showToast("Стандартная фурнитура подготовлена — нажмите «Сохранить фурнитуру»");
   });
-  $("#profileSettingsEditor").addEventListener("change", event => {
+  $("#technologyCatalogEditor").addEventListener("change", event => {
     if (!event.target.matches("[data-type-enabled]")) return;
     event.target.closest("[data-product-type]").querySelector(".profile-type-fields").hidden = !event.target.checked;
   });
@@ -808,63 +809,25 @@ export function bindEvents() {
     const input = event.target.closest('[data-profile-field="name"]');
     if (!input) return;
     const id = input.closest("[data-profile-id]").dataset.profileId;
-    $$("#glassCatalogEditor [data-glass-profile]").forEach(box => {
-      if (box.value === id) box.nextElementSibling.textContent = input.value.trim();
-    });
+    const option = [...$("#settingsSystemChoice").options].find(item => item.value === id);
+    if (option) option.textContent = input.value.trim() || "Новая профильная система";
   });
-  $("#addGlassCatalog").addEventListener("click", () => {
-    captureGlassDraft();
-    const id = `glass-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    glassDraft[catalogMaterial][id] = { name: "", detail: "", rate: null, color: "#bfe3ef" };
-    renderGlassCatalog();
-    $("#glassCatalogEditor [data-glass-id]:last-child [data-glass-name]").focus();
-  });
-  $("#glassCatalogEditor").addEventListener("click", event => {
-    const button = event.target.closest("[data-remove-glass]");
-    if (!button) return;
-    const catalog = glassDraft[catalogMaterial];
-    if (Object.keys(catalog).length <= 1) return showToast("Оставьте хотя бы один стеклопакет для материала");
-    captureGlassDraft();
-    delete catalog[button.closest("[data-glass-id]").dataset.glassId];
-    renderGlassCatalog();
-  });
-  ["#saveTechnology", "#saveProfileSettings", "#saveMaterials"].forEach(selector => $(selector).addEventListener("click", () => {
-    captureGlassDraft();
+  bindGlassSettings();
+  ["#saveTechnology", "#saveMaterials"].forEach(selector => $(selector).addEventListener("click", () => {
     readCatalogDraftFromEditor();
     for (const [material, catalog] of Object.entries(catalogDraft)) {
       if (!catalog.profiles.some(profile => profileTypeSettings(profile, "window").enabled))
         return showToast(`${MATERIALS[material].label}: включите тип «Окно» хотя бы для одной системы`);
     }
-    for (const [material, catalog] of Object.entries(glassDraft)) {
-      const profiles = catalogDraft[material].profiles;
-      for (const item of Object.values(catalog)) {
-        if (Array.isArray(item.profileIds)) {
-          item.profileIds = item.profileIds.filter(id => profiles.some(profile => profile.id === id));
-          if (!item.profileIds.length) return showToast(`${MATERIALS[material].label}: выберите систему для «${item.name || "Новый стеклопакет"}»`);
-        }
-      }
-      const uncovered = profiles.find(profile => !Object.values(catalog).some(item => fitsGlassProfile(item, profile.id)));
-      if (uncovered) return showToast(`Добавьте хотя бы один стеклопакет для системы «${uncovered.name}»`);
-      for (const [id, item] of Object.entries(catalog)) {
-        if (!item.name || (item.rate == null ? !Object.hasOwn(GLASS, id) : !Number.isFinite(item.rate) || item.rate < 0)) {
-          return showToast(`${MATERIALS[material].label}: укажите название и неотрицательную цену стеклопакета`);
-        }
-      }
-    }
-    try { programStorageSet(glassCatalogKey, JSON.stringify(glassDraft)); }
-    catch { return showToast("Не удалось сохранить каталог стеклопакетов"); }
-    setGlassCatalog(structuredClone(glassDraft));
     readTechnologyForm();
     $("#pricesDialog").close();
     renderAll();
     showToast("Каталог профильных систем сохранён");
   }));
   $("#resetTechnology").addEventListener("click", () => {
-    setCatalogDraft(cloneMaterials());
-    setGlassDraft(standardGlassCatalog());
+    setCatalogDraft(standardMaterials());
     setCatalogMaterial(state.material);
     renderTechnologyCatalog();
-    renderGlassCatalog();
     showToast("Стандартный каталог подготовлен — нажмите «Сохранить каталог»");
   });
 
