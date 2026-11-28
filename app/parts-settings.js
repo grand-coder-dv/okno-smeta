@@ -16,7 +16,8 @@ export function defaultPartFields(catalog, profile, type) {
   return Object.entries(PART_NAMES).filter(([role]) => role !== "steel").map(([role, name]) => {
     const choices = compatibleParts(parts, role, profile.id, type);
     return `<label class="catalog-field"><span>${name}</span><select data-default-part="${role}" ${choices.length ? "" : "disabled"}>
-      ${choices.map(item => option(item, defaults[role])).join("") || "<option value=''>Нет артикулов</option>"}</select></label>`;
+      <option value="">${choices.length ? "Автоматически" : "Нет артикулов"}</option>
+      ${choices.map(item => option(item, defaults[role])).join("")}</select></label>`;
   }).join("");
 }
 
@@ -30,19 +31,21 @@ function editPart(role, existing) {
   const systems = Object.values(catalogDraft).flatMap(material => material.profiles.map(profile => [profile.id, material.label + " · " + profile.name]));
   const dialog = document.createElement("dialog");
   dialog.className = "part-dialog";
-  const number = (name, title, value, min, max) => `<label>${title}<input required type="number" step="any" min="${min}" ${max ? 'max="'+max+'"' : ""} name="${name}" value="${Number(value)}"></label>`;
+  const number = (name, title, value, min, max) => `<label>${title}<input ${value == null ? "" : "required"} type="number" step="any" min="${min}" ${max ? 'max="'+max+'"' : ""} name="${name}" value="${value == null ? "" : Number(value)}"></label>`;
   const steel = role === "steel";
+  const accessory = role === "seal" || role === "assembly";
+  const standard = existing?.id.startsWith("standard-");
   const minWidth = ["frame","sash","impost","shtulp"].includes(role) ? 20 : role === "bead" ? 1 : 10;
   dialog.innerHTML = `<form><h3>${PART_NAMES[role]}</h3><div class="part-fields">
     <label>Артикул<input required maxlength="80" name="article" value="${escapeHtml(item.article || "")}"></label>
     <label>Название<input required maxlength="120" name="name" value="${escapeHtml(item.name || "")}"></label>
-    ${steel ? "" : number("width","Ширина / высота, мм",item.width ?? 70,minWidth,250)}
-    ${number("maxLength","Максимальная длина, мм",item.maxLength ?? 6000,1)}
-    ${steel ? "" : number("bite","Заход стекла, мм",item.bite ?? 14,0,100)}
-    ${number("price","Цена, ₽/пог. м",item.price ?? 0,0)}
-    </div>${steel ? checkList("Подходит для профилей","hosts",parts.filter(p => p.role !== "steel").map(p => [p.id, partTitle(p)]),item.hosts)
+    ${steel || accessory ? "" : number("width","Ширина / высота, мм",standard ? item.width : item.width ?? 70,minWidth,250)}
+    ${accessory ? "" : number("maxLength","Максимальная длина, мм",item.maxLength ?? 6000,1)}
+    ${steel || accessory ? "" : number("bite","Заход стекла, мм",standard ? item.bite : item.bite ?? 14,0,100)}
+    ${number("price",role === "assembly" ? "Цена, ₽/компл." : "Цена, ₽/пог. м",item.price ?? 0,0)}
+    </div>${steel ? checkList("Подходит для профилей","hosts",parts.filter(p => !["steel", "seal", "assembly"].includes(p.role)).map(p => [p.id, partTitle(p)]),item.hosts)
       : `<details class="system-picker"><summary>Профильные системы <strong data-system-caption></strong></summary>${checkList("Выберите системы","systems",systems,item.systems)}</details>` + checkList("Типы изделий","types",Object.entries(PRODUCT_TYPES),item.types)}
-    ${!steel && existing && compatibleSteel(parts,item).length ? `<label>Основное армирование<select name="steelId">${compatibleSteel(parts,item).map(p => option(p,item.steelId)).join("")}</select></label>` : ""}
+    ${!steel && !accessory && existing && compatibleSteel(parts,item).length ? `<label>Основное армирование<select name="steelId">${compatibleSteel(parts,item).map(p => option(p,item.steelId)).join("")}</select></label>` : ""}
     <p role="alert"></p><div><button type="button" class="button ghost">Отмена</button> <button class="button primary">Применить</button></div></form>`;
   document.body.append(dialog);
   const picker = dialog.querySelector(".system-picker");
@@ -61,9 +64,16 @@ function editPart(role, existing) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const part = { id: item.id || createCatalogId("part"), role, article: data.get("article").trim(), name: data.get("name").trim(),
-      maxLength: Number(data.get("maxLength")), price: Number(data.get("price")) };
+      price: Number(data.get("price")) };
+    if (!accessory) part.maxLength = Number(data.get("maxLength"));
     if (steel) part.hosts = data.getAll("hosts");
-    else Object.assign(part,{width:Number(data.get("width")),bite:Number(data.get("bite")),systems:data.getAll("systems"),types:data.getAll("types"),steelId:data.get("steelId")});
+    else {
+      Object.assign(part, { systems: data.getAll("systems"), types: data.getAll("types") });
+      if (!accessory) Object.assign(part, {
+        width: data.get("width") === "" ? null : Number(data.get("width")),
+        bite: data.get("bite") === "" ? null : Number(data.get("bite")), steelId: data.get("steelId"),
+      });
+    }
     if (!part.name || !part.article || (steel ? !part.hosts.length : !part.systems.length || !part.types.length)) {
       dialog.querySelector("[role=alert]").textContent = "Заполните название, артикул и отметьте совместимость.";
       return;
@@ -79,10 +89,10 @@ function editPart(role, existing) {
   dialog.showModal();
 }
 
-function partTable(parts) {
+function partTable(parts, assembly = false) {
   if (!parts.length) return "";
   const number = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
-  return `<table class="part-table"><thead><tr><th>Артикул</th><th>Название</th><th>Ширина, мм</th><th>Цена, ₽/м</th></tr></thead>
+  return `<table class="part-table"><thead><tr><th>Артикул</th><th>Название</th><th>Ширина, мм</th><th>${assembly ? "Цена, ₽/компл." : "Цена, ₽/м"}</th></tr></thead>
     <tbody>${parts.map(part => `<tr data-id="${escapeHtml(part.id)}">
       <td><button type="button" class="part-link" aria-label="Редактировать ${escapeHtml(part.article)}">${escapeHtml(part.article)}</button></td>
       <td>${escapeHtml(part.name)}</td><td>${part.width == null ? "—" : number.format(part.width)}</td><td>${number.format(part.price)}</td>
@@ -98,6 +108,9 @@ export function renderPartsCatalog() {
   editor.innerHTML = details("Профили",groups.map(([name,roles]) => details(name,
     partTable(parts.filter(part => roles.includes(part.role))) +
     roles.map(role => `<button type="button" class="part-add" data-add="${role}">+ ${PART_NAMES[role]}</button>`).join("")
+  )).join("")) + details("Комплектующие", ["seal", "assembly"].map(role => details(PART_NAMES[role],
+    partTable(parts.filter(part => part.role === role), role === "assembly") +
+    `<button type="button" class="part-add" data-add="${role}">+ ${PART_NAMES[role]}</button>`,
   )).join("")) + details("Фурнитура","") + details("Стеклопакеты","");
   editor.onclick = event => {
     const button = event.target.closest("[data-id], [data-add]");
