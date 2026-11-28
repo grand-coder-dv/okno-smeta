@@ -185,6 +185,7 @@ function readStoredMaterials() {
     Object.keys(next).forEach((materialKey) => {
       const storedMaterial = stored?.[materialKey];
       if (!storedMaterial) return;
+      if (Array.isArray(storedMaterial.parts)) next[materialKey].parts = storedMaterial.parts;
       if (Array.isArray(storedMaterial.profiles) && storedMaterial.profiles.length) {
         next[materialKey].profiles = storedMaterial.profiles.map((profile) => {
           const fallback = next[materialKey].profiles.find((item) => item.id === profile.id) || next[materialKey].profiles[0];
