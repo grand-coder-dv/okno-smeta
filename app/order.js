@@ -480,7 +480,7 @@ export function saveCurrentOrderItem() {
     showToast(`${nextItem.name} добавлено в заказ`);
   }
   setProjectDirty(true);
-  resetCurrentProduct(nextItem.configuration);
+  resetCurrentProduct(nextItem.configuration, nextItem.name);
   return true;
 }
 
