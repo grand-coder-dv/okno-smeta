@@ -225,7 +225,14 @@ export function updateMaterialSelects(reset = false, preserveProfile = false) {
   if (reset || !availableProfiles().length) state.productType = "window";
   const compatible = availableProfiles();
   if (reset || (!preserveProfile && !compatible.some((item) => item.id === state.profile))) state.profile = compatible[0]?.id || material.profiles[0].id;
-  if (reset || !material.finishes.some((item) => item.id === state.finish)) state.finish = material.finishes[0].id;
+  state.exteriorFinish ??= state.finish;
+  for (const field of ["finish", "exteriorFinish"]) {
+    if (reset || !material.finishes.some(item => item.id === state[field])) state[field] = material.finishes[0].id;
+    const select = $("#" + field);
+    select.innerHTML = material.finishes.map(item =>
+      `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join("");
+    select.value = state[field];
+  }
 
   $("#productType").value = state.productType || "window";
   $$("#productType option").forEach(option => {
@@ -233,9 +240,6 @@ export function updateMaterialSelects(reset = false, preserveProfile = false) {
   });
   $("#profileSystem").innerHTML = material.profiles
     .map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === state.profile ? "selected" : ""}>${escapeHtml(item.name)}</option>`)
-    .join("");
-  $("#finish").innerHTML = material.finishes
-    .map((item) => `<option value="${item.id}" ${item.id === state.finish ? "selected" : ""}>${item.name}</option>`)
     .join("");
 }
 
