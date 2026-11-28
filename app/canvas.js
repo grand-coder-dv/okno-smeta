@@ -4,7 +4,7 @@ import { MATERIALS, materialGlass } from "./catalog.js";
 import { activeProfileEdge, circleFrameTargets, circularOutline, clipSlantedSections, constructionPolygon, customProfileArcs, fittedGlass, fittedOutline, frameCurve, frameSideChain, hasSlantedImposts, impostRibbon, impostSegment, isSelectedImpost, outlineRange, pieceWidth, polyBounds, polyPath, polygonClip, polygonPoints, polygonProfileTargets, profileEdgeTargets, profileOutline, rectPoints, sashOpeningMark, sectionContour, setActiveProfileEdge, shapePaths, slantedBounds, windowOuterBounds } from "./drawing.js";
 import { renderAll } from "./editor-ui.js";
 import { barFace, constructionModel, glassGeometry, glassSizeLabel, impostHostBoundary, innerFrameBoundary, nestedImpostSpans, sectionLayout, sectionNumber } from "./geometry.js";
-import { $, SASH_LAP, canvasLayout, escapeHtml, getFinish, getTechnology, multiSections, numberFormatter, setCanvasLayout, setSharedAxis, sharedAxis, state } from "./product.js";
+import { $, SASH_LAP, canvasLayout, escapeHtml, getFinishes, getTechnology, multiSections, numberFormatter, setCanvasLayout, setSharedAxis, sharedAxis, state } from "./product.js";
 let paneLongPressUsed = false;
 let activePaneHold;
 
@@ -32,7 +32,10 @@ export function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {
   const frame=tech.frame*canvasScale, impostFace=tech.impost*canvasScale;
   const X=mm=>x+mm*sx, Y=mm=>y+mm*sy;
   const material = MATERIALS[state.material];
-  const profileColor = getFinish().color || material.frame;
+  const exteriorView = state.viewSide === "exterior";
+  const finishes = getFinishes();
+  const profileColor = (exteriorView ? finishes.exterior : finishes.interior).color || material.frame;
+  const mirrorX = 2 * x + width;
   const impostBandPath = (x1, y1, x2, y2, face, active, extraClass = "") => {
     const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy);
     if (len < 1e-6) return "";
@@ -498,7 +501,7 @@ export function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {
     if (outer.length < 2 || inner.length < 2) return;
     addonMarkup += `<path d="${polyPath([...inner, ...outer.slice().reverse()], X, Y)}" fill="${profileColor}" stroke="${material.edge}" stroke-width=".8" ${dash}/>`;
   });
-  setCanvasViewBox(svg, viewLeft, viewTop, fitWidth, fitHeight);
+  setCanvasViewBox(svg, exteriorView ? mirrorX - viewRight : viewLeft, viewTop, fitWidth, fitHeight);
   svg.innerHTML = `
     <defs>
       <filter id="windowShadow" x="-30%" y="-30%" width="160%" height="170%">
@@ -515,6 +518,7 @@ export function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {
         <path d="M10 5 L0 1.5 L0 8.5 Z" fill="#8996a8" stroke="none" />
       </marker>
     </defs>
+    <g class="drawing-face" ${exteriorView ? `transform="translate(${mirrorX} 0) scale(-1 1)"` : ""}>
     ${addonMarkup}
     <g filter="url(#windowShadow)" fill="${profileColor}" stroke="${material.edge}" stroke-width="2.2">${paths.outer}</g>
     <g fill="#bfe3ef" stroke="${material.edge}" stroke-width="1.6">${paths.inner}</g>
@@ -530,7 +534,16 @@ export function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {
     <g class="dimensions">${axisMarkup}
       ${gostDimension(true,bx0,bx1,by1,bottomDimensionY,`${state.shape === "circle" ? "Ø " : ""}${dimNum(actualWidth)}`,'data-window-dimension="width" tabindex="0" role="button" aria-label="Изменить габаритную ширину. Верхняя и нижняя поперечины"')}
       ${gostDimension(false,by0,by1,bx0,leftDimensionX,dimNum(actualHeight),`data-window-dimension="${state.shape === "circle" ? "width" : "height"}" tabindex="0" role="button" aria-label="${state.shape === "circle" ? "Диаметр равен ширине" : "Изменить габаритную высоту. Левая и правая стойки"}"`)}
+    </g>
     </g>`;
+
+  if (exteriorView && !thumbnail) {
+    svg.querySelectorAll(".drawing-face text").forEach(node => {
+      const x = Number(node.getAttribute("x"));
+      const transform = node.getAttribute("transform") || "";
+      node.setAttribute("transform", `${transform} translate(${2 * x} 0) scale(-1 1)`.trim());
+    });
+  }
 
   if (thumbnail) {
     // Keep the actual rendered frame, glass, sashes and imposts; omit editor controls.
@@ -542,7 +555,8 @@ export function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {
     const contour=poly || (state.shape === "arch" ? profileOutline([0,0,state.width,state.height],state.frameArcs,X,Y,sx,sy).boundary : rectPoints([0,0,state.width,state.height]));
     const [minX,minY,maxX,maxY]=polyBounds(contour);
     const padding=Math.max(12,tech.frame*canvasScale*0.3);
-    svg.setAttribute("viewBox", `${X(minX)-padding} ${Y(minY)-padding} ${(maxX-minX)*sx+padding*2} ${(maxY-minY)*sy+padding*2}`);
+    const left = exteriorView ? mirrorX - X(maxX) : X(minX);
+    svg.setAttribute("viewBox", `${left-padding} ${Y(minY)-padding} ${(maxX-minX)*sx+padding*2} ${(maxY-minY)*sy+padding*2}`);
     return;
   }
 
@@ -616,7 +630,8 @@ export function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {
       if (!backward && !forward && event.key !== "Enter" && event.key !== " ") return;
       event.preventDefault();
       selectImpostFromNode(node);
-      if (backward || forward) moveSelectedImpostBy((forward ? 1 : -1) * (event.shiftKey ? 50 : 10));
+      const direction = vertical && exteriorView ? -1 : 1;
+      if (backward || forward) moveSelectedImpostBy(direction * (forward ? 1 : -1) * (event.shiftKey ? 50 : 10));
       renderAll();
     });
   });
