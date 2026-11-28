@@ -69,7 +69,9 @@ export function renderOrder() {
   $("#orderTotalQuantity").textContent = totalQuantity;
   $("#orderTotalPrice").textContent = formatMoney(totalPrice);
   $("#orderTotalLabel").textContent = preliminary ? "Предварительная сумма заказа" : "Сумма заказа";
-  $("#saveOrderItem").textContent = editingOrderItemId ? "Сохранить изменения и добавить следующее" : "Сохранить изделие и добавить следующее";
+  const saveButton = $("#saveOrderItem");
+  saveButton.title = editingOrderItemId ? "Сохранить изменения и добавить следующее" : "Сохранить изделие и добавить следующее";
+  saveButton.setAttribute("aria-label", saveButton.title);
 }
 
 function renderPrintOrder() {
