@@ -23,6 +23,8 @@ function createDefaultState() {
     productType: "window",
     profile: "pvc70",
     finish: "white",
+    exteriorFinish: "white",
+    viewSide: "interior",
     shape: "rect",
     shapeModeVersion: 1,
     width: 1300,
@@ -145,8 +147,20 @@ export function normalizeUnsupportedOpenings() {
   (state.panes || []).forEach(visit);
 }
 
-export function getFinish() {
-  return MATERIALS[state.material].finishes.find((item) => item.id === state.finish) || MATERIALS[state.material].finishes[0];
+export function getFinishes(configuration = state) {
+  const finishes = MATERIALS[configuration.material]?.finishes || [];
+  const base = finishes[0];
+  const find = id => finishes.find(item => item.id === id) || base;
+  return { base, interior: find(configuration.finish), exterior: find(configuration.exteriorFinish ?? configuration.finish) };
+}
+
+export function finishDescription({ interior, exterior }) {
+  if (!interior || !exterior) return "";
+  return interior.id === exterior.id ? interior.name : `Улица — ${exterior.name} · помещение — ${interior.name}`;
+}
+
+export function singleFinishFactor(finish) {
+  return finish.singleFactor ?? Math.round((1 + (finish.factor - 1) / 2) * 100) / 100;
 }
 
 const GLASS_BITE_FIELDS = [["glassBiteFrame", "рама"], ["glassBiteSash", "створка"], ["glassBiteImpost", "импост"]];
@@ -245,7 +259,8 @@ export function validateCurrentProduct() {
   if (!availableProfiles().some((item) => item.id === state.profile)) return "Для этого типа изделия нет доступной профильной системы.";
   if (!Object.keys(materialGlass()).length) return "Назначьте совместимый стеклопакет во вкладке «Стеклопакеты».";
   if (state.shape === "circle" && !getProfile().allowCircleShape) return "Для этой профильной системы круглая форма недоступна.";
-  if (!material.finishes.some((item) => item.id === state.finish)) return "Выбранный цвет или отделка больше недоступны.";
+  const finishIds = new Set(material.finishes.map(item => item.id));
+  if (!finishIds.has(state.finish) || !finishIds.has(state.exteriorFinish ?? state.finish)) return "Выбранный цвет или отделка больше недоступны.";
   if (!Array.isArray(state.panes) || state.panes.length !== state.cols * state.rows) return "Количество секций не соответствует выбранной разбивке.";
 
   const tech = getTechnology();
@@ -305,9 +320,10 @@ export function resetCurrentProduct(previous = null) {
   draftProductName = `Изделие ${orderItemSequence + 1}`;
   state = createDefaultState();
   if (previous) {
-    for (const key of ["material", "profile", "finish", "productType", "shape", "width", "height", "defaultGlass", "hardwareId", "handleId"]) {
+    for (const key of ["material", "profile", "finish", "exteriorFinish", "viewSide", "productType", "shape", "width", "height", "defaultGlass", "hardwareId", "handleId"]) {
       if (previous[key] !== undefined) state[key] = previous[key];
     }
+    state.exteriorFinish = previous.exteriorFinish ?? state.finish;
     if (state.shape === "skew" && previous.framePolygon) state.framePolygon = cloneData(previous.framePolygon);
     if (state.shape === "arch" && previous.frameArcs) state.frameArcs = cloneData(previous.frameArcs);
     state.panes = [{ opening: "fixed", glass: state.defaultGlass, innerImposts: [] }];
