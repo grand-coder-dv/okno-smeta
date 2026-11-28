@@ -6,7 +6,7 @@ import { handlePreviewMarkup } from "./drawing.js";
 import { renderAll, showToast } from "./editor-ui.js";
 import { updateMaterialSelects } from "./geometry.js";
 import { renderProjectsList } from "./order.js";
-import { $, $$, catalogDraft, catalogMaterial, clamp, createCatalogId, escapeHtml, getProfile, normalizeUnsupportedOpenings, projects, setCatalogDraft, setCatalogMaterial, setProjects, setWindowShapeMode, state } from "./product.js";
+import { $, $$, catalogDraft, catalogMaterial, clamp, createCatalogId, escapeHtml, getProfile, normalizeUnsupportedOpenings, projects, setCatalogDraft, setCatalogMaterial, setProjects, setWindowShapeMode, singleFinishFactor, state } from "./product.js";
 const coefficientNames = ["archSurcharge", "circleSurcharge", "skewSurcharge", "markup"];
 
 export function populateCoefficientForm() {
@@ -102,8 +102,12 @@ export function renderTechnologyCatalog(preferredId) {
             <input data-finish-field="name" value="${escapeHtml(finish.name)}" maxlength="60" required />
           </label>
           <label class="catalog-field catalog-color-factor">
-            <span>Коэффициент цены</span>
+            <span>Двусторонний</span>
             <input type="number" data-finish-field="factor" value="${Number(finish.factor) || 1}" min="0.1" max="5" step="0.01" />
+          </label>
+          <label class="catalog-field catalog-color-factor">
+            <span>Односторонний</span>
+            <input type="number" data-finish-field="singleFactor" value="${singleFinishFactor(finish)}" min="0.1" max="5" step="0.01" />
           </label>
           <button class="catalog-remove-button" type="button" data-catalog-action="remove-finish" aria-label="Удалить цвет">Удалить</button>
         </article>`,
@@ -161,6 +165,7 @@ export function readCatalogDraftFromEditor() {
     finish.name = row.querySelector('[data-finish-field="name"]').value.trim() || "Новый цвет";
     finish.color = row.querySelector('[data-finish-field="color"]').value;
     finish.factor = clamp(row.querySelector('[data-finish-field="factor"]').value, 0.1, 5);
+    finish.singleFactor = clamp(row.querySelector('[data-finish-field="singleFactor"]').value, 0.1, 5);
   });
 }
 
@@ -190,7 +195,7 @@ export function handleCatalogAction(event) {
     const row = button.closest("[data-profile-id]");
     material.profiles = material.profiles.filter((item) => item.id !== row.dataset.profileId);
   } else if (button.dataset.catalogAction === "add-finish") {
-    material.finishes.push({ id: createCatalogId(`${catalogMaterial}-color`), name: "Новый цвет", factor: 1, color: material.frame });
+    material.finishes.push({ id: createCatalogId(`${catalogMaterial}-color`), name: "Новый цвет", factor: 1, singleFactor: 1, color: material.frame });
   } else if (button.dataset.catalogAction === "remove-finish") {
     if (material.finishes.length === 1) {
       showToast("Нельзя удалить последний цвет");
