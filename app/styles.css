@@ -1265,8 +1265,21 @@ h3 {
 
 .editor-history-actions {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.editor-history-button.button {
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+}
+
+.editor-history-button svg {
+  width: 20px;
+  height: 20px;
 }
 
 .order-save-button {
@@ -2452,6 +2465,13 @@ tbody tr:hover {
 
   .editor-heading {
     flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .editor-meta {
+    flex-wrap: wrap;
+    max-width: 100%;
   }
 
   .canvas-wrap {
