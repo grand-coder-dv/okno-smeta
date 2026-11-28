@@ -342,9 +342,16 @@ export function onAfterRender(hook) { afterRenderHooks.push(hook); }
 
 function syncCanvasViewSide() {
   const menu = $("#canvasViewSide");
+  if (!menu) return;
   const value = state.viewSide === "exterior" ? "exterior" : "interior";
+  if (menu.matches("select")) {
+    menu.value = value;
+    return;
+  }
   const labels = { interior: "Вид из помещения", exterior: "Вид с улицы" };
-  menu.querySelector("button").textContent = labels[value];
+  const viewButton = menu.querySelector("button");
+  if (!viewButton) return;
+  viewButton.textContent = labels[value];
   menu.querySelectorAll("[role='option']").forEach((option) => {
     option.setAttribute("aria-selected", String(option.dataset.value === value));
   });
