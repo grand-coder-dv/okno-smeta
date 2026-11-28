@@ -235,6 +235,27 @@ summary:focus-visible,
   font-size: 0.96rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: text;
+}
+
+.inline-name-input {
+  width: min(16rem, 42vw);
+  max-width: 100%;
+  margin: 0;
+  padding: 2px 6px;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  background: #fff;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  box-shadow: 0 0 0 3px rgba(237, 124, 36, 0.12);
+}
+
+.project-current strong:has(.inline-name-input),
+.order-item-heading strong:has(.inline-name-input),
+.project-card-title strong:has(.inline-name-input) {
+  overflow: visible;
 }
 
 .project-current small {
@@ -334,6 +355,11 @@ h2 {
   font-size: clamp(1.2rem, 1.6vw, 1.55rem);
   line-height: 1.2;
   letter-spacing: -0.025em;
+}
+
+#editorProductName,
+.order-item-heading strong {
+  cursor: text;
 }
 
 h3 {
@@ -835,12 +861,15 @@ h3 {
   display: none;
 }
 
-.canvas-view-side {
+.canvas-view-menu {
   position: absolute;
-  z-index: 3;
+  z-index: 4;
   right: 12px;
   bottom: 12px;
   max-width: calc(100% - 24px);
+}
+
+.canvas-view-side {
   min-height: 32px;
   padding: 4px 7px;
   color: #24384f;
@@ -851,6 +880,41 @@ h3 {
   font-size: 0.75rem;
   font-weight: 650;
   cursor: pointer;
+}
+
+.canvas-view-list {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  min-width: 100%;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(24, 38, 58, 0.14);
+}
+
+.canvas-view-list[hidden] {
+  display: none;
+}
+
+.canvas-view-list [role="option"] {
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: #24384f;
+  font-size: 0.75rem;
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.canvas-view-list [role="option"]:hover,
+.canvas-view-list [role="option"]:focus,
+.canvas-view-list [role="option"][aria-selected="true"] {
+  background: #fff3e9;
+  outline: none;
 }
 
 .equal-glass-btn {
