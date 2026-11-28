@@ -3,7 +3,7 @@ import { PART_NAMES, allParts, compatibleParts, compatibleSteel } from "./profil
 import { HANDLE_LENGTHS, HANDLE_STYLES, MATERIALS, OPENINGS, PRODUCT_TYPES, SHAPES, glassApplication, materialGlass, rates, selectedHandle, selectedHardware } from "./catalog.js";
 import { customProfileArcs, overallSizeLabel } from "./drawing.js";
 import { geometry, glassGeometry, sectionLayout, sectionNumber, sectionPanes } from "./geometry.js";
-import { SASH_LAP, getFinish, getProfile, getTechnology, state } from "./product.js";
+import { SASH_LAP, finishDescription, getFinishes, getProfile, getTechnology, singleFinishFactor, state } from "./product.js";
 export function hardwareFitsSize(set, width, height) {
   return width >= set.minWidth && width <= set.maxWidth && height >= set.minHeight && height <= set.maxHeight;
 }
@@ -43,7 +43,9 @@ export function buildSpecification() {
   const dimensions = geometry();
   const material = MATERIALS[state.material];
   const profile = getProfile();
-  const finish = getFinish();
+  const finishes = getFinishes();
+  const { base, interior, exterior } = finishes;
+  const finishName = finishDescription(finishes);
   const tech = getTechnology();
   const quantity = state.quantity;
   const lines = [];
@@ -73,7 +75,7 @@ export function buildSpecification() {
   addLine({
     name: partName("frame", "Профиль рамы"),
     note: `${PRODUCT_TYPES[state.productType || "window"]}; наружный габарит: ${overallSizeLabel()}; ${lengthNote(frameParts)}`,
-    characteristic: `${profile.name}; ${finish.name}; ширина ${tech.frame} мм; ${frameParts.length} шт.`,
+    characteristic: `${profile.name}; ${finishName}; ширина ${tech.frame} мм; ${frameParts.length} шт.`,
     qty: dimensions.perimeter * quantity,
     unit: "пог. м",
     rate: frameRate,
@@ -89,7 +91,7 @@ export function buildSpecification() {
     addLine({
       name: partName(role, name),
       note: `${note ? `${note}; ` : ""}${lengthNote(parts)}`,
-      characteristic: `${profile.name}; ${finish.name}; ширина ${Math.round(widthMm)} мм; ${parts.length} шт.`,
+      characteristic: `${profile.name}; ${finishName}; ширина ${Math.round(widthMm)} мм; ${parts.length} шт.`,
       qty: meters * quantity,
       unit: "пог. м",
       rate,
@@ -240,12 +242,16 @@ export function buildSpecification() {
   });
 
   const profileBase = frameUnitTotal + sashUnitTotal + impostUnitTotal + shtulpUnitTotal + extenderUnitTotal + connectorUnitTotal + cornerUnitTotal;
-  const finishUnitTotal = profileBase * Math.max(0, finish.factor - 1);
+  let finishFactor = Math.max(interior.factor, exterior.factor);
+  if (interior.id !== exterior.id && (interior.id === base.id || exterior.id === base.id)) {
+    finishFactor = singleFinishFactor(interior.id === base.id ? exterior : interior);
+  }
+  const finishUnitTotal = profileBase * Math.max(0, finishFactor - 1);
   if (finishUnitTotal > 0.01) {
     addLine({
       name: "Декоративная отделка профиля",
       note: "Ламинация, окраска или анодирование",
-      characteristic: finish.name,
+      characteristic: finishName,
       qty: quantity,
       unit: "компл.",
       rate: finishUnitTotal,
@@ -279,5 +285,5 @@ export function buildSpecification() {
   }
 
   const total = lines.reduce((sum, line) => sum + line.total, 0);
-  return { lines, unpriced: [...unpriced], total, unitPrice: total / quantity, sashCount, ...dimensions, material, profile, finish };
+  return { lines, unpriced: [...unpriced], total, unitPrice: total / quantity, sashCount, ...dimensions, material, profile, finishName };
 }
