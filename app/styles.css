@@ -362,6 +362,17 @@ h2 {
   cursor: text;
 }
 
+.editor-heading h2 {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+
+.editor-heading h2 #renameEditorProduct {
+  margin-inline-start: 2px;
+}
+
 h3 {
   font-size: 0.92rem;
 }
