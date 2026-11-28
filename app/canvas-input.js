@@ -216,8 +216,7 @@ function moveSelectedImpostToPoint(point) {
 }
 
 function getCanvasPoint(event) {
-  const svg = $("#windowCanvas");
-  const matrix = svg.getScreenCTM();
+  const matrix = $("#windowCanvas .drawing-face")?.getScreenCTM();
   return matrix ? new DOMPoint(event.clientX,event.clientY).matrixTransform(matrix.inverse()) : {x:0,y:0};
 }
 
