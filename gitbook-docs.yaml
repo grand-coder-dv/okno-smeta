@@ -1,0 +1,11 @@
+# GitBook site-wide Git Sync mapping (one space → docs/)
+$schema: https://api.gitbook.com/openapi.yaml#/components/schemas/GitSyncSiteConfig
+site:
+  title: ОкноСмета
+  structure:
+    - type: space
+      key: okno-smeta
+      title: ОкноСмета
+      path: okno-smeta
+      content:
+        directory: ./docs
