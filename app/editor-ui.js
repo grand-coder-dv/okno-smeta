@@ -428,6 +428,7 @@ export function showToast(message) {
 export function bindEvents() {
   $$('input[name="material"]').forEach((input) => {
     input.addEventListener("change", () => {
+      state.partChoices = {};
       state.material = input.value;
       updateMaterialSelects(true);
       normalizeUnsupportedOpenings();
@@ -436,6 +437,7 @@ export function bindEvents() {
   });
 
   $("#profileSystem").addEventListener("change", (event) => {
+    state.partChoices = {};
     state.profile = event.target.value;
     state.productType = "window";
     updateMaterialSelects(false, true);
@@ -444,6 +446,7 @@ export function bindEvents() {
     renderAll();
   });
   $("#productType").addEventListener("change", event => {
+    state.partChoices = {};
     state.productType = event.target.value;
     updateMaterialSelects();
     const typeDimensions = {
@@ -825,7 +828,7 @@ export function bindEvents() {
     delete catalog[button.closest("[data-glass-id]").dataset.glassId];
     renderGlassCatalog();
   });
-  ["#saveTechnology", "#saveProfileSettings"].forEach(selector => $(selector).addEventListener("click", () => {
+  ["#saveTechnology", "#saveProfileSettings", "#saveMaterials"].forEach(selector => $(selector).addEventListener("click", () => {
     captureGlassDraft();
     readCatalogDraftFromEditor();
     for (const [material, catalog] of Object.entries(catalogDraft)) {
