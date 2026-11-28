@@ -1,10 +1,10 @@
 /* Common layout for the technology catalog. Load after styles.css. */
-:is(#settingsTechnologyPane, #settingsProfilePane) :is(.catalog-profile-list, .catalog-color-list) {
+#settingsTechnologyPane :is(.catalog-profile-list, .catalog-color-list) {
   display: grid;
   gap: 10px;
   min-width: 0;
 }
-:is(#settingsTechnologyPane, #settingsProfilePane) :is(.catalog-profile-card, .catalog-color-row, #glassCatalogEditor .glass-catalog-card) {
+#settingsTechnologyPane :is(.catalog-profile-card, .catalog-color-row) {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 145px), 1fr));
   align-items: end;
@@ -18,20 +18,20 @@
   border-radius: 12px;
   background: #f3f5f8;
 }
-:is(#settingsTechnologyPane, #settingsProfilePane) .catalog-profile-card[data-profile-id] .catalog-name-field {
+#settingsTechnologyPane .catalog-profile-card[data-profile-id] .catalog-name-field {
   grid-column: 1 / -1;
 }
-:is(#settingsTechnologyPane, #settingsProfilePane) :is(.catalog-field, .catalog-color-picker) {
+#settingsTechnologyPane :is(.catalog-field, .catalog-color-picker) {
   display: grid;
   gap: 5px;
   min-width: 0;
   max-width: 100%;
   margin: 0;
 }
-:is(#settingsTechnologyPane, #settingsProfilePane) .catalog-field > span {
+#settingsTechnologyPane .catalog-field > span {
   overflow-wrap: anywhere;
 }
-:is(#settingsTechnologyPane, #settingsProfilePane) .catalog-field > input {
+#settingsTechnologyPane .catalog-field > input {
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
@@ -39,45 +39,32 @@
   min-height: 36px;
   margin: 0;
 }
-:is(#settingsTechnologyPane, #settingsProfilePane) :is(.catalog-section, .catalog-section-header) { min-width: 0; }
-:is(#settingsTechnologyPane, #settingsProfilePane) .catalog-section-header { flex-wrap: wrap; gap: 8px; }
-:is(#settingsTechnologyPane, #settingsProfilePane) .catalog-remove-button { justify-self: start; }
-:is(#settingsTechnologyPane, #settingsProfilePane) .glass-profile-options {
-  grid-column: 1 / -1;
-  box-sizing: border-box;
-  min-width: 0;
-  max-width: 100%;
-  margin: 0;
-  padding: 8px 10px;
-  border: 1px solid #dce3eb;
-  border-radius: 8px;
-  background: #fff;
-}
-:is(#settingsTechnologyPane, #settingsProfilePane) .glass-profile-options label { min-width: 0; max-width: 100%; }
-:is(#settingsTechnologyPane, #settingsProfilePane) .glass-profile-options label span { overflow-wrap: anywhere; }
+#settingsTechnologyPane :is(.catalog-section, .catalog-section-header) { min-width: 0; }
+#settingsTechnologyPane .catalog-section-header { flex-wrap: wrap; gap: 8px; }
+#settingsTechnologyPane .catalog-remove-button { justify-self: start; }
 
 #settingsTechnologyPane .catalog-profile-name-row { grid-template-columns: minmax(0, 1fr) auto; align-items: end; }
 #settingsTechnologyPane .catalog-profile-name-row .catalog-name-field { grid-column: auto; }
-#settingsProfilePane .catalog-settings-title { grid-column: 1 / -1; margin: 0 0 2px; color: #172b48; font-size: 1rem; overflow-wrap: anywhere; }
+#settingsTechnologyPane .catalog-settings-title { grid-column: 1 / -1; margin: 0 0 2px; color: #172b48; font-size: 1rem; overflow-wrap: anywhere; }
 @media (max-width: 620px) { #settingsTechnologyPane .catalog-profile-name-row { grid-template-columns: 1fr; } }
 
 /* Compact settings for each product type of a profile system. */
-#settingsProfilePane .catalog-system-settings {
+:is(#settingsTechnologyPane, #settingsGlassPane) .catalog-system-settings {
   padding: 12px;
   background: #f3f5f8;
   border: 1px solid #dce3eb;
   border-radius: 12px;
   min-width: 0;
 }
-#settingsProfilePane .catalog-settings-title { margin: 0 0 10px; }
-#settingsProfilePane .profile-type-list { display: grid; gap: 8px; }
-#settingsProfilePane .profile-type-card {
+#settingsTechnologyPane .catalog-settings-title { margin: 0 0 10px; }
+:is(#settingsTechnologyPane, #settingsGlassPane) .profile-type-list { display: grid; gap: 8px; }
+:is(#settingsTechnologyPane, #settingsGlassPane) .profile-type-card {
   padding: 9px 11px;
   background: #fff;
   border: 1px solid #dce3eb;
   border-radius: 9px;
 }
-#settingsProfilePane .profile-type-toggle {
+:is(#settingsTechnologyPane, #settingsGlassPane) .profile-type-toggle {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -85,18 +72,18 @@
   color: #172b48;
   cursor: pointer;
 }
-#settingsProfilePane .profile-type-toggle input,
-#settingsProfilePane .profile-type-option input { width: 17px; height: 17px; margin: 0; accent-color: #ed7c24; }
-#settingsProfilePane .profile-type-fields {
+:is(#settingsTechnologyPane, #settingsGlassPane) .profile-type-toggle input,
+#settingsTechnologyPane .profile-type-option input { width: 17px; height: 17px; margin: 0; accent-color: #ed7c24; }
+#settingsTechnologyPane .profile-type-fields {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   margin-top: 10px;
 }
-#settingsProfilePane .profile-type-fields[hidden] { display: none; }
-#settingsProfilePane .profile-type-option { display: flex; align-items: center; gap: 7px; font-size: .75rem; }
+#settingsTechnologyPane .profile-type-fields[hidden] { display: none; }
+#settingsTechnologyPane .profile-type-option { display: flex; align-items: center; gap: 7px; font-size: .75rem; }
 @media (max-width: 760px) {
-  #settingsProfilePane .profile-type-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #settingsTechnologyPane .profile-type-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 
@@ -121,9 +108,9 @@
 .part-link, .part-add { cursor: pointer; font: inherit; color: #214e76; }
 .part-link { background: transparent; border: 0; padding: 0; font-weight: 700; text-align: left; overflow-wrap: anywhere; }
 .part-add { margin: 6px 6px 8px 0; padding: 5px 10px; border: 1px solid #ccd9e4; border-radius: 6px; background: white; font-size: .8rem; }
-#settingsProfilePane .catalog-system-settings[hidden] { display: none; }
-#settingsProfilePane .system-choice { margin-bottom: 10px; font-weight: 700; }
-#settingsProfilePane select, .part-dialog :is(input:not([type=checkbox]),select) {
+:is(#settingsTechnologyPane, #settingsGlassPane) .catalog-system-settings[hidden] { display: none; }
+:is(#settingsTechnologyPane, #settingsGlassPane) .system-choice { margin-bottom: 10px; font-weight: 700; }
+:is(#settingsTechnologyPane, #settingsGlassPane) select, .part-dialog :is(input:not([type=checkbox]),select) {
   width: 100%; min-width: 0; box-sizing: border-box; padding: 7px 9px; color: #192e46;
   border: 1px solid #cad6e1; background: white; border-radius: 6px; font: inherit;
 }
@@ -153,7 +140,14 @@ dialog.part-dialog {
   dialog.part-dialog { padding: 12px; }
 }
 
-#settingsProfilePane .profile-options {
+#settingsTechnologyPane .profile-options {
   grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 7px 16px;
   padding-top: 8px; border-top: 1px solid #e4eaf0;
+}
+
+#settingsTechnologyPane .system-name-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px; margin-bottom: 10px;
+}
+@media (max-width: 480px) {
+  #settingsTechnologyPane .system-name-row { grid-template-columns: minmax(0, 1fr); }
 }
