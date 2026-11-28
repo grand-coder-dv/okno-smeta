@@ -1,8 +1,9 @@
+import { PART_NAMES, allParts, compatibleParts } from "./profile-parts.js";
 // Чертёж: контуры, дуги, скосы и точки профиля.
-import { HANDLE_LENGTHS, normalizeHandleStyle, selectedHandle } from "./catalog.js";
+import { MATERIALS, HANDLE_LENGTHS, normalizeHandleStyle, selectedHandle } from "./catalog.js";
 import { renderAll, showToast } from "./editor-ui.js";
-import { barFace, getPanePhysicalRect, glassGeometry, nestedImpostLimits, rootImpostLimits, sectionLayout, sectionPanes } from "./geometry.js";
-import { $, SASH_LAP, clamp, escapeHtml, formatNumber, getTechnology, inferredShapeMode, multiSections, numberFormatter, setSharedAxis, sharedAxis, state } from "./product.js";
+import { getSelectedImpostRecord, barBite, barFace, getPanePhysicalRect, glassGeometry, nestedImpostLimits, rootImpostLimits, sectionLayout, sectionPanes } from "./geometry.js";
+import { $, SASH_LAP, clamp, escapeHtml, formatNumber, getProfile, getTechnology, inferredShapeMode, multiSections, numberFormatter, setSharedAxis, sharedAxis, state } from "./product.js";
 export function shapePaths(x, y, width, height, frame) {
   if (state.shape === "circle") {
     return {
@@ -191,7 +192,7 @@ function polygonGlass(poly, geometry, f, tech, entry) {
     const [a,b]=impostSegment(item,orientation,rect,frame||poly);
     const length=Math.hypot(b[0]-a[0],b[1]-a[1]);
     if(length<1e-7)continue;
-    const faceInset=barFace(item)/2-tech.bite["импост"];
+    const faceInset=barFace(item, tech)/2-barBite(item, tech);
     result=clipByImpostLine(result,a,b,sign,faceInset);
   }
   return result;
@@ -436,25 +437,83 @@ function editImpostEndpoint() {
   });
   dialog.showModal();
 }
+function editableParts() {
+  const edge = activeProfileEdge?.owner === state ? activeProfileEdge : null;
+  const bar = getSelectedImpostRecord();
+  const roles = [];
+  if (bar) roles.push(bar.item.shtulp ? "shtulp" : "impost");
+  else if (edge) {
+    const role = edge.type.includes("sash") ? "sash" : "frame";
+    roles.push(role);
+    if (role === "frame") {
+      for (const addon of state.addons || []) {
+        const matches = edge.type === "vertex" ? addon.vertex === edge.side
+          : addon.side === (edge.type === "circle-frame" ? "ring" : edge.side);
+        if (matches) roles.push(addon.role);
+      }
+    }
+    roles.push("bead");
+  }
+  const parts = allParts(MATERIALS);
+  return [...new Set(roles)].map(role => [role, compatibleParts(parts,role,state.profile,state.productType || "window")])
+    .filter(([,choices]) => choices.length);
+}
+
+function openPartChoice(fields, geometryAction) {
+  const current = getProfile().parts;
+  const dialog = document.createElement("dialog");
+  dialog.className = "part-dialog";
+  dialog.innerHTML = '<form method="dialog"><h3>Изменить профиль изделия</h3>' +
+    fields.map(([role, choices]) => `<label>${PART_NAMES[role]}<select name="${role}">
+      ${choices.map(p => `<option value="${escapeHtml(p.id)}" ${p.id === current[role]?.id ? "selected" : ""}>${escapeHtml(p.article)} · ${escapeHtml(p.name)} · ${Number(p.width)} мм</option>`).join("")}</select></label>`).join("") +
+    '<small>Замена применяется ко всем деталям выбранного вида в этом изделии.</small><div>' +
+    (geometryAction ? '<button value="geometry" class="button ghost">Изменить геометрию</button> ' : '') +
+    '<button value="cancel" class="button ghost">Отмена</button> <button value="apply" class="button primary">Применить</button></div></form>';
+  document.body.append(dialog);
+  dialog.querySelector("form").onsubmit = event => {
+    if (event.submitter?.value === "apply") {
+      for (const [role, id] of new FormData(dialog.querySelector("form"))) {
+        if (id !== current[role]?.id) (state.partChoices ||= {})[role] = id;
+      }
+      renderAll();
+    }
+  };
+  dialog.onclose = () => {
+    dialog.remove();
+    if (dialog.returnValue === "geometry") geometryAction();
+  };
+  dialog.showModal();
+}
+
 export function refreshProfileEdit() {
   let button=$("#editProfileGeometry");
   const host=$("#editorHistory .editor-history-actions");
   if(!button){
     button=document.createElement("button"); button.id="editProfileGeometry"; button.type="button";button.className="button ghost";
     button.innerHTML='<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20l4-1 12-12-3-3L5 16zM14 7l3 3"/></svg> Изменить';
-    button.addEventListener("click",()=>{
+    const editGeometry = ()=>{
       if(activeImpostEndpoint?.owner===state){editImpostEndpoint();return;}
       const a=activeProfileEdge;if(!a||a.owner!==state)return;
       if(a.type==="vertex"||a.type==="polygon") editPolygon(a);
       else editProfileSide({dataset:{profileEdge:a.type,edgeIndex:a.index,edgeSide:a.side}});
+    };
+    button.addEventListener("click", () => {
+      const fields = editableParts();
+      const geometry = button.dataset.geometry === "true" ? editGeometry : null;
+      if (fields.length) openPartChoice(fields, geometry);
+      else geometry?.();
     });
     if(host) host.append(button);
     else {const row=document.createElement("div");row.style.cssText="display:flex;margin:0 0 8px";row.append(button);$("#canvasWrap").before(row);}
   }
   if(host && button.parentElement!==host) host.append(button);
-  button.hidden=state.shape!=="arch" && state.shape!=="skew";
-  button.style.display=button.hidden?"none":"";
-  button.disabled=button.hidden || !(activeImpostEndpoint?.owner===state || activeProfileEdge?.owner===state && activeProfileEdge.type!=="skew-sash");
+  const geometryShape = state.shape === "arch" || state.shape === "skew";
+  const geometry = geometryShape && (activeImpostEndpoint?.owner === state || activeProfileEdge?.owner === state && activeProfileEdge.type !== "skew-sash");
+  const fields = editableParts();
+  button.dataset.geometry = String(Boolean(geometry));
+  button.hidden = !geometryShape && !fields.length;
+  button.style.display = button.hidden ? "none" : "";
+  button.disabled = !geometry && !fields.length;
   button.style.color=button.disabled?"#68778a":"white";button.style.background=button.disabled?"#edf1f5":"#24384f";
 }
 export function editPolygon(selection) {
