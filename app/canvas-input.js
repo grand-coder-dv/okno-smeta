@@ -3,7 +3,7 @@ import { cancelCanvasPaneHold } from "./canvas.js";
 import { activeImpostEndpoint, activeProfileEdge, commitOverallDimension, editPolygon, overallSize, refreshProfileEdit, setActiveImpostEndpoint, setActiveProfileEdge } from "./drawing.js";
 import { renderAll, showToast } from "./editor-ui.js";
 import { createImpostId, getPanePhysicalRect, getSelectedImpostRecord, glassGeometry, nestedImpostLimits, rootImpostLimits, sectionLayout, sectionPanes } from "./geometry.js";
-import { $, canvasLayout, canvasZoom, clamp, dragState, getTechnology, impostPositionOrigin, multiSections, selectedSections, setCanvasZoom, setDragState, setMultiSections, setSharedAxis, sharedAxis, state, validateCurrentProduct } from "./product.js";
+import { $, applyPaneChanges, canvasLayout, canvasZoom, clamp, dragState, getTechnology, impostPositionOrigin, multiSections, selectedSections, setCanvasZoom, setDragState, setMultiSections, setSharedAxis, sharedAxis, state, validateCurrentProduct } from "./product.js";
 const CANVAS_ZOOM_MIN = 0.5;
 const CANVAS_ZOOM_MAX = 4;
 const CANVAS_ZOOM_STEP = 1.25;
@@ -421,31 +421,13 @@ export function addInnerImpost(orientation) {
     showToast("В проёме уже есть импост старого типа. Удалите его перед новой разбивкой, чтобы сохранить размеры стеклопакетов.");
     return;
   }
-  const vertical = orientation === "vertical";
-  const start = rect => vertical ? rect.x : rect.y;
-  const size = rect => vertical ? rect.width : rect.height;
-  const commonStart = Math.max(...targets.map(({rect}) => start(rect)));
-  const commonEnd = Math.min(...targets.map(({rect}) => start(rect) + size(rect)));
-  const axis = (commonStart + commonEnd) / 2;
-  const changed = targets.map(({pane, rect}) => {
-    const old = pane.innerImposts;
-    const item = {id:createImpostId("pane", orientation), orientation,
-      position:commonEnd > commonStart ? (axis - start(rect)) / size(rect) : 0.5};
-    pane.split = item;
-    if (pane.opening !== "fixed") pane.sashFill = true;
-    pane.innerImposts = [item];
-    pane.children = [
-      {opening:"fixed", glass:pane.glass, innerImposts:[]},
-      {opening:"fixed", glass:pane.glass, innerImposts:[]},
-    ];
-    return {pane, old};
-  });
-  const issue = validateCurrentProduct();
+  const changed = innerImpostChanges(orientation, targets);
+  const issue = applyPaneChanges(changed);
   if (issue) {
-    changed.forEach(({pane,old}) => { delete pane.split; delete pane.children; delete pane.sashFill; pane.innerImposts = old; });
     showToast(issue);
     return;
   }
+  changed.forEach(({values}) => { values.split.id = createImpostId("pane", orientation); });
   const panes = sectionPanes();
   setMultiSections(new Set(changed.map(({pane}) => panes.indexOf(pane.children[0]))));
   state.selectedPane = [...multiSections][0];
@@ -454,6 +436,33 @@ export function addInnerImpost(orientation) {
   renderAll();
   showToast(`Импостов добавлено: ${changed.length}`);
 }
+function innerImpostChanges(orientation, targets) {
+  const vertical = orientation === "vertical";
+  const start = rect => vertical ? rect.x : rect.y;
+  const size = rect => vertical ? rect.width : rect.height;
+  const commonStart = Math.max(...targets.map(({rect}) => start(rect)));
+  const commonEnd = Math.min(...targets.map(({rect}) => start(rect) + size(rect)));
+  const axis = (commonStart + commonEnd) / 2;
+  return targets.map(({pane, rect}) => {
+    const item = {orientation, position:commonEnd > commonStart ? (axis - start(rect)) / size(rect) : 0.5};
+    const values = {
+      split: item,
+      innerImposts: [item],
+      children: [
+        {opening:"fixed", glass:pane.glass, innerImposts:[]},
+        {opening:"fixed", glass:pane.glass, innerImposts:[]},
+      ],
+    };
+    if (pane.opening !== "fixed") values.sashFill = true;
+    return {pane, values};
+  });
+}
+
+export function canAddInnerImpost(orientation, targets) {
+  return targets.length > 0 && targets.every(({pane}) => !pane.innerImposts.length)
+    && !applyPaneChanges(innerImpostChanges(orientation, targets), {preview: true});
+}
+
 export function equalizeSelectedGlass(axis) {
   const entries=selectedSections();
   const horizontal=axis==="horizontal";
