@@ -1,3 +1,4 @@
+import { defaultPartFields, renderPartsCatalog } from "./parts-settings.js";
 // Диалог настроек: прайс и каталог профилей.
 import { DEFAULT_MATERIALS, HANDLE_LENGTHS, HANDLE_STYLES, MATERIALS, MATERIAL_TITLES, PRODUCT_TYPES, PROFILE_STORAGE_KEY, PROJECTS_STORAGE_KEY, applyTechnicalSnapshot, captureGlassDraft, cloneData, cloneMaterials, glassCatalog, glassDraft, hardwareCatalog, hardwareDraft, normalizeHandleStyle, persistHardwareCatalog, profileTypeSettings, programStorageSet, rates, readStoredProjects, reloadProgramStateFromDatabase, renderGlassCatalog, sanitizeHardwareCatalog, setGlassDraft, setHardwareCatalog, setHardwareDraft, setMATERIALS, technicalSnapshot } from "./catalog.js";
 import { handlePreviewMarkup } from "./drawing.js";
@@ -72,6 +73,8 @@ export function setSettingsTab(tab) {
     if (tab !== "prices") renderTechnologyCatalog();
   }
   if ($("#pricesDialog").open) captureHardwareDraft();
+  if (tab === "materials") renderPartsCatalog();
+  $("#settingsMaterialsPane").hidden = tab !== "materials";
   const technologyTab = tab === "technology";
   $("#settingsPricesPane").hidden = tab !== "prices";
   $("#settingsTechnologyPane").hidden = !technologyTab;
@@ -105,26 +108,24 @@ export function renderTechnologyCatalog() {
       </label>
       <button class="catalog-remove-button" type="button" data-catalog-action="remove-profile" aria-label="Удалить профильную систему">Удалить</button>
     </article>`).join("");
+  const previousId = $("#settingsSystemChoice")?.value || state.profile;
+  const selectedId = material.profiles.find(profile => profile.id === previousId)?.id || material.profiles[0].id;
   const settingsRows = material.profiles.map(profile => `
-    <article class="catalog-system-settings" data-profile-id="${escapeHtml(profile.id)}">
-      <h4 class="catalog-settings-title">${escapeHtml(profile.name)}</h4>
+    <article class="catalog-system-settings" ${profile.id === selectedId ? "" : "hidden"} data-profile-id="${escapeHtml(profile.id)}">
       <div class="profile-type-list">${Object.entries(PRODUCT_TYPES).map(([type, label]) => {
         const settings = profileTypeSettings(profile, type);
         return `<section class="profile-type-card" data-product-type="${type}">
           <label class="profile-type-toggle"><input type="checkbox" data-type-enabled ${settings.enabled ? "checked" : ""} /> ${label}</label>
           <div class="profile-type-fields" ${settings.enabled ? "" : "hidden"}>
-            ${[["frameWidth","Рама, мм",20,250],["sashWidth","Створка, мм",20,250],["impostWidth","Импост, мм",20,250],
-              ["shtulpWidth","Штульп, мм",20,250],["extenderWidth","Расширитель, мм",10,250],
-              ["connectorWidth","Соединитель, мм",10,250],["cornerWidth","Угловой профиль, мм",10,250],
-              ["glassBiteFrame","Заход стекла: рама, мм",0,100],["glassBiteSash","Заход стекла: створка, мм",0,100],
-              ["glassBiteImpost","Заход стекла: импост, мм",0,100],["factor","Коэффициент цены",0.1,5],["seals","Контуры уплотнения",1,5]]
+            ${defaultPartFields(catalogDraft, profile, type)}
+            ${[["factor","Коэффициент цены",0.1,5],["seals","Контуры уплотнения",1,5]]
               .map(([field,title,min,max]) => `<label class="catalog-field"><span>${title}</span><input type="number" data-type-field="${field}"
                 value="${field === "factor" ? Number(settings[field]) || 1 : clamp(settings[field], min, max)}" min="${min}" max="${max}" step="${field === "factor" ? "0.01" : "1"}" /></label>`).join("")}
-            <label class="profile-type-option"><input type="checkbox" data-type-field="allowCircleShape" ${settings.allowCircleShape ? "checked" : ""} /> Круглая форма</label>
+            <div class="profile-options"><label class="profile-type-option"><input type="checkbox" data-type-field="allowCircleShape" ${settings.allowCircleShape ? "checked" : ""} /> Круглая форма</label>
             <label class="profile-type-option"><input type="checkbox" data-type-field="allowCircleSashes" ${settings.allowCircleSashes ? "checked" : ""} /> Створки в круглой форме</label>
             <label class="profile-type-option"><input type="checkbox" data-type-field="allowTiltturn" ${settings.allowTiltturn !== false ? "checked" : ""} /> Поворотно-откидная</label>
             <label class="profile-type-option"><input type="checkbox" data-type-field="allowTurn" ${settings.allowTurn !== false ? "checked" : ""} /> Поворотная</label>
-            <label class="profile-type-option"><input type="checkbox" data-type-field="allowTilt" ${settings.allowTilt !== false ? "checked" : ""} /> Откидная</label>
+            <label class="profile-type-option"><input type="checkbox" data-type-field="allowTilt" ${settings.allowTilt !== false ? "checked" : ""} /> Откидная</label></div>
           </div>
         </section>`;
       }).join("")}</div>
@@ -168,9 +169,14 @@ export function renderTechnologyCatalog() {
     </section>`;
   $("#technologyCatalogEditor").append(glassSection);
   $("#profileSettingsEditor").innerHTML = `<section class="catalog-section">
-    <div class="catalog-section-header"><div><h3>Настройки профильных систем</h3><span>${material.profiles.length} шт.</span></div></div>
+    <label class="catalog-field system-choice"><span>Профильная система</span>
+      <select id="settingsSystemChoice">${material.profiles.map(profile =>
+        `<option value="${escapeHtml(profile.id)}" ${profile.id === selectedId ? "selected" : ""}>${escapeHtml(profile.name)}</option>`).join("")}</select></label>
     <div class="catalog-profile-list">${settingsRows}</div>
   </section>`;
+  $("#settingsSystemChoice").onchange = event => {
+    for (const row of document.querySelectorAll("#profileSettingsEditor [data-profile-id]")) row.hidden = row.dataset.profileId !== event.target.value;
+  };
   updateCatalogMaterialTabs();
 }
 
@@ -195,6 +201,7 @@ export function readCatalogDraftFromEditor() {
         if (input.type === "checkbox") settings[field] = input.checked;
         else settings[field] = clamp(input.value, Number(input.min), Number(input.max));
       });
+      settings.defaultParts = Object.fromEntries([...typeRow.querySelectorAll("[data-default-part]")].map(select => [select.dataset.defaultPart, select.value]));
       profile.types[type] = settings;
     });
   });
