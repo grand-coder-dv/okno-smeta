@@ -835,6 +835,24 @@ h3 {
   display: none;
 }
 
+.canvas-view-side {
+  position: absolute;
+  z-index: 3;
+  right: 12px;
+  bottom: 12px;
+  max-width: calc(100% - 24px);
+  min-height: 32px;
+  padding: 4px 7px;
+  color: #24384f;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
 .equal-glass-btn {
   display: grid;
   place-items: center;
