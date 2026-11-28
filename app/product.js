@@ -17,6 +17,10 @@ export let canvasLayout = null;
 export let dragState = null;
 export let canvasZoom = 1;
 
+export function defaultViewSide(productType = "window") {
+  return productType === "entranceDoor" ? "exterior" : "interior";
+}
+
 function createDefaultState() {
   return {
     material: "pvc",
@@ -24,7 +28,7 @@ function createDefaultState() {
     profile: "pvc70",
     finish: "white",
     exteriorFinish: "white",
-    viewSide: "interior",
+    viewSide: defaultViewSide("window"),
     shape: "rect",
     shapeModeVersion: 1,
     width: 1300,
@@ -300,6 +304,7 @@ export function applyPaneChanges(changes, { preview = false } = {}) {
 
 export function restoreProductState(configuration) {
   state = cloneData(configuration);
+  if (state.viewSide !== "interior" && state.viewSide !== "exterior") state.viewSide = defaultViewSide(state.productType);
   state.shape = inferredShapeMode(state);
   state.shapeModeVersion = 1;
   setActiveProfileEdge(null);
@@ -320,9 +325,10 @@ export function resetCurrentProduct(previous = null) {
   draftProductName = `Изделие ${orderItemSequence + 1}`;
   state = createDefaultState();
   if (previous) {
-    for (const key of ["material", "profile", "finish", "exteriorFinish", "viewSide", "productType", "shape", "width", "height", "defaultGlass", "hardwareId", "handleId"]) {
+    for (const key of ["material", "profile", "finish", "exteriorFinish", "productType", "shape", "width", "height", "defaultGlass", "hardwareId", "handleId"]) {
       if (previous[key] !== undefined) state[key] = previous[key];
     }
+    state.viewSide = defaultViewSide(state.productType);
     state.exteriorFinish = previous.exteriorFinish ?? state.finish;
     if (state.shape === "skew" && previous.framePolygon) state.framePolygon = cloneData(previous.framePolygon);
     if (state.shape === "arch" && previous.frameArcs) state.frameArcs = cloneData(previous.frameArcs);
