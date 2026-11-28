@@ -268,7 +268,6 @@ function renderSummary(calculation) {
   $("#summaryFinish").textContent = calculation.finish.name;
   $("#summaryHardware").textContent = selectedHardware()?.name || "Тариф прайса";
   $("#summaryHandle").textContent = selectedHandle()?.name || "Стандартная";
-  $("#specTotal").textContent = formatMoney(calculation.total);
   $("#editorDimensions").textContent = overallSizeLabel();
   $("#editorArea").textContent = `${formatNumber(calculation.area)} м²`;
 
@@ -286,23 +285,6 @@ function renderSummary(calculation) {
     $("#savedItemPrice").textContent = formatMoney(savedItem.total);
     $("#currentItemPrice").textContent = formatMoney(currentRoundedTotal);
   }
-}
-
-function renderSpecification(calculation) {
-  $("#specificationRows").innerHTML = calculation.lines
-    .map(
-      (line, index) => `
-        <tr>
-          <td>${index + 1}</td>
-          <td><span class="spec-name"><b>${line.name}</b><small>${line.note}</small></span></td>
-          <td class="spec-characteristic">${line.characteristic}</td>
-          <td>${line.unit === "шт." || line.unit === "компл." ? Math.round(line.qty) : formatNumber(line.qty)}</td>
-          <td>${line.unit}</td>
-          <td>${formatMoney(line.rate)}</td>
-          <td><b>${formatMoney(line.total)}</b></td>
-        </tr>`,
-    )
-    .join("");
 }
 
 function updateShapeControls() {
@@ -393,7 +375,6 @@ export function renderAll() {
     deleteButton.setAttribute("aria-label", label);
   }
   renderSummary(calculation);
-  renderSpecification(calculation);
   if(customProfileArcs()) {
     $("#currentEstimateStatus").textContent="Расчёт изделия с дугами";
     $("#currentEstimateHint").textContent="Площадь стеклопакетов рассчитана по контуру дуг, длина импостов — по контуру рамы. Перед изготовлением проверьте технологические размеры.";
@@ -674,7 +655,6 @@ export function bindEvents() {
     showToast("Импост удалён");
   });
 
-  $("#scrollToSpec").addEventListener("click", () => $("#specification").scrollIntoView({ behavior: "smooth", block: "start" }));
   $("#printEstimate").addEventListener("click", () => {
     openReportsDialog();
   });
