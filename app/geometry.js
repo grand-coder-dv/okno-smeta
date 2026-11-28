@@ -1,7 +1,7 @@
 // Конструкция: импосты, секции, габариты и площадь.
 import { MATERIALS, availableProfiles } from "./catalog.js";
 import { circularOutline, clipSlantedSections, constructionPolygon, customFrameMeasures, customProfileArcs, fittedGlass, fittedOutline, hasSlantedImposts, impostSegment, overallSize, polyBounds, polygonClip, polygonPoints, profileOutline, rectPoints, sectionContour, slantedBounds } from "./drawing.js";
-import { $, $$, SASH_LAP, clamp, comparableCurrentState, escapeHtml, formatNumber, getProfile, getTechnology, nextImpostSequence, state } from "./product.js";
+import { $, $$, SASH_LAP, clamp, comparableCurrentState, defaultViewSide, escapeHtml, formatNumber, getProfile, getTechnology, nextImpostSequence, state } from "./product.js";
 export function createImpostId(scope, orientation) {
   return `${scope}-${orientation[0]}-${nextImpostSequence()}`;
 }
@@ -222,7 +222,10 @@ export function nestedImpostLimits(item, pane) {
 
 export function updateMaterialSelects(reset = false, preserveProfile = false) {
   const material = MATERIALS[state.material];
-  if (reset || !availableProfiles().length) state.productType = "window";
+  if (reset || !availableProfiles().length) {
+    state.productType = "window";
+    state.viewSide = defaultViewSide(state.productType);
+  }
   const compatible = availableProfiles();
   if (reset || (!preserveProfile && !compatible.some((item) => item.id === state.profile))) state.profile = compatible[0]?.id || material.profiles[0].id;
   state.exteriorFinish ??= state.finish;
