@@ -1,84 +1,44 @@
 import { defaultPartFields, renderPartsCatalog } from "./parts-settings.js";
-// Диалог настроек: прайс и каталог профилей.
-import { DEFAULT_MATERIALS, HANDLE_LENGTHS, HANDLE_STYLES, MATERIALS, MATERIAL_TITLES, PRODUCT_TYPES, PROFILE_STORAGE_KEY, PROJECTS_STORAGE_KEY, applyTechnicalSnapshot, captureGlassDraft, cloneData, cloneMaterials, glassCatalog, glassDraft, hardwareCatalog, hardwareDraft, normalizeHandleStyle, persistHardwareCatalog, profileTypeSettings, programStorageSet, rates, readStoredProjects, reloadProgramStateFromDatabase, renderGlassCatalog, sanitizeHardwareCatalog, setGlassDraft, setHardwareCatalog, setHardwareDraft, setMATERIALS, technicalSnapshot } from "./catalog.js";
+// Диалог настроек: коэффициенты и каталог профилей.
+import { DEFAULT_MATERIALS, HANDLE_LENGTHS, HANDLE_STYLES, MATERIALS, MATERIAL_TITLES, PRODUCT_TYPES, PROFILE_STORAGE_KEY, PROJECTS_STORAGE_KEY, applyTechnicalSnapshot, cloneData, cloneMaterials, cloneRates, hardwareCatalog, hardwareDraft, normalizeHandleStyle, persistHardwareCatalog, profileTypeSettings, programStorageSet, rates, readStoredProjects, reloadProgramStateFromDatabase, sanitizeHardwareCatalog, setHardwareCatalog, setHardwareDraft, setMATERIALS, technicalSnapshot } from "./catalog.js";
+import { populateGlassSettings } from "./glass-settings.js";
 import { handlePreviewMarkup } from "./drawing.js";
 import { renderAll, showToast } from "./editor-ui.js";
 import { updateMaterialSelects } from "./geometry.js";
 import { renderProjectsList } from "./order.js";
 import { $, $$, catalogDraft, catalogMaterial, clamp, createCatalogId, escapeHtml, getProfile, normalizeUnsupportedOpenings, projects, setCatalogDraft, setCatalogMaterial, setProjects, setWindowShapeMode, state } from "./product.js";
-const PRICE_BINDINGS = {
-  pvcFrame: ["frame", "pvc"],
-  aluminumFrame: ["frame", "aluminum"],
-  woodFrame: ["frame", "wood"],
-  pvcImpost: ["impost", "pvc"],
-  aluminumImpost: ["impost", "aluminum"],
-  woodImpost: ["impost", "wood"],
-  glassSingle: ["glass", "single"],
-  glassDouble: ["glass", "double"],
-  glassEnergy: ["glass", "energy"],
-  glassAcoustic: ["glass", "acoustic"],
-  hardwareTurn: ["hardware", "turn"],
-  hardwareTiltturn: ["hardware", "tiltturn"],
-  hardwareTilt: ["hardware", "tilt"],
-  handle: ["handle"],
-  reinforcement: ["reinforcement"],
-  pvcSeal: ["seal", "pvc"],
-  aluminumSeal: ["seal", "aluminum"],
-  woodSeal: ["seal", "wood"],
-  pvcBead: ["bead", "pvc"],
-  aluminumBead: ["bead", "aluminum"],
-  woodBead: ["bead", "wood"],
-  pvcAssembly: ["assembly", "pvc"],
-  aluminumAssembly: ["assembly", "aluminum"],
-  woodAssembly: ["assembly", "wood"],
-  archSurcharge: ["archSurcharge"],
-  circleSurcharge: ["circleSurcharge"],
-  skewSurcharge: ["skewSurcharge"],
-  markup: ["markup"],
-};
+const coefficientNames = ["archSurcharge", "circleSurcharge", "skewSurcharge", "markup"];
 
-function getRate(path) {
-  return path.reduce((value, key) => value[key], rates);
+export function populateCoefficientForm() {
+  const form = $("#pricesForm");
+  for (const name of coefficientNames) form.elements[name].value = rates[name];
 }
 
-function setRate(path, value) {
-  if (path.length === 1) rates[path[0]] = value;
-  else rates[path[0]][path[1]] = value;
+export function readCoefficientForm() {
+  const form = $("#pricesForm");
+  for (const name of coefficientNames) {
+    const input = form.elements[name];
+    rates[name] = clamp(input.value, Number(input.min), Number(input.max));
+  }
 }
 
-function ensureSkewSurchargeInput() {
-  const form=$("#pricesForm");
-  if(form.elements.namedItem("skewSurcharge")) return;
-  form.elements.namedItem("circleSurcharge").closest("label").insertAdjacentHTML("afterend", '<label><span>Косая форма</span><input name="skewSurcharge" type="number" min="0" max="300" step="1" /></label>');
-}
-export function populatePriceForm() {
-  ensureSkewSurchargeInput();
-  Object.entries(PRICE_BINDINGS).forEach(([name, path]) => {
-    $("#pricesForm").elements[name].value = getRate(path);
-  });
-}
-
-export function readPriceForm() {
-  ensureSkewSurchargeInput();
-  Object.entries(PRICE_BINDINGS).forEach(([name, path]) => {
-    const input = $("#pricesForm").elements[name];
-    setRate(path, name === "skewSurcharge" ? clamp(input.value, 0, 300) : Math.max(0, Number(input.value) || 0));
-  });
+export function resetCoefficientForm() {
+  const defaults = cloneRates();
+  for (const name of coefficientNames) $("#pricesForm").elements[name].value = defaults[name];
 }
 
 export function setSettingsTab(tab) {
   if (catalogDraft && $("#pricesDialog").open) {
     readCatalogDraftFromEditor();
-    captureGlassDraft();
-    if (tab !== "prices") renderTechnologyCatalog();
+    if (tab !== "general") renderTechnologyCatalog();
   }
   if ($("#pricesDialog").open) captureHardwareDraft();
   if (tab === "materials") renderPartsCatalog();
   $("#settingsMaterialsPane").hidden = tab !== "materials";
   const technologyTab = tab === "technology";
-  $("#settingsPricesPane").hidden = tab !== "prices";
+  $("#settingsPricesPane").hidden = tab !== "general";
   $("#settingsTechnologyPane").hidden = !technologyTab;
-  $("#settingsProfilePane").hidden = tab !== "profile";
+  $("#settingsGlassPane").hidden = tab !== "glass";
   $("#settingsHardwarePane").hidden = tab !== "hardware";
   $("#settingsReportsPane").hidden = tab !== "reports";
   $("#settingsDatabasePane").hidden = tab !== "database";
@@ -98,20 +58,19 @@ function updateCatalogMaterialTabs() {
   });
 }
 
-export function renderTechnologyCatalog() {
+export function renderTechnologyCatalog(preferredId) {
   if (!catalogDraft) setCatalogDraft(cloneMaterials(MATERIALS));
   const material = catalogDraft[catalogMaterial];
-  const profileRows = material.profiles.map(profile => `
-    <article class="catalog-profile-card catalog-profile-name-row" data-profile-id="${escapeHtml(profile.id)}">
+  const previousId = preferredId || $("#settingsSystemChoice")?.value || state.profile;
+  const selectedId = material.profiles.find(profile => profile.id === previousId)?.id || material.profiles[0].id;
+  const settingsRows = material.profiles.map(profile => `
+    <article class="catalog-system-settings" ${profile.id === selectedId ? "" : "hidden"} data-profile-id="${escapeHtml(profile.id)}">
+      <div class="system-name-row">
       <label class="catalog-field catalog-name-field"><span>Название системы</span>
         <input data-profile-field="name" value="${escapeHtml(profile.name)}" maxlength="80" required />
       </label>
       <button class="catalog-remove-button" type="button" data-catalog-action="remove-profile" aria-label="Удалить профильную систему">Удалить</button>
-    </article>`).join("");
-  const previousId = $("#settingsSystemChoice")?.value || state.profile;
-  const selectedId = material.profiles.find(profile => profile.id === previousId)?.id || material.profiles[0].id;
-  const settingsRows = material.profiles.map(profile => `
-    <article class="catalog-system-settings" ${profile.id === selectedId ? "" : "hidden"} data-profile-id="${escapeHtml(profile.id)}">
+      </div>
       <div class="profile-type-list">${Object.entries(PRODUCT_TYPES).map(([type, label]) => {
         const settings = profileTypeSettings(profile, type);
         return `<section class="profile-type-card" data-product-type="${type}">
@@ -151,14 +110,16 @@ export function renderTechnologyCatalog() {
     )
     .join("");
 
-  const glassSection = $("#glassCatalogSection");
   $("#technologyCatalogEditor").innerHTML = `
     <section class="catalog-section">
       <div class="catalog-section-header">
         <div><h3>Профильные системы</h3><span>${material.profiles.length} шт.</span></div>
         <button class="button ghost catalog-add-button" type="button" data-catalog-action="add-profile">+ Добавить систему</button>
       </div>
-      <div class="catalog-profile-list">${profileRows}</div>
+    <label class="catalog-field system-choice"><span>Профильная система</span>
+      <select id="settingsSystemChoice">${material.profiles.map(profile =>
+        `<option value="${escapeHtml(profile.id)}" ${profile.id === selectedId ? "selected" : ""}>${escapeHtml(profile.name)}</option>`).join("")}</select></label>
+      <div class="catalog-profile-list">${settingsRows}</div>
     </section>
     <section class="catalog-section">
       <div class="catalog-section-header">
@@ -167,15 +128,8 @@ export function renderTechnologyCatalog() {
       </div>
       <div class="catalog-color-list">${finishRows}</div>
     </section>`;
-  $("#technologyCatalogEditor").append(glassSection);
-  $("#profileSettingsEditor").innerHTML = `<section class="catalog-section">
-    <label class="catalog-field system-choice"><span>Профильная система</span>
-      <select id="settingsSystemChoice">${material.profiles.map(profile =>
-        `<option value="${escapeHtml(profile.id)}" ${profile.id === selectedId ? "selected" : ""}>${escapeHtml(profile.name)}</option>`).join("")}</select></label>
-    <div class="catalog-profile-list">${settingsRows}</div>
-  </section>`;
   $("#settingsSystemChoice").onchange = event => {
-    for (const row of document.querySelectorAll("#profileSettingsEditor [data-profile-id]")) row.hidden = row.dataset.profileId !== event.target.value;
+    for (const row of document.querySelectorAll("#technologyCatalogEditor .catalog-system-settings")) row.hidden = row.dataset.profileId !== event.target.value;
   };
   updateCatalogMaterialTabs();
 }
@@ -187,10 +141,6 @@ export function readCatalogDraftFromEditor() {
     const profile = material.profiles.find((item) => item.id === row.dataset.profileId);
     if (!profile) return;
     profile.name = row.querySelector('[data-profile-field="name"]').value.trim() || "Новая профильная система";
-  });
-  $$("#profileSettingsEditor [data-profile-id]").forEach((row) => {
-    const profile = material.profiles.find(item => item.id === row.dataset.profileId);
-    if (!profile) return;
     profile.types ||= {};
     row.querySelectorAll("[data-product-type]").forEach(typeRow => {
       const type = typeRow.dataset.productType;
@@ -218,12 +168,13 @@ export function handleCatalogAction(event) {
   const button = event.target.closest("[data-catalog-action]");
   if (!button) return;
   readCatalogDraftFromEditor();
-  captureGlassDraft();
   const material = catalogDraft[catalogMaterial];
+  let addedId;
   if (button.dataset.catalogAction === "add-profile") {
+    addedId = createCatalogId(`${catalogMaterial}-profile`);
     const defaults = DEFAULT_MATERIALS[catalogMaterial].profiles[0];
     material.profiles.push({
-      id: createCatalogId(`${catalogMaterial}-profile`),
+      id: addedId,
       name: "Новая профильная система",
       factor: 1,
       seals: defaults.seals,
@@ -248,16 +199,13 @@ export function handleCatalogAction(event) {
     const row = button.closest("[data-finish-id]");
     material.finishes = material.finishes.filter((item) => item.id !== row.dataset.finishId);
   }
-  renderTechnologyCatalog();
-  renderGlassCatalog();
+  renderTechnologyCatalog(addedId);
 }
 
 export function populateTechnologyForm() {
   setCatalogDraft(cloneMaterials(MATERIALS));
-  setGlassDraft(structuredClone(glassCatalog));
   setCatalogMaterial(state.material);
   renderTechnologyCatalog();
-  renderGlassCatalog();
 }
 
 export function readTechnologyForm() {
@@ -521,8 +469,9 @@ $("#databaseFileInput").addEventListener("change", async () => {
     }
     applyTechnicalSnapshot(payload.data);
     reloadProgramStateFromDatabase();
-    populatePriceForm();
+    populateCoefficientForm();
     populateTechnologyForm();
+    populateGlassSettings();
     setHardwareDraft(cloneData(hardwareCatalog));
     $("#hardwareCatalogEditor").removeAttribute("data-ready");
     showToast("Техническая база загружена в программу");
