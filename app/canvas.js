@@ -254,7 +254,7 @@ export function renderCanvas({ svg = $("#windowCanvas"), thumbnail = false } = {
     const tag=paneOutline?"path":"rect";
     panesMarkup += `
       <g class="pane" data-index="${index}" clip-path="url(#innerClip)">
-        <${tag} ${areaAttrs} fill="${glass.color}" />
+        <${tag} ${areaAttrs} fill="${glass?.color || "#e7edf1"}" />
         <${tag} ${areaAttrs} fill="url(#glassSheen)" opacity="0.55" />
         <circle cx="${paneCx}" cy="${paneCy}" r="14" fill="rgba(255,255,255,.82)" stroke="rgba(53,80,105,.22)" />
         <text class="pane-number" x="${paneCx}" y="${paneCy+4}">${sectionNumber(index)}</text>
