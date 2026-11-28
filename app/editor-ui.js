@@ -266,7 +266,7 @@ function renderSummary(calculation) {
   if (calculation.corner > 0) extras.push(`угол ${tech.corner}`);
   $("#summaryTechnology").textContent = `рама ${tech.frame} · створка ${tech.sash} · импост ${tech.impost}${extras.length ? ` · ${extras.join(" · ")}` : ""} мм`;
   $("#summaryShape").textContent = SHAPES[state.shape];
-  $("#summaryFinish").textContent = calculation.finish.name;
+  $("#summaryFinish").textContent = calculation.finishName;
   $("#summaryHardware").textContent = selectedHardware()?.name || "Комплект не назначен";
   $("#summaryHandle").textContent = selectedHandle()?.name || "Ручка не назначена";
   $("#editorDimensions").textContent = overallSizeLabel();
@@ -346,6 +346,7 @@ export function renderAll() {
   $("#editorProductName").textContent=draftProductName;
   syncGlassChoices();
   const calculation = buildSpecification();
+  $("#canvasViewSide").value = state.viewSide === "exterior" ? "exterior" : "interior";
   renderCanvas();
   syncOverallInputs();
   refreshProfileEdit();
@@ -477,8 +478,14 @@ export function bindEvents() {
     syncFormFromState();
     renderAll();
   });
-  $("#finish").addEventListener("change", (event) => {
-    state.finish = event.target.value;
+  for (const field of ["finish", "exteriorFinish"]) {
+    $("#" + field).addEventListener("change", event => {
+      state[field] = event.target.value;
+      renderAll();
+    });
+  }
+  $("#canvasViewSide").addEventListener("change", event => {
+    state.viewSide = event.target.value;
     renderAll();
   });
   $("#hardwareSet").addEventListener("change", (event) => {
